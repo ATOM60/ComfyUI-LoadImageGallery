@@ -1,0 +1,1006 @@
+import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
+
+const EXTENSION_NAME = "Comfy.ImageGallery";
+const NODE_CLASS = "LoadImageGallery";
+const ROOT_LABEL = "📁 input (корень)";
+const MAX_PARALLEL_THUMBS = 6;
+const OBSERVER_MARGIN = "420px 0px";
+
+function injectStyles() {
+    if (document.getElementById("comfy-image-gallery-style")) return;
+    const style = document.createElement("style");
+    style.id = "comfy-image-gallery-style";
+    style.textContent = `
+.cig-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+.cig-panel{width:min(1500px,96vw);height:min(920px,92vh);background:#181818;border:1px solid #444;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;color:#eee;font-family:Arial,sans-serif}
+.cig-header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #383838;flex:0 0 auto}.cig-title{font-size:18px;font-weight:700;white-space:nowrap}.cig-search{flex:1;min-width:120px;background:#262626;color:#eee;border:1px solid #4a4a4a;border-radius:7px;padding:9px 11px;font-size:14px;outline:none}.cig-search:focus{border-color:#888}.cig-close,.cig-refresh,.cig-clear{background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;padding:8px 12px;cursor:pointer}.cig-close:hover,.cig-refresh:hover,.cig-clear:hover{background:#3a3a3a}.cig-close:disabled,.cig-refresh:disabled,.cig-clear:disabled{opacity:.45;cursor:default}
+.cig-body{flex:1 1 auto;min-height:0;overflow:auto;padding:16px;contain:strict}.cig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;align-items:start}.cig-card{position:relative;background:#222;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;transition:border-color .12s,background .12s,transform .08s;content-visibility:auto;contain-intrinsic-size:180px 205px}.cig-card:hover{background:#2b2b2b;transform:translateY(-1px)}.cig-card.selected{border-color:#6ba7ff;background:#26364b}.cig-thumb-wrap{width:100%;aspect-ratio:1/1;background:#111;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}.cig-thumb{width:100%;height:100%;object-fit:contain;display:block}.cig-thumb:not([src]){visibility:hidden}.cig-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px}.cig-card.loaded .cig-placeholder{display:none}.cig-card.error .cig-placeholder{color:#a77}.cig-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}.cig-empty{padding:40px;text-align:center;color:#aaa;font-size:15px}.cig-footer{display:flex;align-items:center;gap:10px;flex:0 0 auto;border-top:1px solid #383838;padding:12px 16px;background:#1d1d1d}.cig-footer-top{display:flex;align-items:center;gap:10px}.cig-folder-label{white-space:nowrap;font-size:13px;color:#bbb}.cig-folder{flex:1 1 360px;min-width:280px;background:#292929;color:#eee;border:1px solid #4b4b4b;border-radius:7px;padding:9px 10px;font-size:14px}.cig-count,.cig-cache{font-size:12px;color:#aaa;white-space:nowrap}.cig-run{display:inline-flex;align-items:center;justify-content:center;width:auto;height:40px;margin:0;border:1px solid #5a5a5a;border-radius:7px;background:#303030;color:#fff;padding:0 14px;font-size:14px;font-weight:400;line-height:38px;cursor:pointer}.cig-run:hover{background:#3a3a3a}.cig-run:disabled{opacity:.45;cursor:default}
+@media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
+`;
+    document.head.appendChild(style);
+}
+
+function normalizePath(value) {
+    if (typeof value !== "string") return "";
+    return value.replace(/\\/g, "/").replace(/\s*\[(input|output|temp)\]\s*$/i, "").replace(/^\/+|\/+$/g, "");
+}
+function splitPath(value) { const clean = normalizePath(value); const i = clean.lastIndexOf("/"); return i < 0 ? { folder:"", filename:clean } : { folder:clean.slice(0,i), filename:clean.slice(i+1) }; }
+function joinPath(folder, filename) { const f = normalizePath(folder); return f ? `${f}/${filename}` : filename; }
+function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); return api.apiURL(`/image-gallery/thumb?${p.toString()}`); }
+async function fetchJson(path, options) { const r = await api.fetchApi(path, options); if (!r.ok) { let d=`${r.status}`; try{d=(await r.json()).error||d;}catch(_){} throw new Error(d); } return await r.json(); }
+function getImageWidget(node) { return node.widgets?.find(w => w.name === "image") || null; }
+function setWidgetValue(node, relativePath) { const w=getImageWidget(node); if(!w)return; if(Array.isArray(w.options?.values)&&!w.options.values.includes(relativePath)){w.options.values.push(relativePath);w.options.values.sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"}));} w.value=relativePath; w.callback?.(relativePath); node.graph?.setDirtyCanvas?.(true,true); }
+function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=["Б","КБ","МБ","ГБ"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
+
+function makeThumbLoader(root) {
+    let epoch=0, active=0, queue=[], disposed=false;
+    const controllers=new Set();
+    const observer=new IntersectionObserver(entries=>{ for(const e of entries){ const c=e.target; c.__cigVisible=e.isIntersecting; if(e.isIntersecting){ enqueue(c); } else if(c.__cigController){ c.__cigController.abort(); } } },{root,rootMargin:OBSERVER_MARGIN,threshold:0.01});
+    function enqueue(card){ if(disposed||card.__cigLoaded||card.__cigQueued||!card.__cigVisible)return; card.__cigQueued=true; card.__cigEpoch=epoch; queue.push(card); pump(); }
+    function pump(){ while(!disposed&&active<MAX_PARALLEL_THUMBS&&queue.length){ const card=queue.shift(); card.__cigQueued=false; if(!card.isConnected||!card.__cigVisible||card.__cigLoaded||card.__cigEpoch!==epoch)continue; load(card,epoch); } }
+    async function load(card,myEpoch){ active++; const controller=new AbortController(); card.__cigController=controller; controllers.add(controller); const img=card.querySelector(".cig-thumb"); try{ const r=await fetch(card.__cigUrl,{signal:controller.signal,cache:"force-cache"}); if(!r.ok)throw new Error(String(r.status)); const blob=await r.blob(); if(disposed||myEpoch!==epoch||!card.isConnected)return; const url=URL.createObjectURL(blob); card.__cigObjectUrl=url; img.onload=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.__cigLoaded=true; card.classList.add("loaded"); }; img.onerror=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.classList.add("error"); card.querySelector(".cig-placeholder").textContent="ошибка"; }; img.src=url; } catch(err){ if(err?.name!=="AbortError"&&card.isConnected){ card.classList.add("error"); card.querySelector(".cig-placeholder").textContent="ошибка"; } } finally{ controllers.delete(controller); card.__cigController=null; active=Math.max(0,active-1); pump(); } }
+    function observe(card){ observer.observe(card); }
+    function reset(){ epoch++; queue=[]; for(const c of controllers)c.abort(); controllers.clear(); observer.disconnect(); root.querySelectorAll?.(".cig-card").forEach(card=>{ if(card.__cigObjectUrl){URL.revokeObjectURL(card.__cigObjectUrl);card.__cigObjectUrl=null;} }); }
+    function dispose(){ disposed=true; reset(); }
+    return {observe,reset,dispose};
+}
+
+async function openGallery(node){
+    injectStyles();
+    document.querySelector(".cig-overlay")?.remove();
+    const widget = getImageWidget(node);
+    if(!widget) return;
+
+    const current = splitPath(String(widget.value ?? ""));
+    let activeFolder = normalizePath(node.__cigFolder ?? current.folder);
+    let images = [], filterText = "", loadToken = 0;
+    const selected = new Set();
+
+    const overlay = document.createElement("div");
+    overlay.className = "cig-overlay";
+    overlay.innerHTML = `<div class="cig-panel" role="dialog" aria-modal="true">
+        <div class="cig-header">
+            <div class="cig-title">Превью изображений</div>
+            <input class="cig-search" type="search" placeholder="Поиск по имени файла…">
+            <button class="cig-refresh" type="button">↻ Обновить</button>
+            <button class="cig-close" type="button">✕</button>
+        </div>
+        <div class="cig-body"><div class="cig-grid"></div></div>
+        <div class="cig-footer">
+            <span class="cig-folder-label">Папка:</span>
+            <select class="cig-folder"></select>
+            <span class="cig-count"></span>
+            <span class="cig-cache"></span>
+            <button class="cig-clear" type="button">Очистить кэш</button>
+            <button class="cig-run cig-clear" type="button">▶ СТАРТ (0)</button>
+        </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const panel = overlay.querySelector(".cig-panel");
+    const grid = overlay.querySelector(".cig-grid");
+    const body = overlay.querySelector(".cig-body");
+    const folderSelect = overlay.querySelector(".cig-folder");
+    const search = overlay.querySelector(".cig-search");
+    const count = overlay.querySelector(".cig-count");
+    const cacheInfo = overlay.querySelector(".cig-cache");
+    const closeButton = overlay.querySelector(".cig-close");
+    const refreshButton = overlay.querySelector(".cig-refresh");
+    const clearButton = overlay.querySelector(".cig-clear");
+    const runButton = overlay.querySelector(".cig-run");
+    let thumbLoader = makeThumbLoader(body);
+
+    const marquee = document.createElement("div");
+    Object.assign(marquee.style,{
+        position:"fixed",
+        display:"none",
+        pointerEvents:"none",
+        zIndex:"100002",
+        border:"1px solid #6ba7ff",
+        background:"rgba(107,167,255,.18)",
+        borderRadius:"3px",
+        boxSizing:"border-box"
+    });
+    document.body.appendChild(marquee);
+
+    const cleanup = ()=>{
+        document.removeEventListener("keydown", onKey);
+        thumbLoader?.dispose();
+        marquee.remove();
+    };
+    const close = ()=>{ cleanup(); overlay.remove(); };
+    closeButton.addEventListener("click", close);
+    overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
+    panel.addEventListener("mousedown", e=>e.stopPropagation());
+    const onKey = e=>{ if(e.key === "Escape") close(); };
+    document.addEventListener("keydown", onKey);
+
+    function rebuildThumbLoader(){
+        thumbLoader.dispose();
+        thumbLoader = makeThumbLoader(body);
+    }
+
+    function updateRunState(){
+        const n = selected.size;
+        runButton.textContent = `▶ СТАРТ (${n})`;
+        runButton.disabled = n === 0;
+        runButton.style.opacity = n ? "1" : ".5";
+    }
+
+    function updateCount(filteredLength = images.length){
+        count.textContent = `${filteredLength} / ${images.length} · выбрано ${selected.size}`;
+        updateRunState();
+    }
+
+    async function updateCacheStats(){
+        try{
+            const s = await fetchJson("/image-gallery/cache/stats");
+            cacheInfo.textContent = `Кэш: ${s.count} · ${humanBytes(s.bytes)} / ${humanBytes(s.limit_bytes)}`;
+        }catch(_){
+            cacheInfo.textContent = "";
+        }
+    }
+
+    function syncCardSelection(){
+        grid.querySelectorAll(".cig-card").forEach(card=>{
+            card.classList.toggle("selected", selected.has(card.__cigRelative));
+        });
+        const needle = filterText.trim().toLocaleLowerCase();
+        const filteredLength = needle ? images.filter(n=>n.toLocaleLowerCase().includes(needle)).length : images.length;
+        updateCount(filteredLength);
+    }
+
+    function render({scrollToCurrent=false} = {}){
+        const needle = filterText.trim().toLocaleLowerCase();
+        const filtered = needle ? images.filter(n=>n.toLocaleLowerCase().includes(needle)) : images;
+        rebuildThumbLoader();
+        grid.replaceChildren();
+        updateCount(filtered.length);
+
+        if(!filtered.length){
+            const e = document.createElement("div");
+            e.className = "cig-empty";
+            e.textContent = images.length ? "По этому поиску ничего не найдено" : "В папке нет изображений";
+            grid.appendChild(e);
+            return;
+        }
+
+        const currentValue = normalizePath(String(widget.value ?? ""));
+        const frag = document.createDocumentFragment();
+        let currentCard = null;
+
+        for(const filename of filtered){
+            const relative = joinPath(activeFolder, filename);
+            const card = document.createElement("div");
+            card.className = "cig-card" + (selected.has(relative) ? " selected" : "");
+            card.title = relative;
+            card.__cigRelative = relative;
+            card.__cigUrl = thumbnailUrl(activeFolder, filename);
+
+            const wrap = document.createElement("div");
+            wrap.className = "cig-thumb-wrap";
+            const ph = document.createElement("div");
+            ph.className = "cig-placeholder";
+            ph.textContent = "…";
+            const img = document.createElement("img");
+            img.className = "cig-thumb";
+            img.decoding = "async";
+            img.alt = filename;
+            wrap.append(ph, img);
+
+            const name = document.createElement("div");
+            name.className = "cig-name";
+            name.textContent = filename;
+            card.append(wrap, name);
+
+            card.addEventListener("click", e=>{
+                e.preventDefault();
+                e.stopPropagation();
+                if(selected.has(relative)) selected.delete(relative);
+                else selected.add(relative);
+                card.classList.toggle("selected", selected.has(relative));
+                updateCount(filtered.length);
+            });
+
+            card.addEventListener("dblclick", e=>{
+                e.preventDefault();
+                e.stopPropagation();
+                setWidgetValue(node, relative);
+                node.__cigFolder = activeFolder;
+                close();
+            });
+
+            if(relative === currentValue) currentCard = card;
+            frag.appendChild(card);
+        }
+
+        grid.appendChild(frag);
+        grid.querySelectorAll(".cig-card").forEach(c=>thumbLoader.observe(c));
+
+        if(scrollToCurrent && currentCard){
+            requestAnimationFrame(()=>currentCard.scrollIntoView({block:"center", inline:"nearest"}));
+        }
+    }
+
+    async function loadFolder(folder,{preserveScroll=false,scrollToCurrent=false} = {}){
+        const token = ++loadToken;
+        const oldScroll = body.scrollTop;
+        activeFolder = normalizePath(folder);
+        node.__cigFolder = activeFolder;
+        rebuildThumbLoader();
+        grid.innerHTML = '<div class="cig-empty">Загрузка списка…</div>';
+        count.textContent = "";
+
+        const data = await fetchJson(`/image-gallery/list?folder=${encodeURIComponent(activeFolder)}`);
+        if(token !== loadToken || !overlay.isConnected) return;
+
+        images = Array.isArray(data.images) ? data.images : [];
+        render({scrollToCurrent});
+
+        if(preserveScroll) body.scrollTop = oldScroll;
+        else if(!scrollToCurrent) body.scrollTop = 0;
+
+        updateCacheStats();
+    }
+
+    async function fillFolders(preferred){
+        const data = await fetchJson("/image-gallery/folders");
+        const folders = Array.isArray(data.folders) ? data.folders : [""];
+        const chosen = folders.includes(preferred) ? preferred : "";
+        folderSelect.replaceChildren();
+
+        const frag = document.createDocumentFragment();
+        for(const folder of folders){
+            const o = document.createElement("option");
+            o.value = folder;
+            o.textContent = folder || ROOT_LABEL;
+            o.selected = folder === chosen;
+            frag.appendChild(o);
+        }
+        folderSelect.appendChild(frag);
+        return chosen;
+    }
+
+    body.addEventListener("mousedown", e=>{
+        if(e.button !== 0) return;
+        if(e.target.closest?.(".cig-card")) return;
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const keepExisting = e.ctrlKey || e.shiftKey;
+        const base = keepExisting ? new Set(selected) : new Set();
+        let moved = false;
+
+        if(!keepExisting){
+            selected.clear();
+            syncCardSelection();
+        }
+
+        marquee.style.display = "block";
+        marquee.style.left = `${startX}px`;
+        marquee.style.top = `${startY}px`;
+        marquee.style.width = "0px";
+        marquee.style.height = "0px";
+
+        const move = ev=>{
+            const x1 = Math.min(startX, ev.clientX);
+            const y1 = Math.min(startY, ev.clientY);
+            const x2 = Math.max(startX, ev.clientX);
+            const y2 = Math.max(startY, ev.clientY);
+            if(Math.abs(ev.clientX-startX) > 3 || Math.abs(ev.clientY-startY) > 3) moved = true;
+
+            marquee.style.left = `${x1}px`;
+            marquee.style.top = `${y1}px`;
+            marquee.style.width = `${x2-x1}px`;
+            marquee.style.height = `${y2-y1}px`;
+
+            selected.clear();
+            for(const v of base) selected.add(v);
+
+            grid.querySelectorAll(".cig-card").forEach(card=>{
+                const r = card.getBoundingClientRect();
+                const hit = r.right >= x1 && r.left <= x2 && r.bottom >= y1 && r.top <= y2;
+                if(hit) selected.add(card.__cigRelative);
+            });
+            syncCardSelection();
+        };
+
+        const up = ()=>{
+            document.removeEventListener("mousemove", move);
+            document.removeEventListener("mouseup", up);
+            marquee.style.display = "none";
+            if(!moved && !keepExisting){
+                selected.clear();
+                syncCardSelection();
+            }
+        };
+
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+        e.preventDefault();
+    });
+
+    runButton.addEventListener("click", async()=>{
+        const list = [...selected];
+        if(!list.length) return;
+
+        runButton.disabled = true;
+        refreshButton.disabled = true;
+        clearButton.disabled = true;
+        folderSelect.disabled = true;
+        search.disabled = true;
+
+        try{
+            for(let i=0;i<list.length;i++){
+                const relative = list[i];
+                setWidgetValue(node, relative);
+                node.__cigFolder = splitPath(relative).folder;
+                runButton.textContent = `▶ ${i+1}/${list.length}`;
+                await new Promise(r=>requestAnimationFrame(r));
+                await app.queuePrompt(0,1);
+            }
+            close();
+        }catch(error){
+            console.error("[ImageGallery] batch queue:", error);
+            runButton.textContent = "Ошибка";
+        }finally{
+            if(overlay.isConnected){
+                refreshButton.disabled = false;
+                clearButton.disabled = false;
+                folderSelect.disabled = false;
+                search.disabled = false;
+                updateRunState();
+            }
+        }
+    });
+
+    try{
+        activeFolder = await fillFolders(activeFolder);
+        await loadFolder(activeFolder,{scrollToCurrent:true});
+    }catch(error){
+        grid.innerHTML = `<div class="cig-empty">Ошибка: ${String(error?.message ?? error)}</div>`;
+    }
+
+    folderSelect.addEventListener("change", async()=>{
+        filterText = "";
+        search.value = "";
+        refreshButton.disabled = true;
+        try{
+            await loadFolder(folderSelect.value);
+        }catch(error){
+            grid.innerHTML = `<div class="cig-empty">Ошибка: ${String(error?.message ?? error)}</div>`;
+        }finally{
+            refreshButton.disabled = false;
+            updateRunState();
+        }
+    });
+
+    let searchTimer = null;
+    search.addEventListener("input", ()=>{
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(()=>{
+            filterText = search.value;
+            body.scrollTop = 0;
+            render();
+        },100);
+    });
+
+    refreshButton.addEventListener("click", async()=>{
+        refreshButton.disabled = true;
+        try{
+            const chosen = await fillFolders(activeFolder);
+            await loadFolder(chosen,{preserveScroll:true});
+        }catch(error){
+            grid.innerHTML = `<div class="cig-empty">Ошибка: ${String(error?.message ?? error)}</div>`;
+        }finally{
+            refreshButton.disabled = false;
+            updateRunState();
+        }
+    });
+
+    clearButton.addEventListener("click", async()=>{
+        clearButton.disabled = true;
+        cacheInfo.textContent = "Очистка…";
+        try{
+            await fetchJson("/image-gallery/cache/clear",{method:"POST"});
+            rebuildThumbLoader();
+            grid.querySelectorAll(".cig-card").forEach(c=>{
+                c.__cigLoaded = false;
+                c.classList.remove("loaded","error");
+                const img = c.querySelector(".cig-thumb");
+                if(img) img.removeAttribute("src");
+                const ph = c.querySelector(".cig-placeholder");
+                if(ph) ph.textContent = "…";
+                thumbLoader.observe(c);
+            });
+            await updateCacheStats();
+        }catch(error){
+            cacheInfo.textContent = `Ошибка: ${String(error?.message ?? error)}`;
+        }finally{
+            clearButton.disabled = false;
+            updateRunState();
+        }
+    });
+
+    updateRunState();
+}
+function hookNodePreview(node){const attach=()=>{const preview=node.widgets?.find(w=>w?.constructor?.name==="ImagePreviewWidget"||(w?.type==="custom"&&w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"&&typeof w?.onPointerDown==="function"));if(!preview||preview.__cigGalleryHooked)return;preview.__cigGalleryHooked=true;preview.onClick=()=>{openGallery(node);return true;};};attach();requestAnimationFrame(attach);setTimeout(attach,150);setTimeout(attach,600);setTimeout(attach,1500);}
+
+
+function installPreviewClickBridge() {
+    if (window.__cigPreviewClickBridgeInstalled) return;
+    window.__cigPreviewClickBridgeInstalled = true;
+    document.addEventListener("click", (e) => {
+        const target = e.target instanceof Element ? e.target : null;
+        if (!target) return;
+        const preview = target.closest(".image-preview");
+        if (!preview) return;
+        if (target.closest(".actions,button,a,input,select,textarea")) return;
+        const nodeEl = preview.closest("[data-node-id]");
+        const rawId = nodeEl?.dataset?.nodeId;
+        if (!rawId) return;
+        let node = app.graph?.getNodeById?.(rawId);
+        if (!node && /^\d+$/.test(rawId)) node = app.graph?.getNodeById?.(Number(rawId));
+        if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openGallery(node);
+    }, true);
+}
+
+
+
+function hookCanvasPreviewClickV2(node){
+    if(node.__cigCanvasPreviewHookedV2)return;
+    node.__cigCanvasPreviewHookedV2=true;
+    const original=node.onMouseDown;
+    node.onMouseDown=function(event,pos,canvas){
+        try{
+            if(pos!=null&&pos.length>=2){
+                const x=Number(pos[0]),y=Number(pos[1]),w=Number(this.size?.[0]??0),h=Number(this.size?.[1]??0);
+                if(Number.isFinite(x)&&Number.isFinite(y)&&x>=0&&y>=0&&x<=w&&y<=h){
+                    let previewTop=0,foundWidget=false;
+                    for(const wd of (this.widgets??[])){
+                        if(!wd||wd.hidden||wd.computedDisabled||wd.name==="$$canvas-image-preview"||wd.type==="IMAGE_PREVIEW")continue;
+                        const wy=Number(wd.last_y??wd.y);
+                        if(!Number.isFinite(wy))continue;
+                        foundWidget=true;
+                        let wh=20;
+                        try{
+                            const cs=wd.computeSize?.(w);
+                            if(cs&&cs.length>=2&&Number.isFinite(Number(cs[1])))wh=Number(cs[1]);
+                        }catch(_){}
+                        previewTop=Math.max(previewTop,wy+Math.max(18,wh));
+                    }
+                    if(!foundWidget)previewTop=80;
+                    previewTop+=4;
+                    if(y>=previewTop&&(this.imgs?.length||this.images?.length||getImageWidget(this)?.value)){
+                        event?.preventDefault?.();
+                        event?.stopPropagation?.();
+                        queueMicrotask(()=>openGallery(this));
+                        return true;
+                    }
+                }
+            }
+        }catch(err){console.warn("[ImageGallery] preview click hook:",err);}
+        return original?.call(this,event,pos,canvas);
+    };
+}
+function installGalleryPreviewWidgetHook(node){
+    if(node.__cigPreviewWidgetWatcher)return;
+    node.__cigPreviewWidgetWatcher=true;
+    const patch=(w)=>{
+        if(!w||w.__cigGalleryPatched)return w;
+        const isPreview=w.name==="$$canvas-image-preview"||(w.options?.canvasOnly===true&&typeof w.drawWidget==="function"&&typeof w.onPointerDown==="function");
+        if(!isPreview)return w;
+        w.__cigGalleryPatched=true;
+        const originalPointerDown=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
+        w.onPointerDown=function(pointer,nodeArg,canvas){
+            const button=pointer?.eDown?.button;
+            if(button!=null&&button!==0)return originalPointerDown?.(pointer,nodeArg,canvas)??false;
+            if(pointer){
+                pointer.onDragStart=undefined;
+                pointer.onDragEnd=undefined;
+                pointer.finally=undefined;
+            }
+            queueMicrotask(()=>openGallery(node));
+            return true;
+        };
+        w.onClick=function(){};
+        return w;
+    };
+    node.widgets?.forEach(patch);
+    const originalAddCustomWidget=typeof node.addCustomWidget==="function"?node.addCustomWidget.bind(node):null;
+    if(originalAddCustomWidget){
+        node.addCustomWidget=function(widget){
+            const result=originalAddCustomWidget(widget);
+            patch(result??widget);
+            return result;
+        };
+    }
+    const scan=()=>node.widgets?.forEach(patch);
+    requestAnimationFrame(scan);
+    setTimeout(scan,50);
+    setTimeout(scan,250);
+    setTimeout(scan,1000);
+}
+
+
+function installGalleryPreviewNavigation(node){
+    if(node.__cigPreviewNavWatcher)return;
+    node.__cigPreviewNavWatcher=true;
+
+    const inside=(p,r)=>!!r&&p[0]>=r.x&&p[0]<=r.x+r.w&&p[1]>=r.y&&p[1]<=r.y+r.h;
+
+    const folderValues=()=>{
+        const w=getImageWidget(node);
+        if(!w)return [];
+        const current=normalizePath(String(w.value??""));
+        const folder=splitPath(current).folder;
+        const raw=Array.isArray(w.options?.values)?w.options.values:[];
+        const seen=new Set(), out=[];
+        for(const v of raw){
+            const n=normalizePath(String(v??""));
+            if(!n||splitPath(n).folder!==folder||seen.has(n))continue;
+            seen.add(n); out.push(n);
+        }
+        return out;
+    };
+
+    const navigate=(dir)=>{
+        const w=getImageWidget(node);
+        if(!w)return;
+        const current=normalizePath(String(w.value??""));
+        const values=folderValues();
+        if(values.length<2)return;
+        let i=values.indexOf(current);
+        if(i<0)i=0;
+        i=(i+dir+values.length)%values.length;
+        const next=values[i];
+        node.__cigFolder=splitPath(next).folder;
+        setWidgetValue(node,next);
+    };
+
+    const patch=(w)=>{
+        if(!w||w.__cigPrecisePreviewPatched)return w;
+        const isPreview=w.name==="$$canvas-image-preview"||(w.options?.canvasOnly===true&&typeof w.drawWidget==="function"&&typeof w.onPointerDown==="function");
+        if(!isPreview)return w;
+        w.__cigPrecisePreviewPatched=true;
+
+        const originalDraw=typeof w.drawWidget==="function"?w.drawWidget.bind(w):null;
+        const originalPointerDown=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
+
+        w.drawWidget=function(ctx,options){
+            originalDraw?.(ctx,options);
+            try{
+                const imgs=options?.previewImages??node.imgs??[];
+                if(!imgs.length){this.__cigImageRect=null;this.__cigPrevRect=null;this.__cigNextRect=null;return;}
+                const index=node.imageIndex??0;
+                const img=imgs[index]??imgs[0];
+                const iw=Number(img?.naturalWidth||img?.width||0), ih=Number(img?.naturalHeight||img?.height||0);
+                if(!(iw>0&&ih>0)){this.__cigImageRect=null;return;}
+                const dw=Number(options?.width??node.size?.[0]??0);
+                const dh=Math.max(1,Number(this.computedHeight??220));
+                const sideReserve=Math.min(110,Math.max(72,dw*0.18)),previewWidth=Math.max(80,dw-sideReserve*2-16);const scale=Math.min(previewWidth/iw,dh/ih,1);
+                const rw=iw*scale, rh=ih*scale;
+                const rx=(dw-rw)/2, ry=Number(this.y??0)+(dh-rh)/2;
+                this.__cigImageRect={x:rx,y:ry,w:rw,h:rh};
+
+                const values=folderValues();
+                if(values.length<2){this.__cigPrevRect=null;this.__cigNextRect=null;return;}
+
+                const margin=6,gap=8,buttonY=Number(this.y??0)+margin,buttonH=Math.max(20,dh-margin*2);
+                const leftX=margin,leftW=Math.max(0,rx-gap-leftX);
+                const rightX=rx+rw+gap,rightW=Math.max(0,dw-margin-rightX);
+                this.__cigPrevRect=leftW>=18?{x:leftX,y:buttonY,w:leftW,h:buttonH}:null;
+                this.__cigNextRect=rightW>=18?{x:rightX,y:buttonY,w:rightW,h:buttonH}:null;
+
+                const mouse=app.canvas?.graph_mouse;
+                const local=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:[-9999,-9999];
+                const drawBtn=(r,text)=>{
+                    if(!r)return;
+                    const hover=inside(local,r);
+                    ctx.save();
+                    ctx.fillStyle=hover?"rgba(9,25,42,.98)":"rgba(28,28,28,.76)";
+                    ctx.strokeStyle=hover?"rgba(120,180,255,1)":"rgba(255,255,255,.35)";
+                    ctx.lineWidth=1.5;
+                    ctx.beginPath();
+                    ctx.roundRect(r.x,r.y,r.w,r.h,9);
+                    ctx.fill(); ctx.stroke();
+                    ctx.fillStyle="#fff";
+                    ctx.font=`700 ${Math.max(30,Math.min(72,r.h*0.34,r.w*0.62))}px Arial,sans-serif`;
+                    ctx.textAlign="center"; ctx.textBaseline="middle";
+                    ctx.fillText(text,r.x+r.w/2,r.y+r.h/2-1);
+                    ctx.restore();
+                    if(hover&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
+                };
+                drawBtn(this.__cigPrevRect,"‹");
+                drawBtn(this.__cigNextRect,"›");
+                if(inside(local,this.__cigImageRect)&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
+            }catch(err){console.warn("[ImageGallery] preview draw:",err);}
+        };
+
+        w.onPointerDown=function(pointer,nodeArg,canvas){
+            try{
+                const mouse=app.canvas?.graph_mouse;
+                const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:null;
+                const button=pointer?.eDown?.button;
+                if(p&&(button==null||button===0)){
+                    if(inside(p,this.__cigPrevRect)){navigate(-1);return true;}
+                    if(inside(p,this.__cigNextRect)){navigate(1);return true;}
+                    if(inside(p,this.__cigImageRect)){queueMicrotask(()=>openGallery(node));return true;}
+                }
+            }catch(err){console.warn("[ImageGallery] preview pointer:",err);}
+            return originalPointerDown?.(pointer,nodeArg,canvas)??true;
+        };
+        return w;
+    };
+
+    const scan=()=>node.widgets?.forEach(patch);
+    scan();
+
+    const originalAddCustomWidget=typeof node.addCustomWidget==="function"?node.addCustomWidget.bind(node):null;
+    if(originalAddCustomWidget&&!node.__cigAddWidgetWrapped){
+        node.__cigAddWidgetWrapped=true;
+        node.addCustomWidget=function(widget){
+            const result=originalAddCustomWidget(widget);
+            patch(result??widget);
+            return result;
+        };
+    }
+    requestAnimationFrame(scan);
+    setTimeout(scan,50);
+    setTimeout(scan,250);
+    setTimeout(scan,1000);
+}
+function installGalleryStartButton(node){
+    if(node.__cigStartButtonSetup)return;
+    node.__cigStartButtonSetup=true;
+    const ensure=()=>{
+        if(!node?.widgets)return;
+        const previewIndex=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
+        if(previewIndex<0)return;
+        let button=node.widgets.find(w=>w?.name==="▶ СТАРТ");
+        if(!button){
+            button=node.addWidget("button","▶ СТАРТ",null,()=>{app.queuePrompt(0,1);},{serialize:false});
+            button.serialize=false;
+            button.computeSize=(width)=>[width??node.size?.[0]??320,64];
+            button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});button.__cigTallDraw=true;button.drawWidget=function(ctx,options){const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("▶  СТАРТ",width/2,y+h/2);ctx.restore();};
+            if(!node.__cigStartButtonHeightAdded){
+                node.__cigStartButtonHeightAdded=true;
+                const sz=node.size??[320,300];
+                node.setSize?.([sz[0],sz[1]+70]);
+            }
+        }
+        const pi=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
+        const bi=node.widgets.indexOf(button);
+        if(pi>=0&&bi>=0&&bi!==pi+1){
+            node.widgets.splice(bi,1);
+            const pi2=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
+            node.widgets.splice(pi2+1,0,button);
+        }
+        node.graph?.setDirtyCanvas?.(true,true);
+    };
+    ensure();
+    requestAnimationFrame(ensure);
+    setTimeout(ensure,50);
+    setTimeout(ensure,250);
+    setTimeout(ensure,1000);
+}
+
+function hideGalleryTopWidgets(node){const apply=()=>{if(!node?.widgets)return;for(const w of node.widgets){if(!w||w.name==="$$canvas-image-preview"||w.name==="▶ СТАРТ")continue;w.hidden=true;w.computeSize=()=>[0,-4];w.computeLayoutSize=()=>({minHeight:0,maxHeight:0,minWidth:0,maxWidth:0});w.drawWidget=()=>{};}node.graph?.setDirtyCanvas?.(true,true);};apply();requestAnimationFrame(apply);setTimeout(apply,100);setTimeout(apply,500);}
+
+function installGalleryDomFixV2(){
+    if(window.__cigDomFixV2)return;
+    window.__cigDomFixV2=true;
+    if(!document.getElementById("cig-dom-fix-v2")){
+        const st=document.createElement("style");
+        st.id="cig-dom-fix-v2";
+        st.textContent='.cig-footer{flex-wrap:nowrap!important;align-items:center!important}.cig-footer .cig-run{width:auto!important;min-width:0!important;height:auto!important;min-height:0!important;flex:0 0 auto!important;margin:0!important;padding:8px 12px!important;font-size:14px!important;font-weight:400!important;line-height:normal!important;border-radius:7px!important}.cig-footer>div[style*="flex-basis"]{display:none!important}';
+        document.head.appendChild(st);
+    }
+    const fix=()=>{
+        document.querySelectorAll(".cig-overlay").forEach(o=>{
+            const f=o.querySelector(".cig-footer"),c=o.querySelector(".cig-clear"),r=o.querySelector(".cig-run");
+            if(!f||!r)return;
+            if(c&&r.previousElementSibling!==c)c.insertAdjacentElement("afterend",r);
+            for(const d of [...f.children])if(d.tagName==="DIV"&&(d.getAttribute("style")||"").includes("flex-basis"))d.remove();
+            f.style.setProperty("flex-wrap","nowrap","important");
+            r.style.setProperty("width","auto","important");
+            r.style.setProperty("min-width","0","important");
+            r.style.setProperty("height","auto","important");
+            r.style.setProperty("min-height","0","important");
+            r.style.setProperty("flex","0 0 auto","important");
+            r.style.setProperty("margin","0","important");
+            r.style.setProperty("padding","8px 12px","important");
+            r.style.setProperty("font-size","14px","important");
+            r.style.setProperty("font-weight","400","important");
+        });
+    };
+    new MutationObserver(fix).observe(document.body,{childList:true,subtree:true});
+    fix();
+}
+
+function installGalleryPreviewNavigationV2(node){
+    if(node.__cigPreviewNavV2)return;
+    node.__cigPreviewNavV2=true;
+    const inside=(p,r)=>!!p&&!!r&&p[0]>=r.x&&p[0]<=r.x+r.w&&p[1]>=r.y&&p[1]<=r.y+r.h;
+    const values=()=>{
+        const w=getImageWidget(node); if(!w)return [];
+        const cur=normalizePath(String(w.value??"")),folder=splitPath(cur).folder,raw=Array.isArray(w.options?.values)?w.options.values:[];
+        const seen=new Set(),out=[];
+        for(const v of raw){const n=normalizePath(String(v??""));if(n&&splitPath(n).folder===folder&&!seen.has(n)){seen.add(n);out.push(n);}}
+        return out;
+    };
+    const nav=dir=>{
+        const w=getImageWidget(node),a=values(); if(!w||a.length<2)return;
+        const cur=normalizePath(String(w.value??"")); let i=a.indexOf(cur); if(i<0)i=0;
+        const n=a[(i+dir+a.length)%a.length]; node.__cigFolder=splitPath(n).folder; setWidgetValue(node,n);
+    };
+    const patch=()=>{
+        const w=node.widgets?.find(x=>x?.name==="$$canvas-image-preview"||(x?.options?.canvasOnly===true&&typeof x?.drawWidget==="function"&&typeof x?.onPointerDown==="function"));
+        if(!w||w.__cigPreviewNavV2Patched)return !!w;
+        w.__cigPreviewNavV2Patched=true;
+        const draw=typeof w.drawWidget==="function"?w.drawWidget.bind(w):null;
+        const down=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
+        w.drawWidget=function(ctx,o){
+            draw?.(ctx,o);
+            try{
+                const imgs=o?.previewImages??node.imgs??[],img=imgs[node.imageIndex??0]??imgs[0];
+                const iw=Number(img?.naturalWidth||img?.width||0),ih=Number(img?.naturalHeight||img?.height||0);
+                if(!(iw>0&&ih>0))return;
+                const dw=Number(o?.width??node.size?.[0]??320),y=Number(this.y??0),h=Math.max(1,Number(this.computedHeight??220));
+                const side=Math.min(120,Math.max(72,dw*.18)),cw=Math.max(80,dw-side*2);
+                const sc=Math.min(cw/iw,h/ih,1),rw=iw*sc,rh=ih*sc,rx=side+(cw-rw)/2,ry=y+(h-rh)/2;
+                this.__cigImageRect={x:rx,y:ry,w:rw,h:rh};
+                this.__cigPrevRect={x:0,y:y,w:side,h:h};
+                this.__cigNextRect={x:dw-side,y:y,w:side,h:h};
+                ctx.save();
+                ctx.fillStyle="#111";ctx.fillRect(0,y,dw,h);
+                ctx.drawImage(img,rx,ry,rw,rh);
+                const m=app.canvas?.graph_mouse,p=m?[m[0]-node.pos[0],m[1]-node.pos[1]]:[-9999,-9999];
+                const btn=(r,t)=>{
+                    const hov=inside(p,r);
+                    ctx.fillStyle=hov?"rgba(5,16,28,.98)":"rgba(24,24,24,.9)";
+                    ctx.strokeStyle=hov?"rgba(80,150,255,1)":"rgba(255,255,255,.28)";
+                    ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(r.x+4,r.y+4,r.w-8,r.h-8,12);ctx.fill();ctx.stroke();
+                    ctx.fillStyle="#fff";ctx.font=`700 ${Math.max(34,Math.min(64,r.w*.55,r.h*.38))}px Arial,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t,r.x+r.w/2,r.y+r.h/2-1);
+                    if(hov&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
+                };
+                if(values().length>1){btn(this.__cigPrevRect,"‹");btn(this.__cigNextRect,"›");}
+                if(inside(p,this.__cigImageRect)&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
+                ctx.restore();
+            }catch(e){console.warn("[ImageGallery] V2 draw",e);}
+        };
+        w.onPointerDown=function(pointer,nodeArg,canvas){
+            try{
+                const m=app.canvas?.graph_mouse,p=m?[m[0]-node.pos[0],m[1]-node.pos[1]]:null,b=pointer?.eDown?.button;
+                if(p&&(b==null||b===0)){
+                    if(inside(p,this.__cigPrevRect)){nav(-1);return true;}
+                    if(inside(p,this.__cigNextRect)){nav(1);return true;}
+                    if(inside(p,this.__cigImageRect)){queueMicrotask(()=>openGallery(node));return true;}
+                }
+            }catch(e){console.warn("[ImageGallery] V2 pointer",e);}
+            return down?.(pointer,nodeArg,canvas)??true;
+        };
+        return true;
+    };
+    if(!patch()){requestAnimationFrame(patch);setTimeout(patch,50);setTimeout(patch,250);setTimeout(patch,1000);}
+}
+
+
+
+
+function installGalleryPreviewNavigationV3(node){
+    if(node.__cigPreviewNavV3)return;
+    node.__cigPreviewNavV3=true;
+
+    const inside=(p,r)=>!!p&&!!r&&p[0]>=r.x&&p[0]<=r.x+r.w&&p[1]>=r.y&&p[1]<=r.y+r.h;
+
+    const folderValues=()=>{
+        const w=getImageWidget(node);
+        if(!w)return [];
+        const current=normalizePath(String(w.value??""));
+        const folder=splitPath(current).folder;
+        const raw=Array.isArray(w.options?.values)?w.options.values:[];
+        const seen=new Set(),out=[];
+        for(const v of raw){
+            const n=normalizePath(String(v??""));
+            if(!n||splitPath(n).folder!==folder||seen.has(n))continue;
+            seen.add(n);out.push(n);
+        }
+        return out;
+    };
+
+    const navigate=(dir)=>{
+        const w=getImageWidget(node);
+        const values=folderValues();
+        if(!w||values.length<2)return;
+        const current=normalizePath(String(w.value??""));
+        let i=values.indexOf(current);
+        if(i<0)i=0;
+        const next=values[(i+dir+values.length)%values.length];
+        node.__cigFolder=splitPath(next).folder;
+        setWidgetValue(node,next);
+    };
+
+    const patch=(w)=>{
+        if(!w||w.__cigNavV4Patched)return w;
+        const isPreview=w.name==="$$canvas-image-preview"||(w.options?.canvasOnly===true&&typeof w.drawWidget==="function"&&typeof w.onPointerDown==="function");
+        if(!isPreview)return w;
+        w.__cigNavV4Patched=true;
+
+        const stockPointer=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
+
+        w.drawWidget=function(ctx,options){
+            try{
+                const imgs=options?.previewImages??node.imgs??[];
+                const img=imgs[node.imageIndex??0]??imgs[0];
+                const dw=Number(options?.width??node.size?.[0]??0);
+                const y=Number(this.y??0);
+                const dh=Math.max(1,Number(this.computedHeight??220));
+
+                ctx.save();
+                ctx.fillStyle="#111";
+                ctx.fillRect(0,y,dw,dh);
+
+                if(!img){
+                    this.__cigImageRect=null;
+                    this.__cigPrevRect=null;
+                    this.__cigNextRect=null;
+                    ctx.restore();
+                    return;
+                }
+
+                const iw=Number(img?.naturalWidth||img?.width||0);
+                const ih=Number(img?.naturalHeight||img?.height||0);
+                if(!(iw>0&&ih>0)){
+                    this.__cigImageRect=null;
+                    this.__cigPrevRect=null;
+                    this.__cigNextRect=null;
+                    ctx.restore();
+                    return;
+                }
+
+                const outer=6;
+                const gap=8;
+                const landscape=(iw/ih)>=1.0;
+                const minSide=landscape?Math.min(90,Math.max(58,dw*0.12)):0;
+                const maxW=Math.max(40,dw-(outer*2)-(gap*2)-(minSide*2));
+                const maxH=Math.max(40,dh-8);
+                const scale=Math.min(maxW/iw,maxH/ih);
+                const rw=iw*scale;
+                const rh=ih*scale;
+                const rx=(dw-rw)/2;
+                const ry=y+(dh-rh)/2;
+
+                this.__cigImageRect={x:rx,y:ry,w:rw,h:rh};
+
+                ctx.drawImage(img,rx,ry,rw,rh);
+
+                const values=folderValues();
+                if(values.length>1){
+                    const leftW=Math.max(0,rx-gap-outer);
+                    const rightX=rx+rw+gap;
+                    const rightW=Math.max(0,dw-outer-rightX);
+                    this.__cigPrevRect=leftW>=30?{x:outer,y:y,w:leftW,h:dh}:null;
+                    this.__cigNextRect=rightW>=30?{x:rightX,y:y,w:rightW,h:dh}:null;
+
+                    const mouse=app.canvas?.graph_mouse;
+                    const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:[-9999,-9999];
+
+                    const drawBtn=(r,text)=>{
+                        if(!r)return;
+                        const hover=inside(p,r);
+                        ctx.fillStyle=hover?"rgba(6,18,32,.98)":"rgba(24,24,24,.88)";
+                        ctx.strokeStyle=hover?"rgba(70,145,255,1)":"rgba(255,255,255,.28)";
+                        ctx.lineWidth=1.5;
+                        ctx.beginPath();
+                        ctx.roundRect(r.x+3,r.y+3,Math.max(1,r.w-6),Math.max(1,r.h-6),12);
+                        ctx.fill();
+                        ctx.stroke();
+                        ctx.fillStyle="#fff";
+                        ctx.font=`700 ${Math.max(34,Math.min(72,r.w*.48,r.h*.28))}px Arial,sans-serif`;
+                        ctx.textAlign="center";
+                        ctx.textBaseline="middle";
+                        ctx.fillText(text,r.x+r.w/2,r.y+r.h/2-1);
+                        if(hover&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
+                    };
+
+                    drawBtn(this.__cigPrevRect,"‹");
+                    drawBtn(this.__cigNextRect,"›");
+                }else{
+                    this.__cigPrevRect=null;
+                    this.__cigNextRect=null;
+                }
+
+                const mouse=app.canvas?.graph_mouse;
+                const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:null;
+                if(inside(p,this.__cigImageRect)&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
+                ctx.restore();
+            }catch(e){
+                console.warn("[ImageGallery] V4 draw",e);
+                try{ctx.restore();}catch(_){}
+            }
+        };
+
+        w.onPointerDown=function(pointer,nodeArg,canvas){
+            try{
+                const mouse=app.canvas?.graph_mouse;
+                const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:null;
+                const button=pointer?.eDown?.button;
+                if(p&&(button==null||button===0)){
+                    if(inside(p,this.__cigPrevRect)){navigate(-1);return true;}
+                    if(inside(p,this.__cigNextRect)){navigate(1);return true;}
+                    if(inside(p,this.__cigImageRect)){setTimeout(()=>openGallery(node),0);return true;}
+                }
+            }catch(e){
+                console.warn("[ImageGallery] V4 pointer",e);
+            }
+            return stockPointer?.(pointer,nodeArg,canvas)??true;
+        };
+        return w;
+    };
+
+    const scan=()=>node.widgets?.forEach(patch);
+    scan();
+    requestAnimationFrame(scan);
+    setTimeout(scan,50);
+    setTimeout(scan,250);
+    setTimeout(scan,1000);
+}
+
+function installGalleryFooterFixV3(){
+    if(window.__cigFooterFixV3)return;
+    window.__cigFooterFixV3=true;
+
+    const apply=()=>{
+        document.querySelectorAll(".cig-footer").forEach(footer=>{
+            const folder=footer.querySelector(".cig-folder");
+            const clear=footer.querySelector(".cig-clear");
+            const run=footer.querySelector(".cig-run");
+            if(!run||!clear)return;
+
+            footer.querySelectorAll(":scope > div").forEach(el=>{
+                const st=el.getAttribute("style")||"";
+                if(/flex-basis\s*:\s*100%|width\s*:\s*100%/i.test(st))el.remove();
+            });
+
+            clear.insertAdjacentElement("afterend",run);
+
+            Object.assign(footer.style,{
+                flexWrap:"nowrap",
+                alignItems:"center"
+            });
+
+            if(folder){
+                folder.style.setProperty("flex","1 1 360px","important");
+                folder.style.setProperty("min-width","280px","important");
+                folder.style.setProperty("width","auto","important");
+                folder.style.setProperty("max-width","none","important");
+            }
+
+            for(const btn of [clear,run]){
+                btn.style.setProperty("flex","0 0 auto","important");
+                btn.style.setProperty("width","auto","important");
+                btn.style.setProperty("min-width","0","important");
+                btn.style.setProperty("height","40px","important");
+                btn.style.setProperty("min-height","40px","important");
+                btn.style.setProperty("max-height","40px","important");
+                btn.style.setProperty("padding","0 14px","important");
+                btn.style.setProperty("margin","0","important");
+                btn.style.setProperty("font-size","14px","important");
+                btn.style.setProperty("font-weight","400","important");
+                btn.style.setProperty("line-height","38px","important");
+                btn.style.setProperty("border-radius","7px","important");
+            }
+        });
+    };
+
+    new MutationObserver(apply).observe(document.body,{childList:true,subtree:true});
+    apply();
+}
+
+
+app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);hideGalleryTopWidgets(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
