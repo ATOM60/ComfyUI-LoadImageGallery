@@ -3,7 +3,14 @@ import { api } from "/scripts/api.js";
 
 const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
-const ROOT_LABEL = "📁 input (корень)";
+const CIG_LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
+const CIG_I18N = {
+    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", clearing:"Clearing…", error:"Error", thumbError:"error" },
+    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка" }
+};
+const cigT = CIG_I18N[CIG_LANG];
+
+const ROOT_LABEL = cigT.root;
 const MAX_PARALLEL_THUMBS = 6;
 const OBSERVER_MARGIN = "420px 0px";
 
@@ -31,7 +38,7 @@ function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set
 async function fetchJson(path, options) { const r = await api.fetchApi(path, options); if (!r.ok) { let d=`${r.status}`; try{d=(await r.json()).error||d;}catch(_){} throw new Error(d); } return await r.json(); }
 function getImageWidget(node) { return node.widgets?.find(w => w.name === "image") || null; }
 function setWidgetValue(node, relativePath) { const w=getImageWidget(node); if(!w)return; if(Array.isArray(w.options?.values)&&!w.options.values.includes(relativePath)){w.options.values.push(relativePath);w.options.values.sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"}));} w.value=relativePath; w.callback?.(relativePath); node.graph?.setDirtyCanvas?.(true,true); }
-function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=["Б","КБ","МБ","ГБ"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
+function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=CIG_LANG==="ru"?["Б","КБ","МБ","ГБ"]:["B","KB","MB","GB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
 
 function makeThumbLoader(root) {
     let epoch=0, active=0, queue=[], disposed=false;
@@ -39,7 +46,7 @@ function makeThumbLoader(root) {
     const observer=new IntersectionObserver(entries=>{ for(const e of entries){ const c=e.target; c.__cigVisible=e.isIntersecting; if(e.isIntersecting){ enqueue(c); } else if(c.__cigController){ c.__cigController.abort(); } } },{root,rootMargin:OBSERVER_MARGIN,threshold:0.01});
     function enqueue(card){ if(disposed||card.__cigLoaded||card.__cigQueued||!card.__cigVisible)return; card.__cigQueued=true; card.__cigEpoch=epoch; queue.push(card); pump(); }
     function pump(){ while(!disposed&&active<MAX_PARALLEL_THUMBS&&queue.length){ const card=queue.shift(); card.__cigQueued=false; if(!card.isConnected||!card.__cigVisible||card.__cigLoaded||card.__cigEpoch!==epoch)continue; load(card,epoch); } }
-    async function load(card,myEpoch){ active++; const controller=new AbortController(); card.__cigController=controller; controllers.add(controller); const img=card.querySelector(".cig-thumb"); try{ const r=await fetch(card.__cigUrl,{signal:controller.signal,cache:"force-cache"}); if(!r.ok)throw new Error(String(r.status)); const blob=await r.blob(); if(disposed||myEpoch!==epoch||!card.isConnected)return; const url=URL.createObjectURL(blob); card.__cigObjectUrl=url; img.onload=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.__cigLoaded=true; card.classList.add("loaded"); }; img.onerror=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.classList.add("error"); card.querySelector(".cig-placeholder").textContent="ошибка"; }; img.src=url; } catch(err){ if(err?.name!=="AbortError"&&card.isConnected){ card.classList.add("error"); card.querySelector(".cig-placeholder").textContent="ошибка"; } } finally{ controllers.delete(controller); card.__cigController=null; active=Math.max(0,active-1); pump(); } }
+    async function load(card,myEpoch){ active++; const controller=new AbortController(); card.__cigController=controller; controllers.add(controller); const img=card.querySelector(".cig-thumb"); try{ const r=await fetch(card.__cigUrl,{signal:controller.signal,cache:"force-cache"}); if(!r.ok)throw new Error(String(r.status)); const blob=await r.blob(); if(disposed||myEpoch!==epoch||!card.isConnected)return; const url=URL.createObjectURL(blob); card.__cigObjectUrl=url; img.onload=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.__cigLoaded=true; card.classList.add("loaded"); }; img.onerror=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.classList.add("error"); card.querySelector(".cig-placeholder").textContent=cigT.thumbError; }; img.src=url; } catch(err){ if(err?.name!=="AbortError"&&card.isConnected){ card.classList.add("error"); card.querySelector(".cig-placeholder").textContent=cigT.thumbError; } } finally{ controllers.delete(controller); card.__cigController=null; active=Math.max(0,active-1); pump(); } }
     function observe(card){ observer.observe(card); }
     function reset(){ epoch++; queue=[]; for(const c of controllers)c.abort(); controllers.clear(); observer.disconnect(); root.querySelectorAll?.(".cig-card").forEach(card=>{ if(card.__cigObjectUrl){URL.revokeObjectURL(card.__cigObjectUrl);card.__cigObjectUrl=null;} }); }
     function dispose(){ disposed=true; reset(); }
@@ -61,19 +68,19 @@ async function openGallery(node){
     overlay.className = "cig-overlay";
     overlay.innerHTML = `<div class="cig-panel" role="dialog" aria-modal="true">
         <div class="cig-header">
-            <div class="cig-title">Превью изображений</div>
-            <input class="cig-search" type="search" placeholder="Поиск по имени файла…">
-            <button class="cig-refresh" type="button">↻ Обновить</button>
+            <div class="cig-title">${cigT.title}</div>
+            <input class="cig-search" type="search" placeholder="${cigT.search}">
+            <button class="cig-refresh" type="button">↻ ${cigT.refresh}</button>
             <button class="cig-close" type="button">✕</button>
         </div>
         <div class="cig-body"><div class="cig-grid"></div></div>
         <div class="cig-footer">
-            <span class="cig-folder-label">Папка:</span>
+            <span class="cig-folder-label">${cigT.folder}</span>
             <select class="cig-folder"></select>
             <span class="cig-count"></span>
             <span class="cig-cache"></span>
-            <button class="cig-clear" type="button">Очистить кэш</button>
-            <button class="cig-run cig-clear" type="button">▶ СТАРТ (0)</button>
+            <button class="cig-clear" type="button">${cigT.clearCache}</button>
+            <button class="cig-run cig-clear" type="button">▶ ${cigT.start} (0)</button>
         </div>
     </div>`;
     document.body.appendChild(overlay);
@@ -123,20 +130,20 @@ async function openGallery(node){
 
     function updateRunState(){
         const n = selected.size;
-        runButton.textContent = `▶ СТАРТ (${n})`;
+        runButton.textContent = `▶ ${cigT.start} (${n})`;
         runButton.disabled = n === 0;
         runButton.style.opacity = n ? "1" : ".5";
     }
 
     function updateCount(filteredLength = images.length){
-        count.textContent = `${filteredLength} / ${images.length} · выбрано ${selected.size}`;
+        count.textContent = `${filteredLength} / ${images.length} · ${cigT.selected} ${selected.size}`;
         updateRunState();
     }
 
     async function updateCacheStats(){
         try{
             const s = await fetchJson("/image-gallery/cache/stats");
-            cacheInfo.textContent = `Кэш: ${s.count} · ${humanBytes(s.bytes)} / ${humanBytes(s.limit_bytes)}`;
+            cacheInfo.textContent = `${cigT.cache}: ${s.count} · ${humanBytes(s.bytes)} / ${humanBytes(s.limit_bytes)}`;
         }catch(_){
             cacheInfo.textContent = "";
         }
@@ -161,7 +168,7 @@ async function openGallery(node){
         if(!filtered.length){
             const e = document.createElement("div");
             e.className = "cig-empty";
-            e.textContent = images.length ? "По этому поиску ничего не найдено" : "В папке нет изображений";
+            e.textContent = images.length ? cigT.noMatches : cigT.noImages;
             grid.appendChild(e);
             return;
         }
@@ -359,7 +366,7 @@ async function openGallery(node){
         activeFolder = await fillFolders(activeFolder);
         await loadFolder(activeFolder,{scrollToCurrent:true});
     }catch(error){
-        grid.innerHTML = `<div class="cig-empty">Ошибка: ${String(error?.message ?? error)}</div>`;
+        grid.innerHTML = `<div class="cig-empty">${cigT.error}: ${String(error?.message ?? error)}</div>`;
     }
 
     folderSelect.addEventListener("change", async()=>{
@@ -369,7 +376,7 @@ async function openGallery(node){
         try{
             await loadFolder(folderSelect.value);
         }catch(error){
-            grid.innerHTML = `<div class="cig-empty">Ошибка: ${String(error?.message ?? error)}</div>`;
+            grid.innerHTML = `<div class="cig-empty">${cigT.error}: ${String(error?.message ?? error)}</div>`;
         }finally{
             refreshButton.disabled = false;
             updateRunState();
@@ -392,7 +399,7 @@ async function openGallery(node){
             const chosen = await fillFolders(activeFolder);
             await loadFolder(chosen,{preserveScroll:true});
         }catch(error){
-            grid.innerHTML = `<div class="cig-empty">Ошибка: ${String(error?.message ?? error)}</div>`;
+            grid.innerHTML = `<div class="cig-empty">${cigT.error}: ${String(error?.message ?? error)}</div>`;
         }finally{
             refreshButton.disabled = false;
             updateRunState();
@@ -401,7 +408,7 @@ async function openGallery(node){
 
     clearButton.addEventListener("click", async()=>{
         clearButton.disabled = true;
-        cacheInfo.textContent = "Очистка…";
+        cacheInfo.textContent = cigT.clearing;
         try{
             await fetchJson("/image-gallery/cache/clear",{method:"POST"});
             rebuildThumbLoader();
@@ -416,7 +423,7 @@ async function openGallery(node){
             });
             await updateCacheStats();
         }catch(error){
-            cacheInfo.textContent = `Ошибка: ${String(error?.message ?? error)}`;
+            cacheInfo.textContent = `${cigT.error}: ${String(error?.message ?? error)}`;
         }finally{
             clearButton.disabled = false;
             updateRunState();
@@ -666,7 +673,7 @@ function installGalleryStartButton(node){
             button=node.addWidget("button","▶ СТАРТ",null,()=>{app.queuePrompt(0,1);},{serialize:false});
             button.serialize=false;
             button.computeSize=(width)=>[width??node.size?.[0]??320,64];
-            button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});button.__cigTallDraw=true;button.drawWidget=function(ctx,options){const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("▶  СТАРТ",width/2,y+h/2);ctx.restore();};
+            button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});button.__cigTallDraw=true;button.drawWidget=function(ctx,options){const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`▶  ${cigT.start}`,width/2,y+h/2);ctx.restore();};
             if(!node.__cigStartButtonHeightAdded){
                 node.__cigStartButtonHeightAdded=true;
                 const sz=node.size??[320,300];
