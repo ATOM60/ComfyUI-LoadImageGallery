@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import subprocess
 import json
 import os
 import shutil
@@ -7,8 +9,11 @@ import time
 from pathlib import Path
 
 from aiohttp import web
-from PIL import Image, ImageOps
-
+from PIL import Image, ImageOps, ImageSequence
+import numpy as np
+import torch
+import comfy.model_management
+import node_helpers
 import folder_paths
 from nodes import LoadImage
 from server import PromptServer
@@ -69,16 +74,125 @@ def _safe_input_file(folder: str, filename: str) -> tuple[str, str]:
 
 
 def _cache_paths(folder: str, filename: str) -> tuple[str, str]:
-    folder = _norm_rel(folder)
+    folder_key = _cache_key(folder)
     filename = _norm_rel(filename)
     if not filename or "/" in filename:
         raise ValueError("Invalid filename")
-    cache_dir = _safe_under(_cache_root(), folder)
+    cache_dir = _safe_under(_cache_root(), folder_key)
     os.makedirs(cache_dir, exist_ok=True)
     thumb = os.path.join(cache_dir, filename + ".cig.webp")
     meta = os.path.join(cache_dir, filename + ".cig.json")
     return thumb, meta
 
+# CIG_EXTERNAL_PATHS_V1
+def _is_abs_path(path: str) -> bool:
+    try:
+        return bool(path) and os.path.isabs(os.path.expanduser(str(path)))
+    except Exception:
+        return False
+
+def _normalize_gallery_folder(folder: str) -> str:
+    raw = (folder or "").strip()
+    if _is_abs_path(raw):
+        return os.path.abspath(os.path.expanduser(raw))
+    return _norm_rel(raw)
+
+def _gallery_dir(folder: str) -> str:
+    folder = _normalize_gallery_folder(folder)
+    if _is_abs_path(folder):
+        if not os.path.isdir(folder):
+            raise FileNotFoundError(folder)
+        return folder
+    return _safe_input_dir(folder)
+
+def _gallery_file(folder: str, filename: str) -> tuple[str, str]:
+    folder = _normalize_gallery_folder(folder)
+    filename = _norm_rel(filename)
+    if not filename or "/" in filename:
+        raise ValueError("Invalid filename")
+    base = _gallery_dir(folder)
+    full = os.path.abspath(os.path.join(base, filename))
+    if os.path.commonpath((os.path.abspath(base), full)) != os.path.abspath(base):
+        raise ValueError("Invalid filename")
+    if not os.path.isfile(full):
+        raise FileNotFoundError(full)
+    rel = Path(full).as_posix() if _is_abs_path(folder) else (f"{folder}/{filename}" if folder else filename)
+    return full, rel
+
+def _cache_key(folder: str) -> str:
+    folder = _normalize_gallery_folder(folder)
+    if _is_abs_path(folder):
+        key = hashlib.sha256(os.path.normcase(folder).encode("utf-8")).hexdigest()
+        return f"_external/{key}"
+    return _norm_rel(folder)
+
+def _is_image_file(path: str) -> bool:
+    if not os.path.isfile(path):
+        return False
+    name = os.path.basename(path)
+    try:
+        return name in folder_paths.filter_files_content_types([name], ["image"])
+    except Exception:
+        return os.path.splitext(name)[1].lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+
+class _ImagePathOptions(list):
+    def __contains__(self, value):
+        if super().__contains__(value):
+            return True
+        try:
+            path = os.path.abspath(os.path.expanduser(str(value)))
+            return _is_abs_path(str(value)) and _is_image_file(path)
+        except Exception:
+            return False
+
+def _pick_folder_native() -> str:
+    if os.name == "nt":
+        script = """Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description="Select image folder"; $d.ShowNewFolderButton=$false; if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write($d.SelectedPath)}"""
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", script], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Folder picker failed")
+        return result.stdout.strip()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        path = filedialog.askdirectory(title="Select image folder", mustexist=True)
+        root.destroy()
+        return path or ""
+    except Exception as exc:
+        raise RuntimeError(f"Native folder picker is unavailable: {exc}")
+
+def _load_external_image(path: str):
+    dtype = comfy.model_management.intermediate_dtype()
+    device = comfy.model_management.intermediate_device()
+    img = node_helpers.pillow(Image.open, path)
+    output_images = []
+    output_masks = []
+    w = h = None
+    for frame in ImageSequence.Iterator(img):
+        frame = node_helpers.pillow(ImageOps.exif_transpose, frame)
+        rgb = frame.convert("RGB")
+        if w is None:
+            w, h = rgb.size
+        if rgb.size != (w, h):
+            continue
+        arr = np.array(rgb).astype(np.float32) / 255.0
+        image = torch.from_numpy(arr)[None,].to(dtype=dtype)
+        if "A" in frame.getbands():
+            mask_arr = np.array(frame.getchannel("A")).astype(np.float32) / 255.0
+            mask = 1.0 - torch.from_numpy(mask_arr)
+        else:
+            mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
+        output_images.append(image)
+        output_masks.append(mask.unsqueeze(0).to(dtype=dtype))
+    if not output_images:
+        raise ValueError(f"Unable to load image: {path}")
+    return (torch.cat(output_images, dim=0).to(device=device, dtype=dtype), torch.cat(output_masks, dim=0).to(device=device, dtype=dtype))
 
 def _image_files_in_dir(full_dir: str):
     if not os.path.isdir(full_dir):
@@ -91,6 +205,16 @@ def _image_files_in_dir(full_dir: str):
         names = [name for name in names if os.path.splitext(name)[1].lower() in exts]
     return sorted(names, key=str.casefold)
 
+
+# CIG_SUBFOLDERS_V1
+def _subfolders_in_dir(full_dir: str):
+    if not os.path.isdir(full_dir):
+        return []
+    try:
+        names = [name for name in os.listdir(full_dir) if os.path.isdir(os.path.join(full_dir, name))]
+    except OSError:
+        return []
+    return sorted(names, key=str.casefold)
 
 def _all_images_recursive():
     root = _input_root()
@@ -176,7 +300,7 @@ def _make_thumb(source: str, thumb: str, meta: str):
 
 
 def _get_or_make_thumb(folder: str, filename: str) -> str:
-    source, _rel = _safe_input_file(folder, filename)
+    source, _rel = _gallery_file(folder, filename)
     thumb, meta = _cache_paths(folder, filename)
     with _cache_lock:
         if not _thumb_valid(source, thumb, meta):
@@ -199,7 +323,7 @@ def _get_or_make_thumb(folder: str, filename: str) -> str:
 
 def _cleanup_orphans_for_folder(folder: str, live_names: list[str]):
     try:
-        cache_dir = _safe_under(_cache_root(), folder)
+        cache_dir = _safe_under(_cache_root(), _cache_key(folder))
         if not os.path.isdir(cache_dir):
             return
         live = set(live_names)
@@ -285,22 +409,37 @@ def _clear_cache():
 class LoadImageGallery(LoadImage):
     @classmethod
     def INPUT_TYPES(cls):
-        files = _all_images_recursive() or [""]
-        return {
-            "required": {
-                "image": (
-                    files,
-                    {
-                        "image_upload": True,
-                        "allow_batch": False,
-                        "tooltip": "Load an image from input. Use Preview folder to choose visually.",
-                    },
-                )
-            }
-        }
+        files = _ImagePathOptions(_all_images_recursive() or [""])
+        return {"required": {"image": (files, {"image_upload": True, "allow_batch": False, "tooltip": "Load an image from input or an absolute path. Use the gallery to choose visually."})}}
 
     CATEGORY = "image"
-    DESCRIPTION = "Copy of Load Image with a cached visual folder gallery."
+    DESCRIPTION = "Load images from ComfyUI input or any absolute folder with a cached visual gallery."
+
+    def load_image(self, image):
+        if _is_abs_path(image):
+            path = os.path.abspath(os.path.expanduser(str(image)))
+            if not _is_image_file(path):
+                raise FileNotFoundError(path)
+            return _load_external_image(path)
+        return super().load_image(image)
+
+    @classmethod
+    def IS_CHANGED(cls, image):
+        if _is_abs_path(image):
+            path = os.path.abspath(os.path.expanduser(str(image)))
+            m = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    m.update(chunk)
+            return m.hexdigest()
+        return super().IS_CHANGED(image)
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, image):
+        if _is_abs_path(image):
+            path = os.path.abspath(os.path.expanduser(str(image)))
+            return True if _is_image_file(path) else f"Invalid image file: {image}"
+        return super().VALIDATE_INPUTS(image)
 
 
 @PromptServer.instance.routes.get("/image-gallery/folders")
@@ -314,11 +453,14 @@ async def image_gallery_folders(request):
 @PromptServer.instance.routes.get("/image-gallery/list")
 async def image_gallery_list(request):
     try:
-        folder = _norm_rel(request.query.get("folder", ""))
-        full_dir = _safe_input_dir(folder)
+        folder = _normalize_gallery_folder(request.query.get("folder", ""))
+        full_dir = _gallery_dir(folder)
         images = _image_files_in_dir(full_dir)
+        folders = _subfolders_in_dir(full_dir)
         await asyncio.to_thread(_cleanup_orphans_for_folder, folder, images)
-        return web.json_response({"folder": folder, "images": images})
+        return web.json_response({"folder": Path(folder).as_posix() if _is_abs_path(folder) else folder, "images": images, "folders": folders})
+    except FileNotFoundError as exc:
+        return web.json_response({"error": f"Folder not found: {exc}"}, status=404)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
     except Exception as exc:
@@ -328,7 +470,7 @@ async def image_gallery_list(request):
 @PromptServer.instance.routes.get("/image-gallery/thumb")
 async def image_gallery_thumb(request):
     try:
-        folder = _norm_rel(request.query.get("folder", ""))
+        folder = _normalize_gallery_folder(request.query.get("folder", ""))
         filename = request.query.get("filename", "")
         thumb = await asyncio.to_thread(_get_or_make_thumb, folder, filename)
         return web.FileResponse(thumb, headers={"Cache-Control": "private, max-age=86400"})
@@ -336,6 +478,32 @@ async def image_gallery_thumb(request):
         return web.json_response({"error": "Source image not found"}, status=404)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+@PromptServer.instance.routes.post("/image-gallery/pick-folder")
+async def image_gallery_pick_folder(request):
+    try:
+        path = await asyncio.to_thread(_pick_folder_native)
+        if not path:
+            return web.json_response({"path": ""})
+        path = os.path.abspath(os.path.expanduser(path))
+        if not os.path.isdir(path):
+            return web.json_response({"error": "Selected folder does not exist"}, status=400)
+        return web.json_response({"path": Path(path).as_posix()})
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+@PromptServer.instance.routes.get("/image-gallery/source")
+async def image_gallery_source(request):
+    try:
+        raw = request.query.get("path", "")
+        if not _is_abs_path(raw):
+            return web.json_response({"error": "Absolute path required"}, status=400)
+        path = os.path.abspath(os.path.expanduser(raw))
+        if not _is_image_file(path):
+            return web.json_response({"error": "Image not found"}, status=404)
+        return web.FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
 

@@ -23,6 +23,8 @@ function injectStyles() {
 .cig-panel{width:min(1500px,96vw);height:min(920px,92vh);background:#181818;border:1px solid #444;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;color:#eee;font-family:Arial,sans-serif}
 .cig-header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #383838;flex:0 0 auto}.cig-title{font-size:18px;font-weight:700;white-space:nowrap}.cig-search{flex:1;min-width:120px;background:#262626;color:#eee;border:1px solid #4a4a4a;border-radius:7px;padding:9px 11px;font-size:14px;outline:none}.cig-search:focus{border-color:#888}.cig-close,.cig-refresh,.cig-clear{background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;padding:8px 12px;cursor:pointer}.cig-close:hover,.cig-refresh:hover,.cig-clear:hover{background:#3a3a3a}.cig-close:disabled,.cig-refresh:disabled,.cig-clear:disabled{opacity:.45;cursor:default}
 .cig-body{flex:1 1 auto;min-height:0;overflow:auto;padding:16px;contain:strict}.cig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;align-items:start}.cig-card{position:relative;background:#222;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;transition:border-color .12s,background .12s,transform .08s;content-visibility:auto;contain-intrinsic-size:180px 205px}.cig-card:hover{background:#2b2b2b;transform:translateY(-1px)}.cig-card.selected{border-color:#6ba7ff;background:#26364b}.cig-thumb-wrap{width:100%;aspect-ratio:1/1;background:#111;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}.cig-thumb{width:100%;height:100%;object-fit:contain;display:block}.cig-thumb:not([src]){visibility:hidden}.cig-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px}.cig-card.loaded .cig-placeholder{display:none}.cig-card.error .cig-placeholder{color:#a77}.cig-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}.cig-empty{padding:40px;text-align:center;color:#aaa;font-size:15px}.cig-footer{display:flex;align-items:center;gap:10px;flex:0 0 auto;border-top:1px solid #383838;padding:12px 16px;background:#1d1d1d}.cig-footer-top{display:flex;align-items:center;gap:10px}.cig-folder-label{white-space:nowrap;font-size:13px;color:#bbb}.cig-folder{flex:1 1 360px;min-width:280px;background:#292929;color:#eee;border:1px solid #4b4b4b;border-radius:7px;padding:9px 10px;font-size:14px}.cig-count,.cig-cache{font-size:12px;color:#aaa;white-space:nowrap}.cig-run{display:inline-flex;align-items:center;justify-content:center;width:auto;height:40px;margin:0;border:1px solid #5a5a5a;border-radius:7px;background:#303030;color:#fff;padding:0 14px;font-size:14px;font-weight:400;line-height:38px;cursor:pointer}.cig-run:hover{background:#3a3a3a}.cig-run:disabled{opacity:.45;cursor:default}
+.cig-pick-folder{flex:0 0 auto;width:44px;height:40px;min-width:44px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:18px;font-weight:700;line-height:38px;cursor:pointer}.cig-pick-folder:hover{background:#3a3a3a}.cig-pick-folder:disabled{opacity:.45;cursor:default}
+.cig-breadcrumbs{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-height:32px;padding:4px 16px;border-bottom:1px solid #303030;background:#1d1d1d;overflow-x:auto;white-space:nowrap}.cig-crumb{border:0;background:transparent;color:#9ec8ff;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}.cig-crumb:hover{background:#303a46;color:#fff}.cig-crumb-sep{color:#666}.cig-up-folder{flex:0 0 auto;width:40px;height:40px;min-width:40px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:22px;line-height:38px;cursor:pointer}.cig-up-folder:hover{background:#3a3a3a}.cig-up-folder:disabled{opacity:.3;cursor:default}.cig-folder-card{position:relative;background:#24282d;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;user-select:none}.cig-folder-card:hover{background:#303740;border-color:#53677e}.cig-folder-icon{width:100%;aspect-ratio:1/1;background:#191d22;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:58px}.cig-folder-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}
 @media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
 `;
     document.head.appendChild(style);
@@ -37,7 +39,29 @@ function joinPath(folder, filename) { const f = normalizePath(folder); return f 
 function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); return api.apiURL(`/image-gallery/thumb?${p.toString()}`); }
 async function fetchJson(path, options) { const r = await api.fetchApi(path, options); if (!r.ok) { let d=`${r.status}`; try{d=(await r.json()).error||d;}catch(_){} throw new Error(d); } return await r.json(); }
 function getImageWidget(node) { return node.widgets?.find(w => w.name === "image") || null; }
-function setWidgetValue(node, relativePath) { const w=getImageWidget(node); if(!w)return; if(Array.isArray(w.options?.values)&&!w.options.values.includes(relativePath)){w.options.values.push(relativePath);w.options.values.sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"}));} w.value=relativePath; w.callback?.(relativePath); node.graph?.setDirtyCanvas?.(true,true); }
+// CIG_EXTERNAL_FOLDER_PICKER_V3
+function isAbsoluteGalleryPath(value){const v=String(value??"").replace(/\\/g,"/");return /^[A-Za-z]:\//.test(v)||v.startsWith("//");}
+function externalSourceUrl(path){const p=new URLSearchParams();p.set("path",path);p.set("_",String(Date.now()));return api.apiURL(`/image-gallery/source?${p.toString()}`);}
+function loadExternalPreview(node,path){if(!node||!isAbsoluteGalleryPath(path))return;const clean=normalizePath(path);const token=(node.__cigExternalPreviewToken??0)+1;node.__cigExternalPreviewToken=token;const img=new Image();img.decoding="async";img.onload=()=>{if(node.__cigExternalPreviewToken!==token)return;node.__cigExternalPreviewPath=clean;node.imgs=[img];node.imageIndex=0;node.graph?.setDirtyCanvas?.(true,true);};img.onerror=()=>console.warn("[ImageGallery] external preview failed:",clean);img.src=externalSourceUrl(clean);}
+function installExternalPreviewRestore(node){const apply=()=>{const w=getImageWidget(node),v=normalizePath(String(w?.value??""));if(isAbsoluteGalleryPath(v))loadExternalPreview(node,v);};requestAnimationFrame(apply);setTimeout(apply,150);setTimeout(apply,600);}
+function setWidgetValue(node,relativePath){
+    const w=getImageWidget(node);
+    if(!w)return;
+    const value=normalizePath(String(relativePath??""));
+    if(Array.isArray(w.options?.values)&&!w.options.values.includes(value)){
+        w.options.values.push(value);
+        w.options.values.sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"}));
+    }
+    w.value=value;
+    if(isAbsoluteGalleryPath(value)){
+        loadExternalPreview(node,value);
+    }else{
+        node.__cigExternalPreviewToken=(node.__cigExternalPreviewToken??0)+1;
+        node.__cigExternalPreviewPath=null;
+        w.callback?.(value);
+    }
+    node.graph?.setDirtyCanvas?.(true,true);
+}
 function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=CIG_LANG==="ru"?["Б","КБ","МБ","ГБ"]:["B","KB","MB","GB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
 
 function makeThumbLoader(root) {
@@ -61,7 +85,7 @@ async function openGallery(node){
 
     const current = splitPath(String(widget.value ?? ""));
     let activeFolder = normalizePath(node.__cigFolder ?? current.folder);
-    let images = [], filterText = "", loadToken = 0;
+    let images = [], subfolders = [], filterText = "", loadToken = 0;
     const selected = new Set();
 
     const overlay = document.createElement("div");
@@ -73,10 +97,10 @@ async function openGallery(node){
             <button class="cig-refresh" type="button">↻ ${cigT.refresh}</button>
             <button class="cig-close" type="button">✕</button>
         </div>
-        <div class="cig-body"><div class="cig-grid"></div></div>
+        <div class="cig-breadcrumbs"></div><div class="cig-body"><div class="cig-grid"></div></div>
         <div class="cig-footer">
             <span class="cig-folder-label">${cigT.folder}</span>
-            <select class="cig-folder"></select>
+            <select class="cig-folder"></select><button class="cig-up-folder" type="button" title="Вверх">↑</button><button class="cig-pick-folder" type="button">...</button>
             <span class="cig-count"></span>
             <span class="cig-cache"></span>
             <button class="cig-clear" type="button">${cigT.clearCache}</button>
@@ -89,6 +113,10 @@ async function openGallery(node){
     const grid = overlay.querySelector(".cig-grid");
     const body = overlay.querySelector(".cig-body");
     const folderSelect = overlay.querySelector(".cig-folder");
+    const upFolderButton=overlay.querySelector(".cig-up-folder");
+    const breadcrumbs=overlay.querySelector(".cig-breadcrumbs");
+    const pickFolderButton=overlay.querySelector(".cig-pick-folder");
+    pickFolderButton.title=(typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru")?"Выбрать папку":"Choose folder";
     const search = overlay.querySelector(".cig-search");
     const count = overlay.querySelector(".cig-count");
     const cacheInfo = overlay.querySelector(".cig-cache");
@@ -122,6 +150,87 @@ async function openGallery(node){
     panel.addEventListener("mousedown", e=>e.stopPropagation());
     const onKey = e=>{ if(e.key === "Escape") close(); };
     document.addEventListener("keydown", onKey);
+
+    // CIG_FOLDER_NAV_SAFE_V1
+    const CIG_RECENT_FOLDERS_KEY="ComfyUI-LoadImageGallery.recentFolders";
+    const CIG_RECENT_FOLDERS_LIMIT=10;
+    function getRecentExternalFolders(){
+        try{
+            const raw=JSON.parse(localStorage.getItem(CIG_RECENT_FOLDERS_KEY)||"[]");
+            if(!Array.isArray(raw)) return [];
+            const out=[];
+            for(const item of raw){
+                const p=normalizeNavPath(item);
+                if(isAbsoluteGalleryPath(p) && !out.some(v=>normalizeNavPath(v)===p)) out.push(p);
+                if(out.length>=CIG_RECENT_FOLDERS_LIMIT) break;
+            }
+            return out;
+        }catch(_){
+            return [];
+        }
+    }
+    function rememberExternalFolder(path){
+        const p=normalizeNavPath(path);
+        if(!isAbsoluteGalleryPath(p)) return;
+        const arr=[p,...getRecentExternalFolders().filter(v=>normalizeNavPath(v)!==p)].slice(0,CIG_RECENT_FOLDERS_LIMIT);
+        try{localStorage.setItem(CIG_RECENT_FOLDERS_KEY,JSON.stringify(arr));}catch(_){}
+    }
+
+    function normalizeNavPath(value){
+        const raw=String(value??"").replace(/\\/g,"/").trim();
+        if(/^[A-Za-z]:\/?$/.test(raw))return raw.slice(0,2)+"/";
+        return normalizePath(raw);
+    }
+    function parentGalleryFolder(value){
+        const p=normalizeNavPath(value);
+        if(!p)return null;
+        if(/^[A-Za-z]:\/$/.test(p))return null;
+        if(/^[A-Za-z]:\//.test(p)){const i=p.lastIndexOf("/");return i<=2?p.slice(0,2)+"/":p.slice(0,i);}
+        const i=p.lastIndexOf("/");
+        return i<0?"":p.slice(0,i);
+    }
+    async function navigateGalleryFolder(value){
+    const chosen=normalizeNavPath(value);
+    if(isAbsoluteGalleryPath(chosen)) rememberExternalFolder(chosen);
+    let option=[...folderSelect.options].find(o=>normalizeNavPath(o.value)===chosen);
+    if(!option){option=document.createElement("option");option.value=chosen;option.textContent=chosen||ROOT_LABEL;folderSelect.appendChild(option);}
+    folderSelect.value=option.value;
+    filterText="";search.value="";
+    await loadFolder(chosen);
+}
+    function renderBreadcrumbs(){
+        breadcrumbs.replaceChildren();
+        const p=normalizeNavPath(activeFolder);
+        const parts=[];
+        if(/^[A-Za-z]:\//.test(p)){
+            const drive=p.slice(0,2);let cur=drive+"/";parts.push({label:drive,path:cur});
+            for(const name of p.slice(3).split("/").filter(Boolean)){cur=cur.endsWith("/")?cur+name:cur+"/"+name;parts.push({label:name,path:cur});}
+        }else{
+            parts.push({label:"input",path:""});let cur="";
+            for(const name of p.split("/").filter(Boolean)){cur=cur?cur+"/"+name:name;parts.push({label:name,path:cur});}
+        }
+        parts.forEach((part,index)=>{if(index){const sep=document.createElement("span");sep.className="cig-crumb-sep";sep.textContent="›";breadcrumbs.appendChild(sep);}const b=document.createElement("button");b.type="button";b.className="cig-crumb";b.textContent=part.label;b.title=part.path||"input";b.addEventListener("click",()=>navigateGalleryFolder(part.path));breadcrumbs.appendChild(b);});
+        upFolderButton.disabled=parentGalleryFolder(activeFolder)===null;
+    }
+    function renderFolderCards(){
+        grid.querySelectorAll(".cig-folder-card").forEach(el=>el.remove());
+        const needle=filterText.trim().toLocaleLowerCase();
+        const visible=needle?subfolders.filter(n=>n.toLocaleLowerCase().includes(needle)):subfolders;
+        if(!visible.length)return;
+        grid.querySelector(".cig-empty")?.remove();
+        const frag=document.createDocumentFragment();
+        for(const folderName of visible){
+            const card=document.createElement("div");card.className="cig-folder-card";card.title=folderName;
+            const icon=document.createElement("div");icon.className="cig-folder-icon";icon.textContent="📁";
+            const name=document.createElement("div");name.className="cig-folder-name";name.textContent=folderName;
+            card.append(icon,name);
+            card.addEventListener("mousedown",e=>e.stopPropagation());
+            card.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();});
+            card.addEventListener("dblclick",e=>{e.preventDefault();e.stopPropagation();navigateGalleryFolder((/^[A-Za-z]:\/$/.test(normalizeNavPath(activeFolder))?normalizeNavPath(activeFolder):normalizeNavPath(activeFolder)?normalizeNavPath(activeFolder)+"/":"")+folderName);});
+            frag.appendChild(card);
+        }
+        grid.insertBefore(frag,grid.firstChild);
+    }
 
     function rebuildThumbLoader(){
         thumbLoader.dispose();
@@ -170,6 +279,7 @@ async function openGallery(node){
             e.className = "cig-empty";
             e.textContent = images.length ? cigT.noMatches : cigT.noImages;
             grid.appendChild(e);
+            renderFolderCards();
             return;
         }
 
@@ -223,6 +333,7 @@ async function openGallery(node){
         }
 
         grid.appendChild(frag);
+        renderFolderCards();
         grid.querySelectorAll(".cig-card").forEach(c=>thumbLoader.observe(c));
 
         if(scrollToCurrent && currentCard){
@@ -233,7 +344,7 @@ async function openGallery(node){
     async function loadFolder(folder,{preserveScroll=false,scrollToCurrent=false} = {}){
         const token = ++loadToken;
         const oldScroll = body.scrollTop;
-        activeFolder = normalizePath(folder);
+        activeFolder = normalizeNavPath(folder);
         node.__cigFolder = activeFolder;
         rebuildThumbLoader();
         grid.innerHTML = '<div class="cig-empty">Загрузка списка…</div>';
@@ -242,8 +353,8 @@ async function openGallery(node){
         const data = await fetchJson(`/image-gallery/list?folder=${encodeURIComponent(activeFolder)}`);
         if(token !== loadToken || !overlay.isConnected) return;
 
-        images = Array.isArray(data.images) ? data.images : [];
-        render({scrollToCurrent});
+        images = Array.isArray(data.images) ? data.images : [];subfolders=Array.isArray(data.folders)?data.folders:[];node.__cigGalleryValues=images.map(name=>joinPath(activeFolder,name));
+        render({scrollToCurrent});renderBreadcrumbs();
 
         if(preserveScroll) body.scrollTop = oldScroll;
         else if(!scrollToCurrent) body.scrollTop = 0;
@@ -252,22 +363,33 @@ async function openGallery(node){
     }
 
     async function fillFolders(preferred){
-        const data = await fetchJson("/image-gallery/folders");
-        const folders = Array.isArray(data.folders) ? data.folders : [""];
-        const chosen = folders.includes(preferred) ? preferred : "";
-        folderSelect.replaceChildren();
-
-        const frag = document.createDocumentFragment();
-        for(const folder of folders){
-            const o = document.createElement("option");
-            o.value = folder;
-            o.textContent = folder || ROOT_LABEL;
-            o.selected = folder === chosen;
-            frag.appendChild(o);
-        }
-        folderSelect.appendChild(frag);
-        return chosen;
+    const data=await fetchJson("/image-gallery/folders");
+    const baseFolders=Array.isArray(data.folders)?data.folders:[""];
+    const preferredNorm=normalizeNavPath(preferred);
+    const recent=getRecentExternalFolders();
+    const merged=[];
+    if(isAbsoluteGalleryPath(preferredNorm)) merged.push(preferredNorm);
+    for(const folder of recent){
+        const norm=normalizeNavPath(folder);
+        if(!merged.some(v=>normalizeNavPath(v)===norm)) merged.push(norm);
     }
+    for(const folder of baseFolders){
+        const norm=normalizeNavPath(folder);
+        if(!merged.some(v=>normalizeNavPath(v)===norm)) merged.push(folder);
+    }
+    const selected=merged.some(f=>normalizeNavPath(f)===preferredNorm)?preferredNorm:"";
+    folderSelect.replaceChildren();
+    const frag=document.createDocumentFragment();
+    for(const folder of merged){
+        const o=document.createElement("option");
+        o.value=folder;
+        o.textContent=folder||ROOT_LABEL;
+        o.selected=normalizeNavPath(folder)===selected;
+        frag.appendChild(o);
+    }
+    folderSelect.appendChild(frag);
+    return selected;
+}
 
     body.addEventListener("mousedown", e=>{
         if(e.button !== 0) return;
@@ -368,6 +490,38 @@ async function openGallery(node){
     }catch(error){
         grid.innerHTML = `<div class="cig-empty">${cigT.error}: ${String(error?.message ?? error)}</div>`;
     }
+
+    pickFolderButton.addEventListener("click",async()=>{
+    pickFolderButton.disabled=true;
+    try{
+        const data=await fetchJson("/image-gallery/pick-folder",{method:"POST"});
+        if(!data?.path)return;
+        const chosen=normalizeNavPath(data.path);
+        rememberExternalFolder(chosen);
+        let option=[...folderSelect.options].find(o=>normalizeNavPath(o.value)===chosen);
+        if(!option){
+            option=document.createElement("option");
+            option.value=chosen;
+            option.textContent=chosen;
+            folderSelect.appendChild(option);
+        }
+        folderSelect.value=option.value;
+        filterText="";
+        search.value="";
+        await loadFolder(chosen);
+    }catch(error){
+        grid.innerHTML=`<div class="cig-empty">${String(error?.message??error)}</div>`;
+    }finally{
+        pickFolderButton.disabled=false;
+    }
+});
+
+    upFolderButton.addEventListener("click",async()=>{
+        const parent=parentGalleryFolder(activeFolder);
+        if(parent===null)return;
+        upFolderButton.disabled=true;
+        try{await navigateGalleryFolder(parent);}finally{upFolderButton.disabled=parentGalleryFolder(activeFolder)===null;}
+    });
 
     folderSelect.addEventListener("change", async()=>{
         filterText = "";
@@ -545,7 +699,7 @@ function installGalleryPreviewNavigation(node){
         if(!w)return [];
         const current=normalizePath(String(w.value??""));
         const folder=splitPath(current).folder;
-        const raw=Array.isArray(w.options?.values)?w.options.values:[];
+        const raw=[...(Array.isArray(w.options?.values)?w.options.values:[]),...(Array.isArray(node.__cigGalleryValues)?node.__cigGalleryValues:[])];
         const seen=new Set(), out=[];
         for(const v of raw){
             const n=normalizePath(String(v??""));
@@ -810,7 +964,7 @@ function installGalleryPreviewNavigationV3(node){
         if(!w)return [];
         const current=normalizePath(String(w.value??""));
         const folder=splitPath(current).folder;
-        const raw=Array.isArray(w.options?.values)?w.options.values:[];
+        const raw=[...(Array.isArray(w.options?.values)?w.options.values:[]),...(Array.isArray(node.__cigGalleryValues)?node.__cigGalleryValues:[])];
         const seen=new Set(),out=[];
         for(const v of raw){
             const n=normalizePath(String(v??""));
@@ -1010,4 +1164,4 @@ function installGalleryFooterFixV3(){
 }
 
 
-app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);hideGalleryTopWidgets(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
+app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);hideGalleryTopWidgets(node);installExternalPreviewRestore(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
