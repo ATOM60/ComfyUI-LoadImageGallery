@@ -237,10 +237,11 @@ async function openGallery(node){
         marquee.remove();
     };
     const close = ()=>{ cleanup(); overlay.remove(); };
-    closeButton.addEventListener("click", close);
-    overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
+        // CIG_CLOSE_ONLY_X_V1
+closeButton.addEventListener("click", close);
+    overlay.addEventListener("mousedown", e=>{ if(e.target === overlay)  });
     panel.addEventListener("mousedown", e=>e.stopPropagation());
-    const onKey = e=>{ if(e.key === "Escape") close(); };
+    const onKey = e=>{ if(e.key === "Escape")  };
     document.addEventListener("keydown", onKey);
 
     // CIG_FOLDER_NAV_SAFE_V1
@@ -417,7 +418,7 @@ async function openGallery(node){
                 e.stopPropagation();
                 setWidgetValue(node, relative);
                 node.__cigFolder = activeFolder;
-                close();
+                
             });
 
             if(relative === currentValue) currentCard = card;
@@ -665,7 +666,7 @@ body.addEventListener("mousedown", e=>{
                 await new Promise(r=>requestAnimationFrame(r));
                 await app.queuePrompt(0,1);
             }
-            close();
+            
         }catch(error){
             console.error("[ImageGallery] batch queue:", error);
             runButton.textContent = "Ошибка";
