@@ -238,6 +238,17 @@ async function openGallery(node){
     let __cigAllowClose=false;
     const close=()=>{if(!__cigAllowClose)return;cleanup();overlay.remove();};
     closeButton.addEventListener("click",()=>{__cigAllowClose=true;close();});
+    // CIG_DBLCLICK_CLOSE_V2
+    body.addEventListener("click",e=>{
+        if(e.detail!==2)return;
+        if(!e.target.closest?.(".cig-card"))return;
+        setTimeout(()=>{__cigAllowClose=true;close();},0);
+    },true);
+    // CIG_DBLCLICK_CLOSE_V1
+    grid.addEventListener("dblclick",e=>{
+        if(!e.target.closest?.(".cig-card"))return;
+        setTimeout(()=>{__cigAllowClose=true;close();},0);
+    });
     overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
     panel.addEventListener("mousedown", e=>e.stopPropagation());
     const onKey = e=>{ if(e.key === "Escape") close(); };
@@ -1027,11 +1038,7 @@ function installGalleryStartButton(node){
             button.serialize=false;
             button.computeSize=(width)=>[width??node.size?.[0]??320,64];
             button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});button.__cigTallDraw=true;button.drawWidget=function(ctx,options){const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`▶  ${cigT.start}`,width/2,y+h/2);ctx.restore();};
-            if(!node.__cigStartButtonHeightAdded){
-                node.__cigStartButtonHeightAdded=true;
-                const sz=node.size??[320,300];
-                node.setSize?.([sz[0],sz[1]+70]);
-            }
+            // CIG_REMOVE_START_HEIGHT_GROWTH_V1
         }
         const pi=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
         const bi=node.widgets.indexOf(button);
@@ -1363,4 +1370,5 @@ function installGalleryFooterFixV3(){
 }
 
 
-app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);hideGalleryTopWidgets(node);installExternalPreviewRestore(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
+app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);hideGalleryTopWidgets(node);installExternalPreviewRestore(node);// CIG_STABLE_NODE_HEIGHT_V1
+const computed=node.computeSize?.();if(computed){const currentW=node.size?.[0]??computed[0];const currentH=node.size?.[1]??computed[1];const wantedW=Math.max(currentW,computed[0]);if(wantedW>currentW)node.setSize?.([wantedW,currentH]);}}});
