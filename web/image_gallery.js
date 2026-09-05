@@ -77,6 +77,87 @@ function makeThumbLoader(root) {
     return {observe,reset,dispose};
 }
 
+// CIG_HELP_UI_V1
+function ensureCigHelpStyles(){
+    if(document.getElementById("cig-help-style"))return;
+    const st=document.createElement("style");
+    st.id="cig-help-style";
+    st.textContent=".cig-help-btn{width:38px;height:38px;min-width:38px;padding:0;border:1px solid #505050;border-radius:50%;background:#2c2c2c;color:#eee;font-size:20px;line-height:36px;cursor:pointer}.cig-help-btn:hover{background:#3a3a3a}.cig-help-overlay{position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px}.cig-help-dialog{width:min(620px,94vw);max-height:86vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid #505050;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.65);font-family:Arial,sans-serif}.cig-help-head{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid #383838;position:sticky;top:0;background:#1d1d1d;z-index:1}.cig-help-title{font-size:18px;font-weight:700;flex:1}.cig-help-close{width:34px;height:34px;border:1px solid #505050;border-radius:7px;background:#2c2c2c;color:#eee;font-size:18px;cursor:pointer}.cig-help-close:hover{background:#3a3a3a}.cig-help-content{padding:16px 18px 20px}.cig-help-row{padding:10px 0;border-bottom:1px solid #303030}.cig-help-row:last-child{border-bottom:0}.cig-help-name{font-size:14px;font-weight:700;margin-bottom:4px}.cig-help-text{font-size:13px;line-height:1.45;color:#bbb}";
+    document.head.appendChild(st);
+}
+
+function showCigHelp(){
+    ensureCigHelpStyles();
+    document.querySelector(".cig-help-overlay")?.remove();
+    const ru=typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru";
+    const rows=ru?[
+        ["Открытие галереи","Нажмите на превью изображения в ноде. Стрелки по краям превью переключают изображения текущей папки."],
+        ["Выбор изображений","Один клик выбирает или снимает изображение. Двойной клик загружает изображение в ноду и закрывает галерею."],
+        ["Выделение мышью","Тяните рамку по изображениям. Выделение накапливается и сохраняется при прокрутке. У верхнего и нижнего края работает автопрокрутка."],
+        ["Сенсорный экран","Обычный свайп прокручивает галерею. Для рамочного выделения удерживайте палец примерно 0,4 секунды, затем ведите им по изображениям."],
+        ["Папки","Выпадающий список выбирает папку. Кнопка … открывает системный выбор внешней папки. ↑ поднимает на уровень выше. Двойной клик по папке открывает её."],
+        ["Последние папки","До 10 последних внешних папок сохраняются в выпадающем списке."],
+        ["СТАРТ","Запускает выбранные изображения в очереди и после запуска очищает выделение."],
+        ["Обновить","Перечитывает содержимое папки и очищает текущее выделение."]
+    ]:[
+        ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
+        ["Select images","Single click selects or deselects an image. Double click loads it into the node and closes the gallery."],
+        ["Mouse selection","Drag a selection rectangle across images. Selection accumulates and survives scrolling. Auto-scroll activates near the top and bottom edges."],
+        ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
+        ["Folders","Use the dropdown to choose a folder. The … button opens the system folder picker. ↑ goes up one level. Double-click a folder to open it."],
+        ["Recent folders","Up to 10 recently used external folders are kept in the dropdown."],
+        ["START","Queues all selected images and clears the selection after starting."],
+        ["Refresh","Reloads the current folder and clears the current selection."]
+    ];
+    const ov=document.createElement("div");ov.className="cig-help-overlay";
+    const dlg=document.createElement("div");dlg.className="cig-help-dialog";
+    const head=document.createElement("div");head.className="cig-help-head";
+    const title=document.createElement("div");title.className="cig-help-title";title.textContent=ru?"ⓘ Инструкция — Load Image Gallery":"ⓘ Load Image Gallery Help";
+    const close=document.createElement("button");close.type="button";close.className="cig-help-close";close.textContent="✕";
+    const content=document.createElement("div");content.className="cig-help-content";
+    for(const item of rows){const row=document.createElement("div");row.className="cig-help-row";const name=document.createElement("div");name.className="cig-help-name";name.textContent=item[0];const text=document.createElement("div");text.className="cig-help-text";text.textContent=item[1];row.append(name,text);content.appendChild(row);}
+    head.append(title,close);dlg.append(head,content);ov.appendChild(dlg);document.body.appendChild(ov);
+    let onKey=null;
+    const closeHelp=()=>{if(onKey)document.removeEventListener("keydown",onKey);ov.remove();};
+    onKey=e=>{if(e.key==="Escape")closeHelp();};
+    document.addEventListener("keydown",onKey);
+    close.addEventListener("click",closeHelp);
+    ov.addEventListener("mousedown",e=>{if(e.target===ov)closeHelp();});
+}
+
+function installNodeHelpIcon(node){
+    if(node.__cigHelpIconV1)return;
+    node.__cigHelpIconV1=true;
+    const oldDraw=node.onDrawForeground;
+    node.onDrawForeground=function(ctx){
+        oldDraw?.call(this,ctx);
+        const th=globalThis.LiteGraph?.NODE_TITLE_HEIGHT??30;
+        const size=18;
+        const x=(this.size?.[0]??200)-size-8;
+        const y=-th+(th-size)/2;
+        this.__cigHelpRect={x,y,w:size,h:size};
+        ctx.save();
+        ctx.beginPath();ctx.arc(x+size/2,y+size/2,size/2,0,Math.PI*2);
+        ctx.fillStyle="#353535";ctx.fill();
+        ctx.strokeStyle="#aaa";ctx.lineWidth=1;ctx.stroke();
+        ctx.fillStyle="#eee";ctx.font="bold 13px Arial";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("i",x+size/2,y+size/2+.5);
+        ctx.restore();
+    };
+    const oldMouseDown=node.onMouseDown;
+    node.onMouseDown=function(e,pos,graphcanvas){
+        const r=this.__cigHelpRect;
+        if(r){
+            const px=Array.isArray(pos)?pos[0]:(typeof pos?.x==="number"?pos.x:e?.canvasX);
+            const py=Array.isArray(pos)?pos[1]:(typeof pos?.y==="number"?pos.y:e?.canvasY);
+            const hit=(x,y)=>Number.isFinite(x)&&Number.isFinite(y)&&x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h;
+            const nx=px-(this.pos?.[0]??0),ny=py-(this.pos?.[1]??0);
+            if(hit(px,py)||hit(nx,ny)){showCigHelp();return true;}
+        }
+        return oldMouseDown?oldMouseDown.call(this,e,pos,graphcanvas):false;
+    };
+    node.setDirtyCanvas?.(true,true);
+}
+
 async function openGallery(node){
     injectStyles();
     document.querySelector(".cig-overlay")?.remove();
@@ -86,7 +167,11 @@ async function openGallery(node){
     const current = splitPath(String(widget.value ?? ""));
     let activeFolder = normalizePath(node.__cigFolder ?? current.folder);
     let images = [], subfolders = [], filterText = "", loadToken = 0;
-    const selected = new Set();
+    // CIG_SELECTION_PERSIST_V1
+    if(!(node.__cigSelectedPaths instanceof Set)){
+        node.__cigSelectedPaths=new Set(Array.isArray(node.__cigSelectedPaths)?node.__cigSelectedPaths:[]);
+    }
+    const selected=node.__cigSelectedPaths;
 
     const overlay = document.createElement("div");
     overlay.className = "cig-overlay";
@@ -121,6 +206,13 @@ async function openGallery(node){
     const count = overlay.querySelector(".cig-count");
     const cacheInfo = overlay.querySelector(".cig-cache");
     const closeButton = overlay.querySelector(".cig-close");
+    const helpButton=document.createElement("button");
+    helpButton.type="button";
+    helpButton.className="cig-help-btn";
+    helpButton.textContent="ⓘ";
+    helpButton.title=(typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru")?"Инструкция":"Help";
+    closeButton.before(helpButton);
+    helpButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();showCigHelp();});
     const refreshButton = overlay.querySelector(".cig-refresh");
     const clearButton = overlay.querySelector(".cig-clear");
     const runButton = overlay.querySelector(".cig-run");
@@ -391,20 +483,102 @@ async function openGallery(node){
     return selected;
 }
 
-    body.addEventListener("mousedown", e=>{
+    let __cigSelectionSyncRAF=0;
+    body.addEventListener("scroll",()=>{
+        cancelAnimationFrame(__cigSelectionSyncRAF);
+        __cigSelectionSyncRAF=requestAnimationFrame(()=>{
+            syncCardSelection();
+        });
+    },{passive:true});
+
+        // CIG_TOUCH_MARQUEE_V2
+    let __cigTouchHoldTimer=0;
+    let __cigTouchDown=false;
+    let __cigTouchSelecting=false;
+    let __cigTouchStartX=0,__cigTouchStartY=0,__cigTouchLastX=0,__cigTouchLastY=0;
+    let __cigSuppressTouchClickUntil=0;
+
+    const __cigCancelTouchHold=()=>{
+        if(__cigTouchHoldTimer){
+            clearTimeout(__cigTouchHoldTimer);
+            __cigTouchHoldTimer=0;
+        }
+    };
+
+    body.addEventListener("touchstart",e=>{
+        if(e.touches.length!==1)return;
+        const t=e.touches[0];
+        __cigCancelTouchHold();
+        __cigTouchDown=true;
+        __cigTouchSelecting=false;
+        __cigTouchStartX=__cigTouchLastX=t.clientX;
+        __cigTouchStartY=__cigTouchLastY=t.clientY;
+
+        __cigTouchHoldTimer=setTimeout(()=>{
+            __cigTouchHoldTimer=0;
+            if(!__cigTouchDown)return;
+            __cigTouchSelecting=true;
+            body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0,clientX:__cigTouchStartX,clientY:__cigTouchStartY}));
+        },400);
+    },{passive:true});
+
+    body.addEventListener("touchmove",e=>{
+        if(!__cigTouchDown||e.touches.length!==1)return;
+        const t=e.touches[0];
+        __cigTouchLastX=t.clientX;
+        __cigTouchLastY=t.clientY;
+
+        if(!__cigTouchSelecting){
+            const dx=t.clientX-__cigTouchStartX;
+            const dy=t.clientY-__cigTouchStartY;
+            if(Math.hypot(dx,dy)>10)__cigCancelTouchHold();
+            return;
+        }
+
+        e.preventDefault();
+        document.dispatchEvent(new MouseEvent("mousemove",{bubbles:true,cancelable:true,button:0,clientX:t.clientX,clientY:t.clientY}));
+    },{passive:false});
+
+    const __cigFinishTouch=e=>{
+        const wasSelecting=__cigTouchSelecting;
+        __cigCancelTouchHold();
+        __cigTouchDown=false;
+        __cigTouchSelecting=false;
+        if(!wasSelecting)return;
+
+        __cigSuppressTouchClickUntil=Date.now()+700;
+        e?.preventDefault?.();
+        document.dispatchEvent(new MouseEvent("mouseup",{bubbles:true,cancelable:true,button:0,clientX:__cigTouchLastX,clientY:__cigTouchLastY}));
+    };
+
+    body.addEventListener("touchend",__cigFinishTouch,{passive:false});
+    body.addEventListener("touchcancel",__cigFinishTouch,{passive:false});
+
+    body.addEventListener("click",e=>{
+        if(Date.now()>=__cigSuppressTouchClickUntil)return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    },true);
+
+    body.addEventListener("contextmenu",e=>{
+        if(!__cigTouchSelecting&&Date.now()>=__cigSuppressTouchClickUntil)return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    },true);
+
+body.addEventListener("mousedown", e=>{
         if(e.button !== 0) return;
         if(e.target.closest?.(".cig-card")) return;
 
         const startX = e.clientX;
         const startY = e.clientY;
         const keepExisting = e.ctrlKey || e.shiftKey;
-        const base = keepExisting ? new Set(selected) : new Set();
+        // CIG_MARQUEE_PERSIST_V3
+        const base = new Set(selected);
         let moved = false;
+        // CIG_MARQUEE_AUTOSCROLL_V1
+        let lastX=startX,lastY=startY,autoScrollRAF=0;
 
-        if(!keepExisting){
-            selected.clear();
-            syncCardSelection();
-        }
 
         marquee.style.display = "block";
         marquee.style.left = `${startX}px`;
@@ -413,6 +587,8 @@ async function openGallery(node){
         marquee.style.height = "0px";
 
         const move = ev=>{
+            lastX=ev.clientX;
+            lastY=ev.clientY;
             const x1 = Math.min(startX, ev.clientX);
             const y1 = Math.min(startY, ev.clientY);
             const x2 = Math.max(startX, ev.clientX);
@@ -424,8 +600,6 @@ async function openGallery(node){
             marquee.style.width = `${x2-x1}px`;
             marquee.style.height = `${y2-y1}px`;
 
-            selected.clear();
-            for(const v of base) selected.add(v);
 
             grid.querySelectorAll(".cig-card").forEach(card=>{
                 const r = card.getBoundingClientRect();
@@ -435,16 +609,35 @@ async function openGallery(node){
             syncCardSelection();
         };
 
+        const autoScroll=()=>{
+            if(!overlay.isConnected)return;
+            const r=body.getBoundingClientRect();
+            const edge=72;
+            const maxStep=28;
+            let dy=0;
+            if(lastY<=r.top+edge && lastY>=r.top-edge){
+                const t=Math.min(1,Math.max(0,(r.top+edge-lastY)/edge));
+                dy=-Math.max(1,Math.ceil(maxStep*t*t));
+            }else if(lastY>=r.bottom-edge && lastY<=r.bottom+edge){
+                const t=Math.min(1,Math.max(0,(lastY-(r.bottom-edge))/edge));
+                dy=Math.max(1,Math.ceil(maxStep*t*t));
+            }
+            if(dy!==0){
+                const before=body.scrollTop;
+                body.scrollTop+=dy;
+                if(body.scrollTop!==before)move({clientX:lastX,clientY:lastY});
+            }
+            autoScrollRAF=requestAnimationFrame(autoScroll);
+        };
+
         const up = ()=>{
+            cancelAnimationFrame(autoScrollRAF);
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", up);
             marquee.style.display = "none";
-            if(!moved && !keepExisting){
-                selected.clear();
-                syncCardSelection();
-            }
         };
 
+        autoScrollRAF=requestAnimationFrame(autoScroll);
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
         e.preventDefault();
@@ -453,6 +646,9 @@ async function openGallery(node){
     runButton.addEventListener("click", async()=>{
         const list = [...selected];
         if(!list.length) return;
+        selected.clear();
+        syncCardSelection();
+        updateRunState();
 
         runButton.disabled = true;
         refreshButton.disabled = true;
@@ -549,6 +745,9 @@ async function openGallery(node){
 
     refreshButton.addEventListener("click", async()=>{
         refreshButton.disabled = true;
+        selected.clear();
+        syncCardSelection();
+        updateRunState();
         try{
             const chosen = await fillFolders(activeFolder);
             await loadFolder(chosen,{preserveScroll:true});
@@ -1164,4 +1363,4 @@ function installGalleryFooterFixV3(){
 }
 
 
-app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);hideGalleryTopWidgets(node);installExternalPreviewRestore(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
+app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);hideGalleryTopWidgets(node);installNodeHelpIcon(node);installExternalPreviewRestore(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
