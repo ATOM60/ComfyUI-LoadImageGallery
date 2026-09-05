@@ -1054,9 +1054,32 @@ function installGalleryStartButton(node){
     setTimeout(ensure,50);
     setTimeout(ensure,250);
     setTimeout(ensure,1000);
+    setTimeout(ensure,2000);
+    setTimeout(ensure,5000);
+    setTimeout(ensure,10000);
 }
 
-function hideGalleryTopWidgets(node){const apply=()=>{if(!node?.widgets)return;for(const w of node.widgets){if(!w||w.name==="$$canvas-image-preview"||w.name==="▶ СТАРТ")continue;w.hidden=true;w.computeSize=()=>[0,-4];w.computeLayoutSize=()=>({minHeight:0,maxHeight:0,minWidth:0,maxWidth:0});w.drawWidget=()=>{};}node.graph?.setDirtyCanvas?.(true,true);};apply();requestAnimationFrame(apply);setTimeout(apply,100);setTimeout(apply,500);}
+// CIG_COLD_START_FIX_V1
+function hideGalleryTopWidgets(node){
+    let tries=0;
+    const apply=()=>{
+        if(!node?.widgets)return;
+        const preview=node.widgets.find(w=>w?.name==="$$canvas-image-preview"||(w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"));
+        if(!preview){
+            if(++tries<=40)setTimeout(apply,250);
+            return;
+        }
+        for(const w of node.widgets){
+            if(!w||w===preview||w.name==="▶ СТАРТ")continue;
+            w.hidden=true;
+            w.computeSize=()=>[0,-4];
+            w.computeLayoutSize=()=>({minHeight:0,maxHeight:0,minWidth:0,maxWidth:0});
+            w.drawWidget=()=>{};
+        }
+        node.graph?.setDirtyCanvas?.(true,true);
+    };
+    apply();
+}
 
 function installGalleryDomFixV2(){
     if(window.__cigDomFixV2)return;
@@ -1370,5 +1393,5 @@ function installGalleryFooterFixV3(){
 }
 
 
-app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);hideGalleryTopWidgets(node);installExternalPreviewRestore(node);// CIG_STABLE_NODE_HEIGHT_V1
+app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);hideGalleryTopWidgets(node);// CIG_STABLE_NODE_HEIGHT_V1
 const computed=node.computeSize?.();if(computed){const currentW=node.size?.[0]??computed[0];const currentH=node.size?.[1]??computed[1];const wantedW=Math.max(currentW,computed[0]);if(wantedW>currentW)node.setSize?.([wantedW,currentH]);}}});
