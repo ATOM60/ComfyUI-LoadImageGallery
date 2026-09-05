@@ -77,83 +77,81 @@ function makeThumbLoader(root) {
     return {observe,reset,dispose};
 }
 
-// CIG_HELP_UI_V1
-function ensureCigHelpStyles(){
-    if(document.getElementById("cig-help-style"))return;
-    const st=document.createElement("style");
-    st.id="cig-help-style";
-    st.textContent=".cig-help-btn{width:38px;height:38px;min-width:38px;padding:0;border:1px solid #505050;border-radius:50%;background:#2c2c2c;color:#eee;font-size:20px;line-height:36px;cursor:pointer}.cig-help-btn:hover{background:#3a3a3a}.cig-help-overlay{position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px}.cig-help-dialog{width:min(620px,94vw);max-height:86vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid #505050;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.65);font-family:Arial,sans-serif}.cig-help-head{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid #383838;position:sticky;top:0;background:#1d1d1d;z-index:1}.cig-help-title{font-size:18px;font-weight:700;flex:1}.cig-help-close{width:34px;height:34px;border:1px solid #505050;border-radius:7px;background:#2c2c2c;color:#eee;font-size:18px;cursor:pointer}.cig-help-close:hover{background:#3a3a3a}.cig-help-content{padding:16px 18px 20px}.cig-help-row{padding:10px 0;border-bottom:1px solid #303030}.cig-help-row:last-child{border-bottom:0}.cig-help-name{font-size:14px;font-weight:700;margin-bottom:4px}.cig-help-text{font-size:13px;line-height:1.45;color:#bbb}";
-    document.head.appendChild(st);
-}
-
+// CIG_HELP_SAFE_V1
 function showCigHelp(){
-    ensureCigHelpStyles();
     document.querySelector(".cig-help-overlay")?.remove();
-    const ru=typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru";
+    const ru=(typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru");
     const rows=ru?[
         ["Открытие галереи","Нажмите на превью изображения в ноде. Стрелки по краям превью переключают изображения текущей папки."],
-        ["Выбор изображений","Один клик выбирает или снимает изображение. Двойной клик загружает изображение в ноду и закрывает галерею."],
-        ["Выделение мышью","Тяните рамку по изображениям. Выделение накапливается и сохраняется при прокрутке. У верхнего и нижнего края работает автопрокрутка."],
-        ["Сенсорный экран","Обычный свайп прокручивает галерею. Для рамочного выделения удерживайте палец примерно 0,4 секунды, затем ведите им по изображениям."],
-        ["Папки","Выпадающий список выбирает папку. Кнопка … открывает системный выбор внешней папки. ↑ поднимает на уровень выше. Двойной клик по папке открывает её."],
-        ["Последние папки","До 10 последних внешних папок сохраняются в выпадающем списке."],
-        ["СТАРТ","Запускает выбранные изображения в очереди и после запуска очищает выделение."],
-        ["Обновить","Перечитывает содержимое папки и очищает текущее выделение."]
+        ["Выбор изображений","Один клик выбирает или снимает изображение. Двойной клик загружает изображение в ноду."],
+        ["Выделение мышью","Проведите рамкой по изображениям. Выделение накапливается и сохраняется при прокрутке."],
+        ["Автопрокрутка","Во время рамочного выделения подведите курсор к верхнему или нижнему краю галереи для автоматической прокрутки."],
+        ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
+        ["Папки","Двойной клик открывает папку. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
+        ["Последние папки","До 10 последних внешних папок сохраняются в списке."],
+        ["СТАРТ","Запускает выбранные изображения в очередь, очищает выделение и оставляет галерею открытой."],
+        ["Закрытие","Галерея закрывается только кнопкой ✕."]
     ]:[
         ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
-        ["Select images","Single click selects or deselects an image. Double click loads it into the node and closes the gallery."],
-        ["Mouse selection","Drag a selection rectangle across images. Selection accumulates and survives scrolling. Auto-scroll activates near the top and bottom edges."],
+        ["Select images","Single click selects or deselects an image. Double click loads the image into the node."],
+        ["Mouse selection","Drag a rectangle across images. Selection accumulates and remains selected while scrolling."],
+        ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
-        ["Folders","Use the dropdown to choose a folder. The … button opens the system folder picker. ↑ goes up one level. Double-click a folder to open it."],
-        ["Recent folders","Up to 10 recently used external folders are kept in the dropdown."],
-        ["START","Queues all selected images and clears the selection after starting."],
-        ["Refresh","Reloads the current folder and clears the current selection."]
+        ["Folders","Double-click a folder to open it. ↑ goes up one level. The … button opens an external folder picker."],
+        ["Recent folders","Up to 10 recently used external folders are kept in the list."],
+        ["START","Queues the selected images, clears the selection and keeps the gallery open."],
+        ["Closing","The gallery closes only with the ✕ button."]
     ];
-    const ov=document.createElement("div");ov.className="cig-help-overlay";
-    const dlg=document.createElement("div");dlg.className="cig-help-dialog";
-    const head=document.createElement("div");head.className="cig-help-head";
-    const title=document.createElement("div");title.className="cig-help-title";title.textContent=ru?"ⓘ Инструкция — Load Image Gallery":"ⓘ Load Image Gallery Help";
-    const close=document.createElement("button");close.type="button";close.className="cig-help-close";close.textContent="✕";
-    const content=document.createElement("div");content.className="cig-help-content";
-    for(const item of rows){const row=document.createElement("div");row.className="cig-help-row";const name=document.createElement("div");name.className="cig-help-name";name.textContent=item[0];const text=document.createElement("div");text.className="cig-help-text";text.textContent=item[1];row.append(name,text);content.appendChild(row);}
-    head.append(title,close);dlg.append(head,content);ov.appendChild(dlg);document.body.appendChild(ov);
-    let onKey=null;
-    const closeHelp=()=>{if(onKey)document.removeEventListener("keydown",onKey);ov.remove();};
-    onKey=e=>{if(e.key==="Escape")closeHelp();};
-    document.addEventListener("keydown",onKey);
-    close.addEventListener("click",closeHelp);
-    ov.addEventListener("mousedown",e=>{if(e.target===ov)closeHelp();});
+    const ov=document.createElement("div");ov.className="cig-help-overlay";ov.style.cssText="position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:20px";
+    const box=document.createElement("div");box.style.cssText="width:min(620px,94vw);max-height:86vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid #555;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.65);font-family:Arial,sans-serif";
+    const head=document.createElement("div");head.style.cssText="display:flex;align-items:center;padding:15px 18px;border-bottom:1px solid #383838;position:sticky;top:0;background:#1d1d1d";
+    const title=document.createElement("div");title.style.cssText="font-size:18px;font-weight:700;flex:1";title.textContent=ru?"ⓘ Инструкция — Load Image Gallery":"ⓘ Load Image Gallery Help";
+    const x=document.createElement("button");x.type="button";x.textContent="✕";x.style.cssText="width:34px;height:34px;background:#2c2c2c;color:#eee;border:1px solid #555;border-radius:7px;cursor:pointer";
+    const content=document.createElement("div");content.style.cssText="padding:10px 18px 18px";
+    for(const [a,b] of rows){const r=document.createElement("div");r.style.cssText="padding:10px 0;border-bottom:1px solid #303030";const n=document.createElement("div");n.style.cssText="font-weight:700;font-size:14px;margin-bottom:4px";n.textContent=a;const t=document.createElement("div");t.style.cssText="font-size:13px;line-height:1.45;color:#bbb";t.textContent=b;r.append(n,t);content.appendChild(r);}
+    head.append(title,x);box.append(head,content);ov.appendChild(box);document.body.appendChild(ov);
+    x.onclick=()=>ov.remove();
 }
 
-function installNodeHelpIcon(node){
-    if(node.__cigHelpIconV1)return;
-    node.__cigHelpIconV1=true;
+// CIG_HELP_TITLEBAR_V1
+function installCigTitleHelp(node){
+    if(node.__cigTitleHelpInstalled)return;
+    node.__cigTitleHelpInstalled=true;
     const oldDraw=node.onDrawForeground;
     node.onDrawForeground=function(ctx){
         oldDraw?.call(this,ctx);
         const th=globalThis.LiteGraph?.NODE_TITLE_HEIGHT??30;
-        const size=18;
-        const x=(this.size?.[0]??200)-size-8;
-        const y=-th+(th-size)/2;
-        this.__cigHelpRect={x,y,w:size,h:size};
+        const sz=18;
+        ctx.save();ctx.font="14px Arial";const titleText=String(this.title||"Load Image Gallery");const titleWidth=ctx.measureText(titleText).width;ctx.restore();const x=26+titleWidth+22;
+        const y=-th+(th-sz)/2;
+        this.__cigTitleHelpRect={x,y,w:sz,h:sz};
         ctx.save();
-        ctx.beginPath();ctx.arc(x+size/2,y+size/2,size/2,0,Math.PI*2);
-        ctx.fillStyle="#353535";ctx.fill();
-        ctx.strokeStyle="#aaa";ctx.lineWidth=1;ctx.stroke();
-        ctx.fillStyle="#eee";ctx.font="bold 13px Arial";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("i",x+size/2,y+size/2+.5);
+        ctx.beginPath();
+        ctx.arc(x+sz/2,y+sz/2,sz/2,0,Math.PI*2);
+        ctx.fillStyle="#353535";
+        ctx.fill();
+        ctx.strokeStyle="#bdbdbd";
+        ctx.lineWidth=1;
+        ctx.stroke();
+        ctx.fillStyle="#ffffff";
+        ctx.font="bold 13px Arial";
+        ctx.textAlign="center";
+        ctx.textBaseline="middle";
+        ctx.fillText("i",x+sz/2,y+sz/2+.5);
         ctx.restore();
     };
-    const oldMouseDown=node.onMouseDown;
+    const oldDown=node.onMouseDown;
     node.onMouseDown=function(e,pos,graphcanvas){
-        const r=this.__cigHelpRect;
-        if(r){
-            const px=Array.isArray(pos)?pos[0]:(typeof pos?.x==="number"?pos.x:e?.canvasX);
-            const py=Array.isArray(pos)?pos[1]:(typeof pos?.y==="number"?pos.y:e?.canvasY);
-            const hit=(x,y)=>Number.isFinite(x)&&Number.isFinite(y)&&x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h;
-            const nx=px-(this.pos?.[0]??0),ny=py-(this.pos?.[1]??0);
-            if(hit(px,py)||hit(nx,ny)){showCigHelp();return true;}
+        const r=this.__cigTitleHelpRect;
+        const x=Array.isArray(pos)?pos[0]:pos?.x;
+        const y=Array.isArray(pos)?pos[1]:pos?.y;
+        if(r&&Number.isFinite(x)&&Number.isFinite(y)&&x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h){
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            showCigHelp();
+            return true;
         }
-        return oldMouseDown?oldMouseDown.call(this,e,pos,graphcanvas):false;
+        return oldDown?oldDown.call(this,e,pos,graphcanvas):false;
     };
     node.setDirtyCanvas?.(true,true);
 }
@@ -208,9 +206,9 @@ async function openGallery(node){
     const closeButton = overlay.querySelector(".cig-close");
     const helpButton=document.createElement("button");
     helpButton.type="button";
-    helpButton.className="cig-help-btn";
     helpButton.textContent="ⓘ";
     helpButton.title=(typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru")?"Инструкция":"Help";
+    helpButton.style.cssText="width:38px;height:38px;min-width:38px;padding:0;border:1px solid #505050;border-radius:50%;background:#2c2c2c;color:#eee;font-size:19px;cursor:pointer;margin-right:6px";
     closeButton.before(helpButton);
     helpButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();showCigHelp();});
     const refreshButton = overlay.querySelector(".cig-refresh");
@@ -236,12 +234,13 @@ async function openGallery(node){
         thumbLoader?.dispose();
         marquee.remove();
     };
-    const close = ()=>{ cleanup(); overlay.remove(); };
-        // CIG_CLOSE_ONLY_X_V1
-closeButton.addEventListener("click", close);
-    overlay.addEventListener("mousedown", e=>{ if(e.target === overlay)  });
+    // CIG_CLOSE_ONLY_X_V2
+    let __cigAllowClose=false;
+    const close=()=>{if(!__cigAllowClose)return;cleanup();overlay.remove();};
+    closeButton.addEventListener("click",()=>{__cigAllowClose=true;close();});
+    overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
     panel.addEventListener("mousedown", e=>e.stopPropagation());
-    const onKey = e=>{ if(e.key === "Escape")  };
+    const onKey = e=>{ if(e.key === "Escape") close(); };
     document.addEventListener("keydown", onKey);
 
     // CIG_FOLDER_NAV_SAFE_V1
@@ -418,7 +417,7 @@ closeButton.addEventListener("click", close);
                 e.stopPropagation();
                 setWidgetValue(node, relative);
                 node.__cigFolder = activeFolder;
-                
+                close();
             });
 
             if(relative === currentValue) currentCard = card;
@@ -666,7 +665,7 @@ body.addEventListener("mousedown", e=>{
                 await new Promise(r=>requestAnimationFrame(r));
                 await app.queuePrompt(0,1);
             }
-            
+            // CIG_KEEP_OPEN_AFTER_START_V1
         }catch(error){
             console.error("[ImageGallery] batch queue:", error);
             runButton.textContent = "Ошибка";
@@ -1364,4 +1363,4 @@ function installGalleryFooterFixV3(){
 }
 
 
-app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);hideGalleryTopWidgets(node);installNodeHelpIcon(node);installExternalPreviewRestore(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
+app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);hideGalleryTopWidgets(node);installExternalPreviewRestore(node);const computed=node.computeSize?.();if(computed)node.setSize?.([Math.max(node.size?.[0]??0,computed[0]),Math.max(node.size?.[1]??0,computed[1])]);}});
