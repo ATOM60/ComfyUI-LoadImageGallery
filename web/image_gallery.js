@@ -39,12 +39,36 @@ function joinPath(folder, filename) { const f = normalizePath(folder); return f 
 function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); return api.apiURL(`/image-gallery/thumb?${p.toString()}`); }
 async function fetchJson(path, options) { const r = await api.fetchApi(path, options); if (!r.ok) { let d=`${r.status}`; try{d=(await r.json()).error||d;}catch(_){} throw new Error(d); } return await r.json(); }
 function getImageWidget(node) { return node.widgets?.find(w => w.name === "image") || null; }
+// CIG_WORKFLOW_PERSIST_V4
+const CIG_LAST_IMAGE_KEY="ComfyUI-LoadImageGallery.lastImage";
+function captureSerializedGalleryImage(graphData){
+    const visit=g=>{
+        if(!g||typeof g!=="object")return;
+        for(const n of (Array.isArray(g.nodes)?g.nodes:[])){
+            if(n?.type!==NODE_CLASS)continue;
+            const positional=Array.isArray(n.widgets_values)?n.widgets_values[0]:"";
+            const value=normalizePath(String(n?.properties?.__cigLastImage??n?.widgets_values_named?.image??positional??""));
+            if(value){
+                n.properties=n.properties||{};
+                n.properties.__cigLastImage=value;
+            }
+        }
+        const subs=g?.definitions?.subgraphs;
+        if(Array.isArray(subs))for(const sg of subs)visit(sg);
+    };
+    visit(graphData);
+}
+function restoreSerializedGalleryImage(node){
+    if(node?.comfyClass!==NODE_CLASS&&node?.type!==NODE_CLASS)return;
+    const value=normalizePath(String(node?.properties?.__cigLastImage??""));
+    if(value)setWidgetValue(node,value,false);
+}
 // CIG_EXTERNAL_FOLDER_PICKER_V3
 function isAbsoluteGalleryPath(value){const v=String(value??"").replace(/\\/g,"/");return /^[A-Za-z]:\//.test(v)||v.startsWith("//");}
 function externalSourceUrl(path){const p=new URLSearchParams();p.set("path",path);p.set("_",String(Date.now()));return api.apiURL(`/image-gallery/source?${p.toString()}`);}
 function loadExternalPreview(node,path){if(!node||!isAbsoluteGalleryPath(path))return;const clean=normalizePath(path);const token=(node.__cigExternalPreviewToken??0)+1;node.__cigExternalPreviewToken=token;const img=new Image();img.decoding="async";img.onload=()=>{if(node.__cigExternalPreviewToken!==token)return;node.__cigExternalPreviewPath=clean;node.imgs=[img];node.imageIndex=0;node.graph?.setDirtyCanvas?.(true,true);};img.onerror=()=>console.warn("[ImageGallery] external preview failed:",clean);img.src=externalSourceUrl(clean);}
 function installExternalPreviewRestore(node){const apply=()=>{const w=getImageWidget(node),v=normalizePath(String(w?.value??""));if(isAbsoluteGalleryPath(v))loadExternalPreview(node,v);};requestAnimationFrame(apply);setTimeout(apply,150);setTimeout(apply,600);}
-function setWidgetValue(node,relativePath){
+function setWidgetValue(node,relativePath,captureState=true){
     const w=getImageWidget(node);
     if(!w)return;
     const value=normalizePath(String(relativePath??""));
@@ -53,6 +77,7 @@ function setWidgetValue(node,relativePath){
         w.options.values.sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"}));
     }
     w.value=value;
+    if(value){node.properties=node.properties||{};node.properties.__cigLastImage=value;try{localStorage.setItem(CIG_LAST_IMAGE_KEY,value);}catch(_){}}
     if(isAbsoluteGalleryPath(value)){
         loadExternalPreview(node,value);
     }else{
@@ -61,6 +86,15 @@ function setWidgetValue(node,relativePath){
         w.callback?.(value);
     }
     node.graph?.setDirtyCanvas?.(true,true);
+    // CIG_CAPTURE_ACTIVE_WORKFLOW_V4
+    if(captureState&&!app.configuringGraph){
+        try{
+            const wf=app?.extensionManager?.workflow?.activeWorkflow;
+            wf?.changeTracker?.captureCanvasState?.();
+        }catch(e){
+            console.warn("[ImageGallery] workflow state capture failed",e);
+        }
+    }
 }
 function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=CIG_LANG==="ru"?["Б","КБ","МБ","ГБ"]:["B","KB","MB","GB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
 
@@ -1393,5 +1427,9 @@ function installGalleryFooterFixV3(){
 }
 
 
-app.registerExtension({name:EXTENSION_NAME,async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);hideGalleryTopWidgets(node);// CIG_STABLE_NODE_HEIGHT_V1
+app.registerExtension({
+name:EXTENSION_NAME,
+beforeConfigureGraph(graphData){captureSerializedGalleryImage(graphData);},
+loadedGraphNode(node){restoreSerializedGalleryImage(node);},
+async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);hideGalleryTopWidgets(node);// CIG_STABLE_NODE_HEIGHT_V1
 const computed=node.computeSize?.();if(computed){const currentW=node.size?.[0]??computed[0];const currentH=node.size?.[1]??computed[1];const wantedW=Math.max(currentW,computed[0]);if(wantedW>currentW)node.setSize?.([wantedW,currentH]);}}});
