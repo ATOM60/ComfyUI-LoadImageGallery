@@ -4,6 +4,10 @@ const EXT_NAME = "Comfy.ImageGallery.OutputVideoPlaybackControls";
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
 const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
 const STYLE_ID = "cig-output-video-playback-style";
+const LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
+const LABELS = LANG === "ru"
+    ? { prev:"Предыдущее видео", speed:"Скорость воспроизведения", next:"Следующее видео" }
+    : { prev:"Previous video", speed:"Playback speed", next:"Next video" };
 const attachedVideos = new Set();
 
 function clamp(value, min, max) {
@@ -243,12 +247,12 @@ function attachPlaybackControls(video) {
     control.innerHTML = `
         <div class="ovg-speed-panel">
             <div class="ovg-speed-value">1.00×</div>
-            <input class="ovg-speed-slider" type="range" min="0.25" max="3" step="0.05" value="1">
+            <input class="ovg-speed-slider" type="range" min="0.25" max="3" step="0.05" value="1" title="${LABELS.speed}">
         </div>
         <div class="ovg-player-control-row">
-            <button class="ovg-player-control-button ovg-prev-button" type="button" title="Предыдущее видео">⏮︎</button>
-            <button class="ovg-player-control-button ovg-speed-button" type="button" title="Скорость воспроизведения">⏱︎</button>
-            <button class="ovg-player-control-button ovg-next-button" type="button" title="Следующее видео">⏭︎</button>
+            <button class="ovg-player-control-button ovg-prev-button" type="button" title="${LABELS.prev}" aria-label="${LABELS.prev}">⏮︎</button>
+            <button class="ovg-player-control-button ovg-speed-button" type="button" title="${LABELS.speed}" aria-label="${LABELS.speed}">⏱︎</button>
+            <button class="ovg-player-control-button ovg-next-button" type="button" title="${LABELS.next}" aria-label="${LABELS.next}">⏭︎</button>
         </div>`;
     document.body.appendChild(control);
     video.__cigSpeedControl = control;
