@@ -47,32 +47,33 @@ function injectStyles() {
 .ovg-speed-control[popover]{
     display:none;
     position:fixed!important;
-    right:58px!important;
-    top:50%!important;
-    bottom:auto!important;
+    right:108px!important;
+    bottom:max(58px,6vh)!important;
+    top:auto!important;
     left:auto!important;
-    inset:auto 58px auto auto!important;
-    transform:translateY(-50%)!important;
+    inset:auto 108px max(58px,6vh) auto!important;
+    transform:none!important;
     margin:0!important;
     padding:0!important;
     border:0!important;
     background:transparent!important;
     color:#fff;
     overflow:visible!important;
-    flex-direction:row;
+    flex-direction:column;
     align-items:center;
-    gap:8px;
+    gap:7px;
     width:auto!important;
     height:auto!important;
     font-family:Arial,sans-serif;
     user-select:none;
 }
 .ovg-speed-control[popover]:popover-open{display:flex}
-.ovg-speed-button{
-    width:36px;height:36px;padding:0;border:0;border-radius:4px;background:rgba(0,0,0,.20);
-    color:#fff;font-size:20px;line-height:36px;text-align:center;cursor:pointer;box-shadow:none;opacity:.92
+.ovg-player-control-row{display:flex;align-items:center;gap:4px;height:40px;padding:0 2px;border-radius:5px;background:rgba(0,0,0,.08)}
+.ovg-player-control-button{
+    width:40px;height:40px;padding:0;border:0;border-radius:4px;background:rgba(0,0,0,.18);
+    color:#fff;font:700 21px/40px Arial,sans-serif;text-align:center;cursor:pointer;box-shadow:none;opacity:.94
 }
-.ovg-speed-button:hover,.ovg-speed-control.open .ovg-speed-button{background:rgba(0,0,0,.55);opacity:1}
+.ovg-player-control-button:hover,.ovg-speed-control.open .ovg-speed-button{background:rgba(0,0,0,.55);opacity:1}
 .ovg-speed-panel{
     display:none;flex-direction:column;align-items:center;gap:9px;padding:11px 9px 12px;border:1px solid rgba(255,255,255,.25);
     border-radius:10px;background:rgba(15,15,15,.86);backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,0,0,.45)
@@ -90,6 +91,49 @@ function isFullscreenVideo(video) {
     const fs = document.fullscreenElement || document.webkitFullscreenElement || null;
     const host = video.closest?.(".ovg-thumb");
     return fs === video || fs === host || video.webkitDisplayingFullscreen === true;
+}
+
+function videoEndpoint(path) {
+    return `/image-gallery/output/video?path=${encodeURIComponent(path)}`;
+}
+
+function thumbEndpoint(path) {
+    return `/image-gallery/output/thumb?path=${encodeURIComponent(path)}`;
+}
+
+function galleryPathsForVideo(video) {
+    const card = video.closest?.(".ovg-card");
+    const grid = card?.closest?.(".ovg-grid");
+    if (!grid) return [];
+    return [...grid.querySelectorAll(".ovg-card[data-path]")]
+        .map(el => String(el.dataset.path || ""))
+        .filter(Boolean);
+}
+
+function currentVideoPath(video) {
+    return String(video.dataset.cigCurrentPath || video.closest?.(".ovg-card")?.dataset.path || "");
+}
+
+async function navigateVideo(video, direction) {
+    const paths = galleryPathsForVideo(video);
+    if (paths.length < 2) return;
+    const current = currentVideoPath(video);
+    let index = paths.indexOf(current);
+    if (index < 0) index = 0;
+    const nextPath = paths[(index + direction + paths.length) % paths.length];
+    if (!nextPath || nextPath === current) return;
+
+    const wasPaused = video.paused;
+    video.dataset.cigCurrentPath = nextPath;
+    video.poster = thumbEndpoint(nextPath);
+    video.src = videoEndpoint(nextPath);
+    video.load();
+    video.defaultPlaybackRate = loadRate();
+    video.playbackRate = loadRate();
+    video.volume = loadVolume();
+    if (!wasPaused) {
+        try { await video.play(); } catch (_) {}
+    }
 }
 
 function showSpeedControl(video) {
@@ -128,6 +172,7 @@ function syncFullscreenControls() {
 function attachPlaybackControls(video) {
     if (!(video instanceof HTMLVideoElement) || video.dataset.cigPlaybackControls === "1") return;
     video.dataset.cigPlaybackControls = "1";
+    video.dataset.cigCurrentPath = String(video.closest?.(".ovg-card")?.dataset.path || "");
     attachedVideos.add(video);
 
     // Keep the browser's own controls, including its standard fullscreen button.
@@ -148,7 +193,7 @@ function attachPlaybackControls(video) {
     video.addEventListener("loadedmetadata", () => {
         applySavedRate();
         applySavedVolume();
-    }, { once:true });
+    });
 
     const control = document.createElement("div");
     control.className = "ovg-speed-control";
@@ -158,11 +203,17 @@ function attachPlaybackControls(video) {
             <div class="ovg-speed-value">1.00×</div>
             <input class="ovg-speed-slider" type="range" min="0.25" max="3" step="0.05" value="1">
         </div>
-        <button class="ovg-speed-button" type="button" title="Скорость воспроизведения">⏱</button>`;
+        <div class="ovg-player-control-row">
+            <button class="ovg-player-control-button ovg-prev-button" type="button" title="Предыдущее видео">⏮</button>
+            <button class="ovg-player-control-button ovg-speed-button" type="button" title="Скорость воспроизведения">⏱</button>
+            <button class="ovg-player-control-button ovg-next-button" type="button" title="Следующее видео">⏭</button>
+        </div>`;
     document.body.appendChild(control);
     video.__cigSpeedControl = control;
 
+    const prevButton = control.querySelector(".ovg-prev-button");
     const speedButton = control.querySelector(".ovg-speed-button");
+    const nextButton = control.querySelector(".ovg-next-button");
     const slider = control.querySelector(".ovg-speed-slider");
     const value = control.querySelector(".ovg-speed-value");
 
@@ -173,6 +224,16 @@ function attachPlaybackControls(video) {
     };
     updateRateUi();
 
+    prevButton.addEventListener("click", async e => {
+        e.preventDefault();
+        e.stopPropagation();
+        await navigateVideo(video, -1);
+    });
+    nextButton.addEventListener("click", async e => {
+        e.preventDefault();
+        e.stopPropagation();
+        await navigateVideo(video, 1);
+    });
     speedButton.addEventListener("click", e => {
         e.preventDefault();
         e.stopPropagation();
@@ -187,7 +248,7 @@ function attachPlaybackControls(video) {
         updateRateUi();
     });
 
-    // Consume all events on the custom speed control so it never triggers video play/pause.
+    // Consume all events on the custom control row so it never triggers video play/pause.
     for (const type of ["pointerdown","pointerup","mousedown","mouseup","click","dblclick"]) {
         control.addEventListener(type, e => e.stopPropagation(), true);
     }
