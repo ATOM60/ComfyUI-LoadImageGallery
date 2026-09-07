@@ -1,8 +1,9 @@
 import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputPreviewInteractions";
-const CLICK_DELAY_MS = 240;
-const clickTimers = new WeakMap();
+const SINGLE_CLICK_DELAY_MS = 260;
+const DOUBLE_CLICK_WINDOW_MS = 360;
+const clickState = new WeakMap();
 
 function getThumbFromEvent(event) {
     const target = event.target instanceof Element ? event.target : null;
@@ -47,12 +48,6 @@ function isOverCustomControls(event) {
     return false;
 }
 
-function clearClickTimer(thumb) {
-    const timer = clickTimers.get(thumb);
-    if (timer) clearTimeout(timer);
-    clickTimers.delete(thumb);
-}
-
 function findPlayer(thumb) {
     return thumb.querySelector("video.ovg-inline-video");
 }
@@ -64,16 +59,12 @@ function createPlayer(thumb) {
     const playButton = thumb.querySelector(".ovg-play");
     if (!playButton) return { video: null, created: false };
 
-    // The gallery creates the video synchronously before the first await.
-    // Its own play-button handler also starts playback, so a first click must
-    // not immediately toggle the freshly-created player back to pause.
     playButton.click();
     return { video: findPlayer(thumb), created: true };
 }
 
-function playCreatedVideo(video) {
+function ensurePlaying(video) {
     if (!video) return;
-    // Let the gallery's original play() run first, then make sure playback is active.
     queueMicrotask(() => {
         if (video.isConnected && video.paused) video.play().catch(() => {});
     });
@@ -84,7 +75,7 @@ function togglePlayback(thumb) {
     if (!video) return;
 
     if (created) {
-        playCreatedVideo(video);
+        ensurePlaying(video);
         return;
     }
 
@@ -151,60 +142,66 @@ function toggleFullscreen(thumb) {
 
     const { video, created } = createPlayer(thumb);
     if (!video) return;
-    if (created) playCreatedVideo(video);
+    if (created) ensurePlaying(video);
     enterFullscreen(video);
 }
 
-function onClick(event) {
-    // In native fullscreen Chromium can report the underlying <video> as the
-    // event target even when our top-layer custom controls are visually under
-    // the pointer. Ignore those coordinates here so button presses never become
-    // preview play/pause clicks.
-    if (isOverCustomControls(event)) return;
-
+function validPreviewInteraction(event) {
+    if (isOverCustomControls(event)) return null;
     const thumb = getThumbFromEvent(event);
-    if (!thumb) return;
-
-    const video = event.target instanceof HTMLVideoElement ? event.target : findPlayer(thumb);
-    if (event.target instanceof HTMLVideoElement && !isPictureArea(event.target, event)) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
-    clearClickTimer(thumb);
-    if (event.detail > 1) return;
-
-    const timer = setTimeout(() => {
-        clickTimers.delete(thumb);
-        if (!thumb.isConnected) return;
-        togglePlayback(thumb);
-    }, CLICK_DELAY_MS);
-    clickTimers.set(thumb, timer);
+    if (!thumb) return null;
+    if (event.target instanceof HTMLVideoElement && !isPictureArea(event.target, event)) return null;
+    return thumb;
 }
 
-function onDoubleClick(event) {
-    if (isOverCustomControls(event)) return;
-
-    const thumb = getThumbFromEvent(event);
-    if (!thumb) return;
-
-    if (event.target instanceof HTMLVideoElement && !isPictureArea(event.target, event)) return;
-
+function consume(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
-    clearClickTimer(thumb);
+}
 
-    // Double click is a true fullscreen toggle:
-    // preview -> play + fullscreen; fullscreen -> pause + exit fullscreen.
-    toggleFullscreen(thumb);
+function onPointerUp(event) {
+    if (event.button !== 0) return;
+    const thumb = validPreviewInteraction(event);
+    if (!thumb) return;
+
+    consume(event);
+
+    const now = performance.now();
+    const pending = clickState.get(thumb);
+    if (pending && now - pending.time <= DOUBLE_CLICK_WINDOW_MS) {
+        clearTimeout(pending.timer);
+        clickState.delete(thumb);
+
+        // Fullscreen is requested directly from the second pointer-up user gesture.
+        // This is more reliable than waiting for the browser's dblclick event,
+        // which can be swallowed by the native video player in fullscreen mode.
+        toggleFullscreen(thumb);
+        return;
+    }
+
+    if (pending) clearTimeout(pending.timer);
+    const timer = setTimeout(() => {
+        clickState.delete(thumb);
+        if (!thumb.isConnected) return;
+        togglePlayback(thumb);
+    }, SINGLE_CLICK_DELAY_MS);
+    clickState.set(thumb, { time: now, timer });
+}
+
+function suppressGeneratedClick(event) {
+    const thumb = validPreviewInteraction(event);
+    if (!thumb) return;
+    consume(event);
 }
 
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        // Capture phase owns only the preview/picture area. Native controls at
-        // the bottom remain untouched.
-        document.addEventListener("click", onClick, true);
-        document.addEventListener("dblclick", onDoubleClick, true);
+        // Use pointerup for gesture detection so the second press can request or
+        // leave fullscreen synchronously. Suppress the later click/dblclick events
+        // to prevent the native player and older handlers from doing the same action.
+        document.addEventListener("pointerup", onPointerUp, true);
+        document.addEventListener("click", suppressGeneratedClick, true);
+        document.addEventListener("dblclick", suppressGeneratedClick, true);
     },
 });
