@@ -1,13 +1,17 @@
 import { app } from "/scripts/app.js";
 
-const EXT_NAME = "Comfy.ImageGallery.OutputVideoSpeedControl";
+const EXT_NAME = "Comfy.ImageGallery.OutputVideoPlaybackControls";
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
-const STYLE_ID = "cig-output-video-speed-style";
+const STYLE_ID = "cig-output-video-playback-style";
+const attachedVideos = new Set();
+
+function clamp(value, min, max) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+}
 
 function clampRate(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return 1;
-    return Math.min(3, Math.max(0.25, n));
+    return clamp(value, 0.25, 3);
 }
 
 function loadRate() {
@@ -25,30 +29,24 @@ function injectStyles() {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-.ovg-thumb:fullscreen,
-.ovg-thumb:-webkit-full-screen{
-    width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;
-    aspect-ratio:auto!important;background:#000!important;border-radius:0!important;overflow:hidden!important;
+.ovg-speed-control[popover]{
+    display:none;
+    position:fixed;
+    inset:auto 20px auto auto;
+    top:50%;
+    transform:translateY(-50%);
+    margin:0;
+    padding:0;
+    border:0;
+    background:transparent;
+    color:#fff;
+    overflow:visible;
+    align-items:center;
+    gap:8px;
+    font-family:Arial,sans-serif;
+    user-select:none;
 }
-.ovg-thumb:fullscreen .ovg-inline-video,
-.ovg-thumb:-webkit-full-screen .ovg-inline-video{
-    position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
-    max-width:100vw!important;max-height:100vh!important;object-fit:contain!important;background:#000!important;
-}
-.ovg-custom-fullscreen{
-    position:absolute;z-index:28;right:10px;bottom:10px;width:38px;height:38px;padding:0;border:1px solid rgba(255,255,255,.35);
-    border-radius:8px;background:rgba(0,0,0,.64);color:#fff;font:700 23px/36px Arial,sans-serif;text-align:center;
-    cursor:pointer;opacity:.72;transition:opacity .12s,background .12s;box-shadow:0 2px 10px rgba(0,0,0,.35)
-}
-.ovg-custom-fullscreen:hover{opacity:1;background:rgba(0,0,0,.86)}
-.ovg-thumb:fullscreen .ovg-custom-fullscreen,
-.ovg-thumb:-webkit-full-screen .ovg-custom-fullscreen{right:20px;bottom:58px;opacity:.82}
-.ovg-speed-control{
-    display:none;position:absolute;z-index:30;right:20px;top:50%;transform:translateY(-50%);align-items:center;gap:8px;
-    font-family:Arial,sans-serif;user-select:none
-}
-.ovg-thumb:fullscreen .ovg-speed-control,
-.ovg-thumb:-webkit-full-screen .ovg-speed-control{display:flex}
+.ovg-speed-control[popover]:popover-open{display:flex}
 .ovg-speed-button{
     width:46px;height:46px;padding:0;border:1px solid rgba(255,255,255,.38);border-radius:50%;background:rgba(0,0,0,.62);
     color:#fff;font-size:22px;line-height:44px;text-align:center;cursor:pointer;box-shadow:0 3px 14px rgba(0,0,0,.4)
@@ -67,116 +65,149 @@ function injectStyles() {
     document.head.appendChild(style);
 }
 
-function isHostFullscreen(host) {
-    return document.fullscreenElement === host || document.webkitFullscreenElement === host;
+function isFullscreenVideo(video) {
+    const fs = document.fullscreenElement || document.webkitFullscreenElement || null;
+    const host = video.closest?.(".ovg-thumb");
+    return fs === video || fs === host || video.webkitDisplayingFullscreen === true;
 }
 
-async function toggleFullscreen(host) {
-    if (isHostFullscreen(host)) {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-        return;
+function showSpeedControl(video) {
+    const control = video.__cigSpeedControl;
+    if (!control?.isConnected) return;
+    for (const other of attachedVideos) {
+        if (other !== video) hideSpeedControl(other);
     }
-    if (host.requestFullscreen) await host.requestFullscreen();
-    else if (host.webkitRequestFullscreen) host.webkitRequestFullscreen();
-}
-
-function attachSpeedControl(video) {
-    if (!(video instanceof HTMLVideoElement) || video.dataset.cigSpeedControl === "1") return;
-    const host = video.closest(".ovg-thumb");
-    if (!host) return;
-    video.dataset.cigSpeedControl = "1";
-
     try {
-        if (video.controlsList?.add) video.controlsList.add("nofullscreen");
-        else video.setAttribute("controlsList", `${video.getAttribute("controlsList") || ""} nofullscreen`.trim());
+        if (typeof control.showPopover === "function" && !control.matches(":popover-open")) control.showPopover();
     } catch (_) {}
+}
 
-    const rate = loadRate();
-    video.defaultPlaybackRate = rate;
-    video.playbackRate = rate;
+function hideSpeedControl(video) {
+    const control = video?.__cigSpeedControl;
+    if (!control) return;
+    control.classList.remove("open");
+    try {
+        if (typeof control.hidePopover === "function" && control.matches(":popover-open")) control.hidePopover();
+    } catch (_) {}
+}
 
-    let fsButton = host.querySelector(":scope > .ovg-custom-fullscreen");
-    if (!fsButton) {
-        fsButton = document.createElement("button");
-        fsButton.type = "button";
-        fsButton.className = "ovg-custom-fullscreen";
-        fsButton.textContent = "⛶";
-        fsButton.title = "На весь экран";
-        host.appendChild(fsButton);
+function syncFullscreenControls() {
+    for (const video of [...attachedVideos]) {
+        if (!video.isConnected) {
+            hideSpeedControl(video);
+            video.__cigSpeedControl?.remove();
+            attachedVideos.delete(video);
+            continue;
+        }
+        if (isFullscreenVideo(video)) showSpeedControl(video);
+        else hideSpeedControl(video);
     }
+}
 
-    let speed = host.querySelector(":scope > .ovg-speed-control");
-    if (!speed) {
-        speed = document.createElement("div");
-        speed.className = "ovg-speed-control";
-        speed.innerHTML = `
-            <div class="ovg-speed-panel">
-                <div class="ovg-speed-value">1.00×</div>
-                <input class="ovg-speed-slider" type="range" min="0.25" max="3" step="0.05" value="1">
-            </div>
-            <button class="ovg-speed-button" type="button" title="Скорость воспроизведения">⏱</button>`;
-        host.appendChild(speed);
-    }
+function attachPlaybackControls(video) {
+    if (!(video instanceof HTMLVideoElement) || video.dataset.cigPlaybackControls === "1") return;
+    video.dataset.cigPlaybackControls = "1";
+    attachedVideos.add(video);
 
-    const speedButton = speed.querySelector(".ovg-speed-button");
-    const slider = speed.querySelector(".ovg-speed-slider");
-    const value = speed.querySelector(".ovg-speed-value");
+    // Keep the browser's own controls, including its standard fullscreen button.
+    video.controls = true;
+    video.loop = true;
+    video.setAttribute("loop", "");
+
+    const applySavedRate = () => {
+        const rate = loadRate();
+        video.defaultPlaybackRate = rate;
+        video.playbackRate = rate;
+    };
+    applySavedRate();
+    video.addEventListener("loadedmetadata", applySavedRate, { once:true });
+
+    const control = document.createElement("div");
+    control.className = "ovg-speed-control";
+    control.setAttribute("popover", "manual");
+    control.innerHTML = `
+        <div class="ovg-speed-panel">
+            <div class="ovg-speed-value">1.00×</div>
+            <input class="ovg-speed-slider" type="range" min="0.25" max="3" step="0.05" value="1">
+        </div>
+        <button class="ovg-speed-button" type="button" title="Скорость воспроизведения">⏱</button>`;
+    document.body.appendChild(control);
+    video.__cigSpeedControl = control;
+
+    const speedButton = control.querySelector(".ovg-speed-button");
+    const slider = control.querySelector(".ovg-speed-slider");
+    const value = control.querySelector(".ovg-speed-value");
 
     const updateRateUi = () => {
-        const r = clampRate(video.playbackRate || loadRate());
-        slider.value = String(r);
-        value.textContent = `${r.toFixed(2)}×`;
+        const rate = clampRate(video.playbackRate || loadRate());
+        slider.value = String(rate);
+        value.textContent = `${rate.toFixed(2)}×`;
     };
     updateRateUi();
 
-    const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
-    for (const el of [fsButton, speed, speedButton, slider]) {
+    speedButton.addEventListener("click", e => {
+        e.preventDefault();
+        e.stopPropagation();
+        control.classList.toggle("open");
+    });
+    slider.addEventListener("input", e => {
+        e.stopPropagation();
+        const rate = clampRate(slider.value);
+        video.defaultPlaybackRate = rate;
+        video.playbackRate = rate;
+        saveRate(rate);
+        updateRateUi();
+    });
+    for (const el of [control, speedButton, slider]) {
         el.addEventListener("pointerdown", e => e.stopPropagation());
         el.addEventListener("mousedown", e => e.stopPropagation());
-        el.addEventListener("click", e => e.stopPropagation());
     }
 
-    fsButton.addEventListener("click", async (e) => {
-        stop(e);
-        try { await toggleFullscreen(host); }
-        catch (err) { console.warn("[OutputVideoGallery] fullscreen:", err); }
-    });
-
-    speedButton.addEventListener("click", (e) => {
-        stop(e);
-        speed.classList.toggle("open");
-    });
-
-    slider.addEventListener("input", (e) => {
-        e.stopPropagation();
-        const r = clampRate(slider.value);
-        video.playbackRate = r;
-        video.defaultPlaybackRate = r;
-        saveRate(r);
+    video.addEventListener("ratechange", () => {
+        const rate = clampRate(video.playbackRate || 1);
+        saveRate(rate);
         updateRateUi();
     });
 
-    video.addEventListener("ratechange", updateRateUi);
-    video.addEventListener("dblclick", async (e) => {
-        stop(e);
-        try { await toggleFullscreen(host); }
-        catch (_) {}
-    }, true);
+    // Mouse wheel over the video adjusts volume instead of scrolling the gallery.
+    video.addEventListener("wheel", e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const direction = e.deltaY < 0 ? 1 : -1;
+        const next = clamp(video.volume + direction * 0.05, 0, 1);
+        video.volume = next;
+        if (next > 0 && video.muted) video.muted = false;
+    }, { passive:false });
 
-    const onFullscreen = () => {
-        const full = isHostFullscreen(host);
-        fsButton.textContent = full ? "↙" : "⛶";
-        fsButton.title = full ? "Выйти из полноэкранного режима" : "На весь экран";
-        if (!full) speed.classList.remove("open");
-    };
-    document.addEventListener("fullscreenchange", onFullscreen);
-    document.addEventListener("webkitfullscreenchange", onFullscreen);
+    // A single click on the picture area toggles play/pause. Leave the native
+    // control strip at the bottom untouched so its buttons and scrubber work normally.
+    video.addEventListener("click", e => {
+        const rect = video.getBoundingClientRect();
+        const localY = e.clientY - rect.top;
+        const nativeControlsHeight = isFullscreenVideo(video) ? 72 : 52;
+        if (localY >= rect.height - nativeControlsHeight) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (video.paused) video.play().catch(() => {});
+        else video.pause();
+    });
+
+    video.addEventListener("webkitbeginfullscreen", () => setTimeout(syncFullscreenControls, 0));
+    video.addEventListener("webkitendfullscreen", () => setTimeout(syncFullscreenControls, 0));
+    video.addEventListener("emptied", () => {
+        if (!video.isConnected) {
+            hideSpeedControl(video);
+            control.remove();
+            attachedVideos.delete(video);
+        }
+    });
+
+    queueMicrotask(syncFullscreenControls);
 }
 
 function scan(root = document) {
-    if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attachSpeedControl(root);
-    root.querySelectorAll?.("video.ovg-inline-video").forEach(attachSpeedControl);
+    if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attachPlaybackControls(root);
+    root.querySelectorAll?.("video.ovg-inline-video").forEach(attachPlaybackControls);
 }
 
 app.registerExtension({
@@ -184,10 +215,24 @@ app.registerExtension({
     setup() {
         injectStyles();
         scan();
-        const observer = new MutationObserver((records) => {
+        document.addEventListener("fullscreenchange", syncFullscreenControls);
+        document.addEventListener("webkitfullscreenchange", syncFullscreenControls);
+
+        const observer = new MutationObserver(records => {
             for (const record of records) {
                 for (const node of record.addedNodes) {
                     if (node instanceof Element) scan(node);
+                }
+                for (const node of record.removedNodes) {
+                    if (!(node instanceof Element)) continue;
+                    const videos = [];
+                    if (node instanceof HTMLVideoElement && node.classList.contains("ovg-inline-video")) videos.push(node);
+                    node.querySelectorAll?.("video.ovg-inline-video").forEach(v => videos.push(v));
+                    for (const video of videos) {
+                        hideSpeedControl(video);
+                        video.__cigSpeedControl?.remove();
+                        attachedVideos.delete(video);
+                    }
                 }
             }
         });
