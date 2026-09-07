@@ -47,33 +47,73 @@ function injectStyles() {
 .ovg-speed-control[popover]{
     display:none;
     position:fixed!important;
-    right:108px!important;
-    bottom:max(58px,6vh)!important;
+    right:330px!important;
+    bottom:78px!important;
     top:auto!important;
     left:auto!important;
-    inset:auto 108px max(58px,6vh) auto!important;
+    inset:auto 330px 78px auto!important;
     transform:none!important;
     margin:0!important;
     padding:0!important;
     border:0!important;
     background:transparent!important;
-    color:#fff;
+    color:#fff!important;
     overflow:visible!important;
-    flex-direction:column;
-    align-items:center;
-    gap:7px;
+    flex-direction:column!important;
+    align-items:center!important;
+    gap:7px!important;
     width:auto!important;
     height:auto!important;
-    font-family:Arial,sans-serif;
-    user-select:none;
+    min-width:0!important;
+    min-height:0!important;
+    font-family:"Segoe UI Symbol",Arial,sans-serif!important;
+    user-select:none!important;
 }
-.ovg-speed-control[popover]:popover-open{display:flex}
-.ovg-player-control-row{display:flex;align-items:center;gap:4px;height:40px;padding:0 2px;border-radius:5px;background:rgba(0,0,0,.08)}
+.ovg-speed-control[popover]:popover-open{display:flex!important}
+.ovg-player-control-row{
+    display:flex!important;
+    flex-direction:row!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    gap:2px!important;
+    width:116px!important;
+    height:36px!important;
+    min-width:116px!important;
+    max-width:116px!important;
+    padding:0!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:4px!important;
+    background:transparent!important;
+}
 .ovg-player-control-button{
-    width:40px;height:40px;padding:0;border:0;border-radius:4px;background:rgba(0,0,0,.18);
-    color:#fff;font:700 21px/40px Arial,sans-serif;text-align:center;cursor:pointer;box-shadow:none;opacity:.94
+    box-sizing:border-box!important;
+    flex:0 0 36px!important;
+    width:36px!important;
+    min-width:36px!important;
+    max-width:36px!important;
+    height:36px!important;
+    min-height:36px!important;
+    max-height:36px!important;
+    padding:0!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:4px!important;
+    background:transparent!important;
+    color:#fff!important;
+    font-family:"Segoe UI Symbol",Arial,sans-serif!important;
+    font-size:17px!important;
+    font-weight:600!important;
+    line-height:36px!important;
+    text-align:center!important;
+    cursor:pointer!important;
+    box-shadow:none!important;
+    opacity:.92!important;
 }
-.ovg-player-control-button:hover,.ovg-speed-control.open .ovg-speed-button{background:rgba(0,0,0,.55);opacity:1}
+.ovg-player-control-button:hover,.ovg-speed-control.open .ovg-speed-button{
+    background:rgba(255,255,255,.12)!important;
+    opacity:1!important;
+}
 .ovg-speed-panel{
     display:none;flex-direction:column;align-items:center;gap:9px;padding:11px 9px 12px;border:1px solid rgba(255,255,255,.25);
     border-radius:10px;background:rgba(15,15,15,.86);backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,0,0,.45)
@@ -82,6 +122,9 @@ function injectStyles() {
 .ovg-speed-value{min-width:56px;text-align:center;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 .ovg-speed-slider{
     width:28px;height:180px;margin:0;writing-mode:vertical-lr;direction:rtl;accent-color:#79adff;cursor:pointer
+}
+@media(max-width:900px){
+    .ovg-speed-control[popover]{right:250px!important;inset:auto 250px 78px auto!important}
 }
 `;
     document.head.appendChild(style);
@@ -175,7 +218,6 @@ function attachPlaybackControls(video) {
     video.dataset.cigCurrentPath = String(video.closest?.(".ovg-card")?.dataset.path || "");
     attachedVideos.add(video);
 
-    // Keep the browser's own controls, including its standard fullscreen button.
     video.controls = true;
     video.loop = true;
     video.setAttribute("loop", "");
@@ -204,9 +246,9 @@ function attachPlaybackControls(video) {
             <input class="ovg-speed-slider" type="range" min="0.25" max="3" step="0.05" value="1">
         </div>
         <div class="ovg-player-control-row">
-            <button class="ovg-player-control-button ovg-prev-button" type="button" title="Предыдущее видео">⏮</button>
-            <button class="ovg-player-control-button ovg-speed-button" type="button" title="Скорость воспроизведения">⏱</button>
-            <button class="ovg-player-control-button ovg-next-button" type="button" title="Следующее видео">⏭</button>
+            <button class="ovg-player-control-button ovg-prev-button" type="button" title="Предыдущее видео">⏮︎</button>
+            <button class="ovg-player-control-button ovg-speed-button" type="button" title="Скорость воспроизведения">⏱︎</button>
+            <button class="ovg-player-control-button ovg-next-button" type="button" title="Следующее видео">⏭︎</button>
         </div>`;
     document.body.appendChild(control);
     video.__cigSpeedControl = control;
@@ -248,7 +290,6 @@ function attachPlaybackControls(video) {
         updateRateUi();
     });
 
-    // Consume all events on the custom control row so it never triggers video play/pause.
     for (const type of ["pointerdown","pointerup","mousedown","mouseup","click","dblclick"]) {
         control.addEventListener(type, e => e.stopPropagation(), true);
     }
@@ -260,10 +301,8 @@ function attachPlaybackControls(video) {
         updateRateUi();
     });
 
-    // Persist volume changes made by the native slider, mute controls, or mouse wheel.
     video.addEventListener("volumechange", () => saveVolume(video.volume));
 
-    // Mouse wheel over the video adjusts volume instead of scrolling the gallery.
     video.addEventListener("wheel", e => {
         e.preventDefault();
         e.stopPropagation();
@@ -273,8 +312,6 @@ function attachPlaybackControls(video) {
         if (next > 0 && video.muted) video.muted = false;
     }, { passive:false });
 
-    // A single click on the picture area toggles play/pause. Leave the native
-    // control strip at the bottom untouched so its buttons and scrubber work normally.
     video.addEventListener("click", e => {
         const rect = video.getBoundingClientRect();
         const localY = e.clientY - rect.top;
