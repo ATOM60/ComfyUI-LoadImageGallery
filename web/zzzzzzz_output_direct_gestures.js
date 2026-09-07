@@ -197,11 +197,25 @@ function attachThumb(thumb) {
     thumb.querySelectorAll("video.ovg-inline-video").forEach(attachVideo);
 }
 
+function protectContextMenu(menu) {
+    if (!(menu instanceof HTMLElement) || menu.dataset.cigContextMenuProtected === "1") return;
+    menu.dataset.cigContextMenuProtected = "1";
+
+    // output_video_gallery.js closes the menu on the next document pointerdown.
+    // Stop pointerdown inside the menu from bubbling to that outside-click handler,
+    // otherwise the menu is removed before its button's click event can fire.
+    menu.addEventListener("pointerdown", event => {
+        event.stopPropagation();
+    });
+}
+
 function scan(root = document) {
     if (root instanceof HTMLElement && root.classList.contains("ovg-thumb")) attachThumb(root);
     if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attachVideo(root);
+    if (root instanceof HTMLElement && root.classList.contains("ovg-menu")) protectContextMenu(root);
     root.querySelectorAll?.(".ovg-thumb").forEach(attachThumb);
     root.querySelectorAll?.("video.ovg-inline-video").forEach(attachVideo);
+    root.querySelectorAll?.(".ovg-menu").forEach(protectContextMenu);
 }
 
 app.registerExtension({
