@@ -32,29 +32,32 @@ function injectStyles() {
 .ovg-speed-control[popover]{
     display:none;
     position:fixed;
-    inset:auto 20px auto auto;
-    top:50%;
-    transform:translateY(-50%);
+    right:58px;
+    bottom:8px;
+    top:auto;
+    left:auto;
+    transform:none;
     margin:0;
     padding:0;
     border:0;
     background:transparent;
     color:#fff;
     overflow:visible;
+    flex-direction:column;
     align-items:center;
-    gap:8px;
+    gap:6px;
     font-family:Arial,sans-serif;
     user-select:none;
 }
 .ovg-speed-control[popover]:popover-open{display:flex}
 .ovg-speed-button{
-    width:46px;height:46px;padding:0;border:1px solid rgba(255,255,255,.38);border-radius:50%;background:rgba(0,0,0,.62);
-    color:#fff;font-size:22px;line-height:44px;text-align:center;cursor:pointer;box-shadow:0 3px 14px rgba(0,0,0,.4)
+    width:36px;height:36px;padding:0;border:0;border-radius:4px;background:rgba(0,0,0,.20);
+    color:#fff;font-size:20px;line-height:36px;text-align:center;cursor:pointer;box-shadow:none;opacity:.92
 }
-.ovg-speed-button:hover,.ovg-speed-control.open .ovg-speed-button{background:rgba(0,0,0,.88);border-color:rgba(255,255,255,.7)}
+.ovg-speed-button:hover,.ovg-speed-control.open .ovg-speed-button{background:rgba(0,0,0,.55);opacity:1}
 .ovg-speed-panel{
     display:none;flex-direction:column;align-items:center;gap:9px;padding:11px 9px 12px;border:1px solid rgba(255,255,255,.25);
-    border-radius:10px;background:rgba(15,15,15,.82);backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,0,0,.45)
+    border-radius:10px;background:rgba(15,15,15,.86);backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,0,0,.45)
 }
 .ovg-speed-control.open .ovg-speed-panel{display:flex}
 .ovg-speed-value{min-width:56px;text-align:center;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
@@ -158,10 +161,13 @@ function attachPlaybackControls(video) {
         saveRate(rate);
         updateRateUi();
     });
-    for (const el of [control, speedButton, slider]) {
-        el.addEventListener("pointerdown", e => e.stopPropagation());
-        el.addEventListener("mousedown", e => e.stopPropagation());
+
+    // The custom speed control lives visually in the native controls row. Consume
+    // all pointer/click events here so they never reach the video's play/pause handler.
+    for (const type of ["pointerdown","pointerup","mousedown","mouseup","click","dblclick"]) {
+        control.addEventListener(type, e => e.stopPropagation(), true);
     }
+    control.addEventListener("wheel", e => e.stopPropagation(), { passive:true, capture:true });
 
     video.addEventListener("ratechange", () => {
         const rate = clampRate(video.playbackRate || 1);
