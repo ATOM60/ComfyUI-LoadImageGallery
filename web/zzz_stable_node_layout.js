@@ -5,6 +5,8 @@ const NODE_CLASS = "LoadImageGallery";
 const OUTPUT_BUTTON = "Галерея output";
 const START_BUTTON = "▶ СТАРТ";
 const LEGACY_BUTTON = "🖼 Превью папки";
+const LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
+const OUTPUT_BUTTON_LABEL = LANG === "ru" ? "▦  Галерея output" : "▦  Output Gallery";
 
 function exactPreview(node) {
     return node?.widgets?.find(w => w?.name === "$$canvas-image-preview" || w?.type === "IMAGE_PREVIEW") || null;
@@ -43,7 +45,7 @@ function restoreOutputButton(node, button) {
         ctx.font = "700 20px Arial,sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("▦  Галерея output", width / 2, y + h / 2);
+        ctx.fillText(OUTPUT_BUTTON_LABEL, width / 2, y + h / 2);
         ctx.restore();
     };
 }
