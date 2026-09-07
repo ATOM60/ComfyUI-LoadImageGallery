@@ -1,6 +1,6 @@
 # ComfyUI Load Image Gallery
 
-An enhanced image loader for ComfyUI with a fast visual gallery, external-folder browsing, favorites, sorting, persistent thumbnail caching, multi-select, preview navigation, clipboard operations, and batch queueing.
+An enhanced image loader for ComfyUI with a fast visual gallery, external-folder browsing, favorites, sorting, persistent thumbnail caching, multi-select, preview navigation, clipboard operations, batch queueing, and an integrated Output Video Gallery.
 
 ## Features
 
@@ -31,6 +31,8 @@ An enhanced image loader for ComfyUI with a fast visual gallery, external-folder
 - Per-workflow last-image persistence
 - External absolute-path image loading without copying files into `input`
 - Large portrait and landscape preview support
+- Integrated Output Video Gallery for browsing and managing videos from ComfyUI `output`
+- Output video thumbnails, inline playback, search, sorting, card-size control, multi-select, rectangle select, copy, rename, reveal, and delete
 
 ## Installation
 
@@ -45,6 +47,21 @@ Restart ComfyUI.
 The node will appear as:
 
 **Load Image Gallery**
+
+## Node layout
+
+The node keeps the normal ComfyUI image outputs:
+
+- **IMAGE**
+- **MASK**
+
+Visible controls are arranged as:
+
+1. **Галерея output** — opens the integrated Output Video Gallery
+2. **Image preview** — click the image to open the input image gallery; use the side arrows to navigate the current image folder
+3. **START** — queues the current workflow
+
+The stock Load Image file-upload controls remain internal for compatibility but are hidden from the node UI.
 
 ## Gallery controls
 
@@ -72,11 +89,32 @@ When copying between gallery folders, the node preserves the original source fil
 
 If a file with the same name already exists, a new unique filename is used.
 
+## Output Video Gallery
+
+Use the large **Галерея output** button at the top of the node to open the integrated video gallery.
+
+The video gallery browses videos from the ComfyUI `output` directory and supports:
+
+- thumbnail previews
+- inline video playback inside gallery cards
+- search by filename or folder
+- sorting by date, name, or file size
+- adjustable thumbnail/card size
+- single and multi-selection
+- rectangle selection with accumulated selection
+- touch hold + drag selection
+- copy selected video files to the Windows clipboard for pasting in Explorer
+- rename
+- reveal in Explorer
+- delete selected videos
+
+No video player is shown directly on the node itself.
+
 ## Node preview
 
 Use the large arrow areas on the left and right side of the preview to move through images in the current folder.
 
-Click the preview image to open the gallery.
+Click the preview image to open the input image gallery.
 
 Portrait images are scaled up to use the available preview area, while landscape images keep dedicated space for navigation controls.
 
@@ -103,9 +141,9 @@ Nested external folders can be opened directly inside the gallery. Recently used
 
 ## Closing behavior
 
-The gallery closes with **✕** or when an image is loaded with a double click.
+The input image gallery closes with **✕** or when an image is loaded with a double click.
 
-Pressing Escape or clicking outside the gallery does not close it.
+Pressing Escape or clicking outside the input gallery does not close it.
 
 ## Updating
 
