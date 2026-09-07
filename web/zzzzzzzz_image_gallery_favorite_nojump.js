@@ -1,13 +1,23 @@
 import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
 
 const EXT_NAME = "Comfy.ImageGallery.FavoriteNoJump";
 const FAVORITES_KEY = "ComfyUI-LoadImageGallery.favorites";
+const SORT_KEY = "ComfyUI-LoadImageGallery.sortMode";
 
 function normalizePath(value) {
     return String(value ?? "")
         .replace(/\\/g, "/")
         .replace(/\s*\[(input|output|temp)\]\s*$/i, "")
         .replace(/^\/+|\/+$/g, "");
+}
+
+function splitPath(value) {
+    const clean = normalizePath(value);
+    const index = clean.lastIndexOf("/");
+    return index < 0
+        ? { folder:"", filename:clean }
+        : { folder:clean.slice(0, index), filename:clean.slice(index + 1) };
 }
 
 function loadFavorites() {
@@ -24,18 +34,141 @@ function saveFavorites(favorites) {
     catch (_) {}
 }
 
+function currentLanguageIsRussian() {
+    return String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en")
+        .toLowerCase().startsWith("ru");
+}
+
 function updateFavoriteButton(button, on) {
     button.classList.toggle("active", on);
     button.textContent = on ? "♥" : "♡";
     button.setAttribute("aria-pressed", on ? "true" : "false");
 
-    const ru = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en")
-        .toLowerCase().startsWith("ru");
-    const label = ru
+    const label = currentLanguageIsRussian()
         ? (on ? "Убрать из любимых" : "Добавить в любимые")
         : (on ? "Remove from favorites" : "Add to favorites");
     button.setAttribute("aria-label", label);
     button.title = label;
+}
+
+function cardKey(card) {
+    return normalizePath(card?.__cigRelative || card?.title || "");
+}
+
+function captureViewport(body, ignoredCard = null) {
+    const bodyRect = body.getBoundingClientRect();
+    const cards = [...body.querySelectorAll(".cig-card")];
+    let best = null;
+
+    for (const card of cards) {
+        if (card === ignoredCard) continue;
+        const key = cardKey(card);
+        if (!key) continue;
+        const rect = card.getBoundingClientRect();
+        if (rect.bottom <= bodyRect.top || rect.top >= bodyRect.bottom) continue;
+
+        if (!best || rect.top < best.rect.top || (Math.abs(rect.top - best.rect.top) < 0.5 && rect.left < best.rect.left)) {
+            best = { key, rect };
+        }
+    }
+
+    return {
+        top: body.scrollTop,
+        left: body.scrollLeft,
+        anchorKey: best?.key || "",
+        anchorOffset: best ? best.rect.top - bodyRect.top : 0,
+    };
+}
+
+function restoreViewport(body, snapshot) {
+    if (!body?.isConnected || !snapshot) return;
+
+    if (snapshot.anchorKey) {
+        const bodyRect = body.getBoundingClientRect();
+        const anchor = [...body.querySelectorAll(".cig-card")].find(card => cardKey(card) === snapshot.anchorKey);
+        if (anchor) {
+            const currentOffset = anchor.getBoundingClientRect().top - bodyRect.top;
+            body.scrollTop += currentOffset - snapshot.anchorOffset;
+            body.scrollLeft = snapshot.left;
+            return;
+        }
+    }
+
+    body.scrollTop = snapshot.top;
+    body.scrollLeft = snapshot.left;
+}
+
+function compareNames(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric:true, sensitivity:"base" });
+}
+
+function sortCards(cards, metadata, mode) {
+    const metaFor = card => metadata.get(splitPath(cardKey(card)).filename) || {};
+    const nameFor = card => splitPath(cardKey(card)).filename;
+
+    return [...cards].sort((a, b) => {
+        const nameA = nameFor(a), nameB = nameFor(b);
+        const metaA = metaFor(a), metaB = metaFor(b);
+        switch (mode) {
+            case "name-desc": return -compareNames(nameA, nameB);
+            case "date-desc": return (Number(metaB.mtime) || 0) - (Number(metaA.mtime) || 0) || compareNames(nameA, nameB);
+            case "date-asc": return (Number(metaA.mtime) || 0) - (Number(metaB.mtime) || 0) || compareNames(nameA, nameB);
+            case "size-desc": return (Number(metaB.size) || 0) - (Number(metaA.size) || 0) || compareNames(nameA, nameB);
+            case "size-asc": return (Number(metaA.size) || 0) - (Number(metaB.size) || 0) || compareNames(nameA, nameB);
+            default: return compareNames(nameA, nameB);
+        }
+    });
+}
+
+async function loadMetadata(folder) {
+    try {
+        const response = await api.fetchApi(`/image-gallery/list?folder=${encodeURIComponent(folder || "")}`);
+        if (!response.ok) return new Map();
+        const data = await response.json();
+        const items = Array.isArray(data?.items) ? data.items : [];
+        return new Map(items.map(item => [String(item?.name ?? ""), item || {}]));
+    } catch (_) {
+        return new Map();
+    }
+}
+
+async function reorderGallery(body, grid, folder, clickedCard) {
+    if (!body?.isConnected || !grid?.isConnected) return;
+
+    const metadata = await loadMetadata(folder);
+    if (!body?.isConnected || !grid?.isConnected) return;
+
+    const snapshot = captureViewport(body, clickedCard);
+    const oldOverflowAnchor = body.style.overflowAnchor;
+    const oldScrollBehavior = body.style.scrollBehavior;
+    body.style.overflowAnchor = "none";
+    body.style.scrollBehavior = "auto";
+
+    const favorites = loadFavorites();
+    const cards = [...grid.children].filter(child => child.classList?.contains("cig-card"));
+    const sortMode = (() => {
+        try { return localStorage.getItem(SORT_KEY) || "name-asc"; }
+        catch (_) { return "name-asc"; }
+    })();
+
+    const sorted = sortCards(cards, metadata, sortMode);
+    const ordered = [
+        ...sorted.filter(card => favorites.has(cardKey(card))),
+        ...sorted.filter(card => !favorites.has(cardKey(card))),
+    ];
+
+    const firstFolderCard = [...grid.children].find(child => child.classList?.contains("cig-folder-card")) || null;
+    for (const card of ordered) grid.insertBefore(card, firstFolderCard);
+
+    restoreViewport(body, snapshot);
+    requestAnimationFrame(() => {
+        restoreViewport(body, snapshot);
+        requestAnimationFrame(() => {
+            restoreViewport(body, snapshot);
+            body.style.overflowAnchor = oldOverflowAnchor;
+            body.style.scrollBehavior = oldScrollBehavior;
+        });
+    });
 }
 
 app.registerExtension({
@@ -47,13 +180,16 @@ app.registerExtension({
             if (!button) return;
 
             const card = button.closest?.(".cig-card");
-            const relative = normalizePath(card?.__cigRelative || card?.title || "");
+            const relative = cardKey(card);
             if (!relative) return;
 
-            // Stop image_gallery.js from rebuilding and re-sorting the entire grid
-            // on this click. That rebuild is what moves the scroll position.
-            // The favorite state is saved immediately; the card will move into the
-            // favorites group on the next normal render/reopen/refresh.
+            const overlay = button.closest?.(".cig-overlay");
+            const body = overlay?.querySelector?.(".cig-body");
+            const grid = overlay?.querySelector?.(".cig-grid");
+            if (!(body instanceof HTMLElement) || !(grid instanceof HTMLElement)) return;
+
+            // Handle the favorite click here instead of letting image_gallery.js
+            // rebuild the whole grid and scroll the moved card into view.
             event.preventDefault();
             event.stopImmediatePropagation();
 
@@ -63,6 +199,9 @@ app.registerExtension({
             else favorites.delete(relative);
             saveFavorites(favorites);
             updateFavoriteButton(button, on);
+
+            const folder = splitPath(relative).folder;
+            void reorderGallery(body, grid, folder, card);
         }, true);
     },
 });
