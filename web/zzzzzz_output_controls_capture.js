@@ -28,8 +28,49 @@ function saveRate(rate) {
     catch (_) {}
 }
 
+function lockRightEdge(control) {
+    if (!(control instanceof HTMLElement)) return;
+    control.style.setProperty("position", "fixed", "important");
+    control.style.setProperty("right", "18px", "important");
+    control.style.setProperty("left", "auto", "important");
+    control.style.setProperty("top", "50%", "important");
+    control.style.setProperty("bottom", "auto", "important");
+    control.style.setProperty("inset", "50% 18px auto auto", "important");
+    control.style.setProperty("transform", "translateY(-50%)", "important");
+    control.style.setProperty("flex-direction", "row", "important");
+    control.style.setProperty("align-items", "center", "important");
+    control.style.setProperty("justify-content", "flex-end", "important");
+    control.style.setProperty("gap", "8px", "important");
+    control.style.setProperty("z-index", "2147483647", "important");
+
+    const row = control.querySelector(".ovg-player-control-row");
+    if (row instanceof HTMLElement) {
+        row.style.setProperty("display", "flex", "important");
+        row.style.setProperty("flex-direction", "column", "important");
+        row.style.setProperty("align-items", "center", "important");
+        row.style.setProperty("justify-content", "center", "important");
+        row.style.setProperty("gap", "2px", "important");
+        row.style.setProperty("width", "36px", "important");
+        row.style.setProperty("min-width", "36px", "important");
+        row.style.setProperty("max-width", "36px", "important");
+        row.style.setProperty("height", "116px", "important");
+        row.style.setProperty("min-height", "116px", "important");
+        row.style.setProperty("max-height", "116px", "important");
+        row.style.setProperty("order", "1", "important");
+    }
+
+    const panel = control.querySelector(".ovg-speed-panel");
+    if (panel instanceof HTMLElement) panel.style.setProperty("order", "0", "important");
+}
+
+function lockAllControls() {
+    document.querySelectorAll(".ovg-speed-control").forEach(lockRightEdge);
+}
+
 function visibleControls() {
-    return [...document.querySelectorAll(".ovg-speed-control")].filter(control => {
+    const controls = [...document.querySelectorAll(".ovg-speed-control")];
+    controls.forEach(lockRightEdge);
+    return controls.filter(control => {
         const r = control.getBoundingClientRect();
         return r.width > 0 && r.height > 0 && getComputedStyle(control).display !== "none";
     });
@@ -110,6 +151,7 @@ function consume(event) {
 
 function onPointerDown(event) {
     if (event.button !== 0) return;
+    lockAllControls();
     const x = event.clientX, y = event.clientY;
 
     const sliderHit = hitElement(".ovg-speed-slider", x, y);
@@ -132,6 +174,7 @@ function onPointerDown(event) {
         navigate(video, 1);
     } else if (el.classList.contains("ovg-speed-button")) {
         control.classList.toggle("open");
+        lockRightEdge(control);
     }
 }
 
@@ -149,6 +192,7 @@ function onPointerUp(event) {
 }
 
 function blockClicks(event) {
+    lockAllControls();
     const x = event.clientX, y = event.clientY;
     if (hitElement(".ovg-player-control-button,.ovg-speed-slider,.ovg-speed-panel", x, y)) consume(event);
 }
@@ -172,6 +216,13 @@ app.registerExtension({
 `;
             document.head.appendChild(style);
         }
+
+        lockAllControls();
+        document.addEventListener("fullscreenchange", () => requestAnimationFrame(lockAllControls), true);
+        document.addEventListener("webkitfullscreenchange", () => requestAnimationFrame(lockAllControls), true);
+
+        const observer = new MutationObserver(() => requestAnimationFrame(lockAllControls));
+        observer.observe(document.body, { childList:true, subtree:true });
 
         // Capture before the fullscreen <video> / its native UI sees the pointer.
         document.addEventListener("pointerdown", onPointerDown, true);
