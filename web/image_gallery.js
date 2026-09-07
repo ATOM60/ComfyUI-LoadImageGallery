@@ -25,6 +25,7 @@ function injectStyles() {
 .cig-body{flex:1 1 auto;min-height:0;overflow:auto;padding:16px;contain:strict}.cig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;align-items:start}.cig-card{position:relative;background:#222;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;transition:border-color .12s,background .12s,transform .08s;content-visibility:auto;contain-intrinsic-size:180px 205px}.cig-card:hover{background:#2b2b2b;transform:translateY(-1px)}.cig-card.selected{border-color:#6ba7ff;background:#26364b}.cig-thumb-wrap{width:100%;aspect-ratio:1/1;background:#111;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}.cig-thumb{width:100%;height:100%;object-fit:contain;display:block}.cig-thumb:not([src]){visibility:hidden}.cig-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px}.cig-card.loaded .cig-placeholder{display:none}.cig-card.error .cig-placeholder{color:#a77}.cig-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}.cig-empty{padding:40px;text-align:center;color:#aaa;font-size:15px}.cig-footer{display:flex;align-items:center;gap:10px;flex:0 0 auto;border-top:1px solid #383838;padding:12px 16px;background:#1d1d1d}.cig-footer-top{display:flex;align-items:center;gap:10px}.cig-folder-label{white-space:nowrap;font-size:13px;color:#bbb}.cig-folder{flex:1 1 360px;min-width:280px;background:#292929;color:#eee;border:1px solid #4b4b4b;border-radius:7px;padding:9px 10px;font-size:14px}.cig-count,.cig-cache{font-size:12px;color:#aaa;white-space:nowrap}.cig-run{display:inline-flex;align-items:center;justify-content:center;width:auto;height:40px;margin:0;border:1px solid #5a5a5a;border-radius:7px;background:#303030;color:#fff;padding:0 14px;font-size:14px;font-weight:400;line-height:38px;cursor:pointer}.cig-run:hover{background:#3a3a3a}.cig-run:disabled{opacity:.45;cursor:default}
 .cig-pick-folder{flex:0 0 auto;width:44px;height:40px;min-width:44px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:18px;font-weight:700;line-height:38px;cursor:pointer}.cig-pick-folder:hover{background:#3a3a3a}.cig-pick-folder:disabled{opacity:.45;cursor:default}
 .cig-breadcrumbs{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-height:32px;padding:4px 16px;border-bottom:1px solid #303030;background:#1d1d1d;overflow-x:auto;white-space:nowrap}.cig-crumb{border:0;background:transparent;color:#9ec8ff;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}.cig-crumb:hover{background:#303a46;color:#fff}.cig-crumb-sep{color:#666}.cig-up-folder{flex:0 0 auto;width:40px;height:40px;min-width:40px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:22px;line-height:38px;cursor:pointer}.cig-up-folder:hover{background:#3a3a3a}.cig-up-folder:disabled{opacity:.3;cursor:default}.cig-folder-card{position:relative;background:#24282d;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;user-select:none}.cig-folder-card:hover{background:#303740;border-color:#53677e}.cig-folder-icon{width:100%;aspect-ratio:1/1;background:#191d22;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:58px}.cig-folder-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}
+/* CIG_FAVORITES_CORNER_V3 */ .cig-favorite{position:absolute;top:0;right:0;z-index:3;width:38px;height:38px;min-width:38px;padding:0;border:0;border-radius:0;background:transparent;color:rgba(255,255,255,.68);font-size:24px;line-height:38px;text-align:center;cursor:pointer;touch-action:manipulation;user-select:none;opacity:.78;text-shadow:0 1px 3px rgba(0,0,0,.85)}.cig-favorite:hover{background:transparent;color:#fff;opacity:1}.cig-favorite.active{color:#ff6f8f;background:transparent;opacity:1;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 @media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
 `;
     document.head.appendChild(style);
@@ -61,7 +62,20 @@ function captureSerializedGalleryImage(graphData){
 function restoreSerializedGalleryImage(node){
     if(node?.comfyClass!==NODE_CLASS&&node?.type!==NODE_CLASS)return;
     const value=normalizePath(String(node?.properties?.__cigLastImage??""));
-    if(value)setWidgetValue(node,value,false);
+    if(!value)return;
+    // CIG_ABSOLUTE_PREVIEW_GUARD_V1
+    if(isAbsoluteGalleryPath(value)){
+        const w=getImageWidget(node);
+        if(!w)return;
+        // Не даём штатному ComfyUI отправить абсолютный путь в /view.
+        w.value=null;
+        requestAnimationFrame(()=>{
+            if(!node.graph)return;
+            setWidgetValue(node,value,false);
+        });
+        return;
+    }
+    setWidgetValue(node,value,false);
 }
 // CIG_EXTERNAL_FOLDER_PICKER_V3
 function isAbsoluteGalleryPath(value){const v=String(value??"").replace(/\\/g,"/");return /^[A-Za-z]:\//.test(v)||v.startsWith("//");}
@@ -204,6 +218,27 @@ async function openGallery(node){
         node.__cigSelectedPaths=new Set(Array.isArray(node.__cigSelectedPaths)?node.__cigSelectedPaths:[]);
     }
     const selected=node.__cigSelectedPaths;
+    // CIG_FAVORITES_V1
+    // CIG_FAVORITES_CORNER_V2
+    const CIG_FAVORITES_KEY="ComfyUI-LoadImageGallery.favorites";
+    function loadFavorites(){
+        try{
+            const raw=JSON.parse(localStorage.getItem(CIG_FAVORITES_KEY)||"[]");
+            return new Set(Array.isArray(raw)?raw.map(v=>normalizePath(String(v??""))).filter(Boolean):[]);
+        }catch(_){return new Set();}
+    }
+    function saveFavorites(){
+        try{localStorage.setItem(CIG_FAVORITES_KEY,JSON.stringify([...favorites]));}catch(_){}
+    }
+    const favorites=loadFavorites();
+    const isFavorite=relative=>favorites.has(normalizePath(String(relative??"")));
+    function setFavorite(relative,on){
+        const key=normalizePath(String(relative??""));
+        if(!key)return;
+        if(on)favorites.add(key);else favorites.delete(key);
+        saveFavorites();
+    }
+
 
     const overlay = document.createElement("div");
     overlay.className = "cig-overlay";
@@ -275,12 +310,12 @@ async function openGallery(node){
     // CIG_DBLCLICK_CLOSE_V2
     body.addEventListener("click",e=>{
         if(e.detail!==2)return;
-        if(!e.target.closest?.(".cig-card"))return;
+        if(!e.target.closest?.(".cig-card")||e.target.closest?.(".cig-favorite"))return;
         setTimeout(()=>{__cigAllowClose=true;close();},0);
     },true);
     // CIG_DBLCLICK_CLOSE_V1
     grid.addEventListener("dblclick",e=>{
-        if(!e.target.closest?.(".cig-card"))return;
+        if(!e.target.closest?.(".cig-card")||e.target.closest?.(".cig-favorite"))return;
         setTimeout(()=>{__cigAllowClose=true;close();},0);
     });
     overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
@@ -406,7 +441,11 @@ async function openGallery(node){
 
     function render({scrollToCurrent=false} = {}){
         const needle = filterText.trim().toLocaleLowerCase();
-        const filtered = needle ? images.filter(n=>n.toLocaleLowerCase().includes(needle)) : images;
+        const baseFiltered = needle ? images.filter(n=>n.toLocaleLowerCase().includes(needle)) : images;
+        const filtered = [
+            ...baseFiltered.filter(filename=>isFavorite(joinPath(activeFolder,filename))),
+            ...baseFiltered.filter(filename=>!isFavorite(joinPath(activeFolder,filename)))
+        ];
         rebuildThumbLoader();
         grid.replaceChildren();
         updateCount(filtered.length);
@@ -446,7 +485,36 @@ async function openGallery(node){
             const name = document.createElement("div");
             name.className = "cig-name";
             name.textContent = filename;
-            card.append(wrap, name);
+
+            const fav = document.createElement("button");
+            fav.type = "button";
+            fav.className = "cig-favorite";
+            const updateFavoriteButton=()=>{
+                const on=isFavorite(relative);
+                fav.classList.toggle("active",on);
+                fav.textContent=on?"♥":"♡";
+                fav.setAttribute("aria-pressed",on?"true":"false");
+                fav.setAttribute("aria-label",CIG_LANG==="ru"?(on?"Убрать из любимых":"Добавить в любимые"):(on?"Remove from favorites":"Add to favorites"));
+                fav.title=fav.getAttribute("aria-label");
+            };
+            updateFavoriteButton();
+            fav.addEventListener("mousedown",e=>e.stopPropagation());
+            fav.addEventListener("pointerdown",e=>e.stopPropagation());
+            fav.addEventListener("touchstart",e=>e.stopPropagation(),{passive:true});
+            fav.addEventListener("dblclick",e=>{e.preventDefault();e.stopPropagation();});
+            fav.addEventListener("click",e=>{
+                e.preventDefault();
+                e.stopPropagation();
+                setFavorite(relative,!isFavorite(relative));
+                render();
+                requestAnimationFrame(()=>{
+                    const moved=[...grid.querySelectorAll(".cig-card")].find(c=>c.__cigRelative===relative);
+                    moved?.scrollIntoView({block:"center",inline:"nearest"});
+                });
+            });
+
+            wrap.appendChild(fav);
+            card.append(wrap,name);
 
             card.addEventListener("click", e=>{
                 e.preventDefault();
@@ -551,6 +619,7 @@ async function openGallery(node){
     };
 
     body.addEventListener("touchstart",e=>{
+        if(e.target.closest?.(".cig-favorite"))return;
         if(e.touches.length!==1)return;
         const t=e.touches[0];
         __cigCancelTouchHold();
