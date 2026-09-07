@@ -21,11 +21,12 @@ function injectStyles() {
     style.textContent = `
 .cig-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
 .cig-panel{width:min(1500px,96vw);height:min(920px,92vh);background:#181818;border:1px solid #444;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden;color:#eee;font-family:Arial,sans-serif}
-.cig-header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #383838;flex:0 0 auto}.cig-title{font-size:18px;font-weight:700;white-space:nowrap}.cig-search{flex:1;min-width:120px;background:#262626;color:#eee;border:1px solid #4a4a4a;border-radius:7px;padding:9px 11px;font-size:14px;outline:none}.cig-search:focus{border-color:#888}.cig-close,.cig-refresh,.cig-clear{background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;padding:8px 12px;cursor:pointer}.cig-close:hover,.cig-refresh:hover,.cig-clear:hover{background:#3a3a3a}.cig-close:disabled,.cig-refresh:disabled,.cig-clear:disabled{opacity:.45;cursor:default}
+.cig-header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #383838;flex:0 0 auto}.cig-title{font-size:18px;font-weight:700;white-space:nowrap}.cig-search{flex:1;min-width:120px;background:#262626;color:#eee;border:1px solid #4a4a4a;border-radius:7px;padding:9px 11px;font-size:14px;outline:none}.cig-search:focus{border-color:#888}.cig-close,.cig-refresh,.cig-clear,.cig-sort{background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;padding:8px 12px;cursor:pointer}.cig-close:hover,.cig-refresh:hover,.cig-clear:hover,.cig-sort:hover{background:#3a3a3a}.cig-close:disabled,.cig-refresh:disabled,.cig-clear:disabled,.cig-sort:disabled{opacity:.45;cursor:default}
 .cig-body{flex:1 1 auto;min-height:0;overflow:auto;padding:16px;contain:strict}.cig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;align-items:start}.cig-card{position:relative;background:#222;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;transition:border-color .12s,background .12s,transform .08s;content-visibility:auto;contain-intrinsic-size:180px 205px}.cig-card:hover{background:#2b2b2b;transform:translateY(-1px)}.cig-card.selected{border-color:#6ba7ff;background:#26364b}.cig-thumb-wrap{width:100%;aspect-ratio:1/1;background:#111;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}.cig-thumb{width:100%;height:100%;object-fit:contain;display:block}.cig-thumb:not([src]){visibility:hidden}.cig-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px}.cig-card.loaded .cig-placeholder{display:none}.cig-card.error .cig-placeholder{color:#a77}.cig-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}.cig-empty{padding:40px;text-align:center;color:#aaa;font-size:15px}.cig-footer{display:flex;align-items:center;gap:10px;flex:0 0 auto;border-top:1px solid #383838;padding:12px 16px;background:#1d1d1d}.cig-footer-top{display:flex;align-items:center;gap:10px}.cig-folder-label{white-space:nowrap;font-size:13px;color:#bbb}.cig-folder{flex:1 1 360px;min-width:280px;background:#292929;color:#eee;border:1px solid #4b4b4b;border-radius:7px;padding:9px 10px;font-size:14px}.cig-count,.cig-cache{font-size:12px;color:#aaa;white-space:nowrap}.cig-run{display:inline-flex;align-items:center;justify-content:center;width:auto;height:40px;margin:0;border:1px solid #5a5a5a;border-radius:7px;background:#303030;color:#fff;padding:0 14px;font-size:14px;font-weight:400;line-height:38px;cursor:pointer}.cig-run:hover{background:#3a3a3a}.cig-run:disabled{opacity:.45;cursor:default}
 .cig-pick-folder{flex:0 0 auto;width:44px;height:40px;min-width:44px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:18px;font-weight:700;line-height:38px;cursor:pointer}.cig-pick-folder:hover{background:#3a3a3a}.cig-pick-folder:disabled{opacity:.45;cursor:default}
 .cig-breadcrumbs{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-height:32px;padding:4px 16px;border-bottom:1px solid #303030;background:#1d1d1d;overflow-x:auto;white-space:nowrap}.cig-crumb{border:0;background:transparent;color:#9ec8ff;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}.cig-crumb:hover{background:#303a46;color:#fff}.cig-crumb-sep{color:#666}.cig-up-folder{flex:0 0 auto;width:40px;height:40px;min-width:40px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:22px;line-height:38px;cursor:pointer}.cig-up-folder:hover{background:#3a3a3a}.cig-up-folder:disabled{opacity:.3;cursor:default}.cig-folder-card{position:relative;background:#24282d;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;user-select:none}.cig-folder-card:hover{background:#303740;border-color:#53677e}.cig-folder-icon{width:100%;aspect-ratio:1/1;background:#191d22;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:58px}.cig-folder-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}
 /* CIG_FAVORITES_CORNER_V3 */ .cig-favorite{position:absolute;top:0;right:0;z-index:3;width:38px;height:38px;min-width:38px;padding:0;border:0;border-radius:0;background:transparent;color:rgba(255,255,255,.68);font-size:24px;line-height:38px;text-align:center;cursor:pointer;touch-action:manipulation;user-select:none;opacity:.78;text-shadow:0 1px 3px rgba(0,0,0,.85)}.cig-favorite:hover{background:transparent;color:#fff;opacity:1}.cig-favorite.active{color:#ff6f8f;background:transparent;opacity:1;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+/* CIG_SORT_MENU_V1 */ .cig-sort{flex:0 0 auto;width:40px;height:38px;min-width:40px;padding:0;font-size:21px;line-height:36px}.cig-sort-menu{position:fixed;z-index:100030;min-width:210px;padding:6px;background:#242424;border:1px solid #4b4b4b;border-radius:8px;box-shadow:0 10px 35px rgba(0,0,0,.6)}.cig-sort-menu button{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border:0;border-radius:5px;background:transparent;color:#eee;text-align:left;font-size:14px;cursor:pointer;white-space:nowrap}.cig-sort-menu button:hover{background:#3a3a3a}.cig-sort-menu button.active{color:#9ec8ff;background:#303a46}.cig-sort-check{width:14px;display:inline-block;text-align:center}
 @media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
 `;
     document.head.appendChild(style);
@@ -37,7 +38,11 @@ function normalizePath(value) {
 }
 function splitPath(value) { const clean = normalizePath(value); const i = clean.lastIndexOf("/"); return i < 0 ? { folder:"", filename:clean } : { folder:clean.slice(0,i), filename:clean.slice(i+1) }; }
 function joinPath(folder, filename) { const f = normalizePath(folder); return f ? `${f}/${filename}` : filename; }
-function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); return api.apiURL(`/image-gallery/thumb?${p.toString()}`); }
+// CIG_BROWSER_CACHE_VERSION_V2
+const CIG_THUMB_CACHE_VERSION_KEY="ComfyUI-LoadImageGallery.thumbCacheVersion";
+function getThumbCacheVersion(){try{return localStorage.getItem(CIG_THUMB_CACHE_VERSION_KEY)||"1";}catch(_){return "1";}}
+function bumpThumbCacheVersion(){const v=String(Date.now());try{localStorage.setItem(CIG_THUMB_CACHE_VERSION_KEY,v);}catch(_){}return v;}
+function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); p.set("v",getThumbCacheVersion()); return api.apiURL(`/image-gallery/thumb?${p.toString()}`); }
 async function fetchJson(path, options) { const r = await api.fetchApi(path, options); if (!r.ok) { let d=`${r.status}`; try{d=(await r.json()).error||d;}catch(_){} throw new Error(d); } return await r.json(); }
 function getImageWidget(node) { return node.widgets?.find(w => w.name === "image") || null; }
 // CIG_WORKFLOW_PERSIST_V4
@@ -112,13 +117,13 @@ function setWidgetValue(node,relativePath,captureState=true){
 }
 function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=CIG_LANG==="ru"?["Б","КБ","МБ","ГБ"]:["B","KB","MB","GB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
 
-function makeThumbLoader(root) {
+function makeThumbLoader(root,onProgress=null) {
     let epoch=0, active=0, queue=[], disposed=false;
     const controllers=new Set();
     const observer=new IntersectionObserver(entries=>{ for(const e of entries){ const c=e.target; c.__cigVisible=e.isIntersecting; if(e.isIntersecting){ enqueue(c); } else if(c.__cigController){ c.__cigController.abort(); } } },{root,rootMargin:OBSERVER_MARGIN,threshold:0.01});
     function enqueue(card){ if(disposed||card.__cigLoaded||card.__cigQueued||!card.__cigVisible)return; card.__cigQueued=true; card.__cigEpoch=epoch; queue.push(card); pump(); }
     function pump(){ while(!disposed&&active<MAX_PARALLEL_THUMBS&&queue.length){ const card=queue.shift(); card.__cigQueued=false; if(!card.isConnected||!card.__cigVisible||card.__cigLoaded||card.__cigEpoch!==epoch)continue; load(card,epoch); } }
-    async function load(card,myEpoch){ active++; const controller=new AbortController(); card.__cigController=controller; controllers.add(controller); const img=card.querySelector(".cig-thumb"); try{ const r=await fetch(card.__cigUrl,{signal:controller.signal,cache:"force-cache"}); if(!r.ok)throw new Error(String(r.status)); const blob=await r.blob(); if(disposed||myEpoch!==epoch||!card.isConnected)return; const url=URL.createObjectURL(blob); card.__cigObjectUrl=url; img.onload=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.__cigLoaded=true; card.classList.add("loaded"); }; img.onerror=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.classList.add("error"); card.querySelector(".cig-placeholder").textContent=cigT.thumbError; }; img.src=url; } catch(err){ if(err?.name!=="AbortError"&&card.isConnected){ card.classList.add("error"); card.querySelector(".cig-placeholder").textContent=cigT.thumbError; } } finally{ controllers.delete(controller); card.__cigController=null; active=Math.max(0,active-1); pump(); } }
+    async function load(card,myEpoch){ active++; const controller=new AbortController(); card.__cigController=controller; controllers.add(controller); const img=card.querySelector(".cig-thumb"); try{ const r=await fetch(card.__cigUrl,{signal:controller.signal,cache:"force-cache"})/* CIG_BROWSER_CACHE_VERSION_V2 */; if(!r.ok)throw new Error(String(r.status)); const blob=await r.blob(); if(disposed||myEpoch!==epoch||!card.isConnected)return; const url=URL.createObjectURL(blob); card.__cigObjectUrl=url; img.onload=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.__cigLoaded=true; card.classList.add("loaded"); }; img.onerror=()=>{ URL.revokeObjectURL(url); card.__cigObjectUrl=null; card.classList.add("error"); card.querySelector(".cig-placeholder").textContent=cigT.thumbError; }; img.src=url; } catch(err){ if(err?.name!=="AbortError"&&card.isConnected){ card.classList.add("error"); card.querySelector(".cig-placeholder").textContent=cigT.thumbError; } } finally{ controllers.delete(controller); card.__cigController=null; active=Math.max(0,active-1); pump(); try{onProgress?.();}catch(_){} } }
     function observe(card){ observer.observe(card); }
     function reset(){ epoch++; queue=[]; for(const c of controllers)c.abort(); controllers.clear(); observer.disconnect(); root.querySelectorAll?.(".cig-card").forEach(card=>{ if(card.__cigObjectUrl){URL.revokeObjectURL(card.__cigObjectUrl);card.__cigObjectUrl=null;} }); }
     function dispose(){ disposed=true; reset(); }
@@ -135,10 +140,15 @@ function showCigHelp(){
         ["Выделение мышью","Проведите рамкой по изображениям. Выделение накапливается и сохраняется при прокрутке."],
         ["Автопрокрутка","Во время рамочного выделения подведите курсор к верхнему или нижнему краю галереи для автоматической прокрутки."],
         ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
+        // CIG_HELP_NEW_FEATURES_V1
         ["Папки","Двойной клик открывает папку. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
         ["Последние папки","До 10 последних внешних папок сохраняются в списке."],
+        ["Любимые","Нажмите ♡ в правом верхнем углу превью. Любимые изображения отмечаются ♥ и всегда располагаются выше остальных. Повторное нажатие снимает отметку."],
+        ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
+        ["Меню изображения","Правый клик по изображению открывает команды Сохранить, Копировать и Вставить. Вставка помещает изображение в текущую открытую папку."],
+        ["Кэш","Используется постоянный кэш миниатюр и быстрый кэш браузера. Очистка кэша удаляет постоянные миниатюры и меняет версию браузерного кэша; после обновления папки миниатюры создаются заново один раз."],
         ["СТАРТ","Запускает выбранные изображения в очередь, очищает выделение и оставляет галерею открытой."],
-        ["Закрытие","Галерея закрывается только кнопкой ✕."]
+        ["Закрытие","Кнопка ✕ закрывает галерею. Двойной клик по изображению загружает его в ноду и также закрывает галерею. Esc и клик вне окна галерею не закрывают."]
     ]:[
         ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
         ["Select images","Single click selects or deselects an image. Double click loads the image into the node."],
@@ -147,8 +157,12 @@ function showCigHelp(){
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
         ["Folders","Double-click a folder to open it. ↑ goes up one level. The … button opens an external folder picker."],
         ["Recent folders","Up to 10 recently used external folders are kept in the list."],
+        ["Favorites","Tap ♡ in the top-right corner of a thumbnail. Favorites are marked ♥ and always stay above regular images. Tap again to remove the favorite."],
+        ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
+        ["Image menu","Right-click an image for Save Image, Copy Image, and Paste Image. Paste places the clipboard image into the currently open folder."],
+        ["Cache","The gallery uses a persistent thumbnail cache plus a fast browser cache. Clear cache removes persistent thumbnails and changes the browser-cache version; refreshing the folder rebuilds thumbnails once."],
         ["START","Queues the selected images, clears the selection and keeps the gallery open."],
-        ["Closing","The gallery closes only with the ✕ button."]
+        ["Closing","The ✕ button closes the gallery. Double-clicking an image loads it into the node and also closes the gallery. Escape and clicking outside do not close it."]
     ];
     const ov=document.createElement("div");ov.className="cig-help-overlay";ov.style.cssText="position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:20px";
     const box=document.createElement("div");box.style.cssText="width:min(620px,94vw);max-height:86vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid #555;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.65);font-family:Arial,sans-serif";
@@ -213,6 +227,18 @@ async function openGallery(node){
     const current = splitPath(String(widget.value ?? ""));
     let activeFolder = normalizePath(node.__cigFolder ?? current.folder);
     let images = [], subfolders = [], filterText = "", loadToken = 0;
+    let imageMeta = new Map();
+    const CIG_SORT_KEY="ComfyUI-LoadImageGallery.sortMode";
+    const sortChoices=[
+        ["name-asc","Имя: А → Я","Name: A → Z"],
+        ["name-desc","Имя: Я → А","Name: Z → A"],
+        ["date-desc","Новые сначала","Newest first"],
+        ["date-asc","Старые сначала","Oldest first"],
+        ["size-desc","Большие сначала","Largest first"],
+        ["size-asc","Маленькие сначала","Smallest first"]
+    ];
+    let sortMode=(()=>{try{return localStorage.getItem(CIG_SORT_KEY)||"name-asc";}catch(_){return "name-asc";}})();
+    if(!sortChoices.some(x=>x[0]===sortMode))sortMode="name-asc";
     // CIG_SELECTION_PERSIST_V1
     if(!(node.__cigSelectedPaths instanceof Set)){
         node.__cigSelectedPaths=new Set(Array.isArray(node.__cigSelectedPaths)?node.__cigSelectedPaths:[]);
@@ -246,6 +272,7 @@ async function openGallery(node){
         <div class="cig-header">
             <div class="cig-title">${cigT.title}</div>
             <input class="cig-search" type="search" placeholder="${cigT.search}">
+            <button class="cig-sort" type="button">⇅</button>
             <button class="cig-refresh" type="button">↻ ${cigT.refresh}</button>
             <button class="cig-close" type="button">✕</button>
         </div>
@@ -272,6 +299,7 @@ async function openGallery(node){
     const search = overlay.querySelector(".cig-search");
     const count = overlay.querySelector(".cig-count");
     const cacheInfo = overlay.querySelector(".cig-cache");
+    const sortButton = overlay.querySelector(".cig-sort");
     const closeButton = overlay.querySelector(".cig-close");
     const helpButton=document.createElement("button");
     helpButton.type="button";
@@ -283,7 +311,36 @@ async function openGallery(node){
     const refreshButton = overlay.querySelector(".cig-refresh");
     const clearButton = overlay.querySelector(".cig-clear");
     const runButton = overlay.querySelector(".cig-run");
-    let thumbLoader = makeThumbLoader(body);
+    let __cigSortMenu=null;
+    function sortLabel(mode=sortMode){const x=sortChoices.find(v=>v[0]===mode);return x?(CIG_LANG==="ru"?x[1]:x[2]):"Sort";}
+    function updateSortButton(){sortButton.title=(CIG_LANG==="ru"?"Сортировка: ":"Sort: ")+sortLabel();}
+    function closeSortMenu(){__cigSortMenu?.remove();__cigSortMenu=null;}
+    const __cigSortOutside=e=>{if(__cigSortMenu&&!__cigSortMenu.contains(e.target)&&e.target!==sortButton)closeSortMenu();};
+    document.addEventListener("pointerdown",__cigSortOutside,true);
+    sortButton.addEventListener("click",e=>{
+        e.preventDefault();e.stopPropagation();
+        if(__cigSortMenu){closeSortMenu();return;}
+        const menu=document.createElement("div");menu.className="cig-sort-menu";
+        for(const choice of sortChoices){
+            const [mode,ru,en]=choice;const b=document.createElement("button");b.type="button";b.classList.toggle("active",mode===sortMode);
+            const check=document.createElement("span");check.className="cig-sort-check";check.textContent=mode===sortMode?"✓":"";
+            const label=document.createElement("span");label.textContent=CIG_LANG==="ru"?ru:en;b.append(check,label);
+            b.addEventListener("click",ev=>{ev.preventDefault();ev.stopPropagation();sortMode=mode;try{localStorage.setItem(CIG_SORT_KEY,mode);}catch(_){}closeSortMenu();updateSortButton();body.scrollTop=0;render();});
+            menu.appendChild(b);
+        }
+        document.body.appendChild(menu);const r=sortButton.getBoundingClientRect(),mr=menu.getBoundingClientRect();menu.style.left=`${Math.max(4,Math.min(r.right-mr.width,innerWidth-mr.width-4))}px`;menu.style.top=`${Math.min(r.bottom+5,innerHeight-mr.height-4)}px`;__cigSortMenu=menu;
+    });
+    updateSortButton();
+    // CIG_LIVE_CACHE_COUNTER_V1
+    let __cigCacheStatsTimer=0;
+    const scheduleCacheStats=()=>{
+        if(__cigCacheStatsTimer||!overlay.isConnected)return;
+        __cigCacheStatsTimer=setTimeout(()=>{
+            __cigCacheStatsTimer=0;
+            if(overlay.isConnected)updateCacheStats();
+        },1000);
+    };
+    let thumbLoader = makeThumbLoader(body,scheduleCacheStats);
 
     const marquee = document.createElement("div");
     Object.assign(marquee.style,{
@@ -300,6 +357,9 @@ async function openGallery(node){
 
     const cleanup = ()=>{
         document.removeEventListener("keydown", onKey);
+        document.removeEventListener("pointerdown",__cigSortOutside,true);
+        closeSortMenu();
+        clearTimeout(__cigCacheStatsTimer);
         thumbLoader?.dispose();
         marquee.remove();
     };
@@ -406,7 +466,7 @@ async function openGallery(node){
 
     function rebuildThumbLoader(){
         thumbLoader.dispose();
-        thumbLoader = makeThumbLoader(body);
+        thumbLoader = makeThumbLoader(body,scheduleCacheStats);
     }
 
     function updateRunState(){
@@ -442,9 +502,22 @@ async function openGallery(node){
     function render({scrollToCurrent=false} = {}){
         const needle = filterText.trim().toLocaleLowerCase();
         const baseFiltered = needle ? images.filter(n=>n.toLocaleLowerCase().includes(needle)) : images;
+        const nameCompare=(a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"});
+        const compareGalleryImages=(a,b)=>{
+            const ma=imageMeta.get(a)||{},mb=imageMeta.get(b)||{};
+            switch(sortMode){
+                case "name-desc": return -nameCompare(a,b);
+                case "date-desc": return (Number(mb.mtime)||0)-(Number(ma.mtime)||0)||nameCompare(a,b);
+                case "date-asc": return (Number(ma.mtime)||0)-(Number(mb.mtime)||0)||nameCompare(a,b);
+                case "size-desc": return (Number(mb.size)||0)-(Number(ma.size)||0)||nameCompare(a,b);
+                case "size-asc": return (Number(ma.size)||0)-(Number(mb.size)||0)||nameCompare(a,b);
+                default: return nameCompare(a,b);
+            }
+        };
+        const sorted=[...baseFiltered].sort(compareGalleryImages);
         const filtered = [
-            ...baseFiltered.filter(filename=>isFavorite(joinPath(activeFolder,filename))),
-            ...baseFiltered.filter(filename=>!isFavorite(joinPath(activeFolder,filename)))
+            ...sorted.filter(filename=>isFavorite(joinPath(activeFolder,filename))),
+            ...sorted.filter(filename=>!isFavorite(joinPath(activeFolder,filename)))
         ];
         rebuildThumbLoader();
         grid.replaceChildren();
@@ -558,7 +631,7 @@ async function openGallery(node){
         const data = await fetchJson(`/image-gallery/list?folder=${encodeURIComponent(activeFolder)}`);
         if(token !== loadToken || !overlay.isConnected) return;
 
-        images = Array.isArray(data.images) ? data.images : [];subfolders=Array.isArray(data.folders)?data.folders:[];node.__cigGalleryValues=images.map(name=>joinPath(activeFolder,name));
+        images = Array.isArray(data.images) ? data.images : [];imageMeta=new Map((Array.isArray(data.items)?data.items:[]).map(x=>[String(x?.name??""),x]));subfolders=Array.isArray(data.folders)?data.folders:[];node.__cigGalleryValues=images.map(name=>joinPath(activeFolder,name));
         render({scrollToCurrent});renderBreadcrumbs();
 
         if(preserveScroll) body.scrollTop = oldScroll;
@@ -878,16 +951,9 @@ body.addEventListener("mousedown", e=>{
         cacheInfo.textContent = cigT.clearing;
         try{
             await fetchJson("/image-gallery/cache/clear",{method:"POST"});
-            rebuildThumbLoader();
-            grid.querySelectorAll(".cig-card").forEach(c=>{
-                c.__cigLoaded = false;
-                c.classList.remove("loaded","error");
-                const img = c.querySelector(".cig-thumb");
-                if(img) img.removeAttribute("src");
-                const ph = c.querySelector(".cig-placeholder");
-                if(ph) ph.textContent = "…";
-                thumbLoader.observe(c);
-            });
+            bumpThumbCacheVersion();
+            // CIG_CLEAR_CACHE_NO_REBUILD_V1
+            // Оставляем уже загруженные превью на экране; дисковый кэш уже удалён.
             await updateCacheStats();
         }catch(error){
             cacheInfo.textContent = `${cigT.error}: ${String(error?.message ?? error)}`;

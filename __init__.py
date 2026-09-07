@@ -43,7 +43,7 @@ def _input_root() -> str:
 
 
 def _cache_root() -> str:
-    root = os.path.join(folder_paths.get_temp_directory(), "image_gallery_cache")
+    root = os.path.join(folder_paths.get_user_directory(), "image_gallery_cache")
     os.makedirs(root, exist_ok=True)
     return os.path.abspath(root)
 
@@ -147,7 +147,7 @@ class _ImagePathOptions(list):
 
 def _pick_folder_native() -> str:
     if os.name == "nt":
-        script = """Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description="Select image folder"; $d.ShowNewFolderButton=$false; if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write($d.SelectedPath)}"""
+        script = """Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [System.Windows.Forms.Application]::EnableVisualStyles(); $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title="Select image folder"; $d.ValidateNames=$false; $d.CheckFileExists=$false; $d.CheckPathExists=$true; $d.FileName="Select this folder"; $d.Filter="Folders|*.folder"; $d.RestoreDirectory=$true; if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write((Split-Path -LiteralPath $d.FileName -Parent))}"""
         result = subprocess.run(["powershell.exe", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", script], capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Folder picker failed")
@@ -205,6 +205,17 @@ def _image_files_in_dir(full_dir: str):
         names = [name for name in names if os.path.splitext(name)[1].lower() in exts]
     return sorted(names, key=str.casefold)
 
+
+# CIG_SORT_METADATA_V1
+def _image_items_in_dir(full_dir: str, names: list[str]):
+    items = []
+    for name in names:
+        try:
+            st = os.stat(os.path.join(full_dir, name))
+            items.append({"name": name, "size": st.st_size, "mtime": st.st_mtime})
+        except OSError:
+            items.append({"name": name, "size": 0, "mtime": 0})
+    return items
 
 # CIG_SUBFOLDERS_V1
 def _subfolders_in_dir(full_dir: str):
@@ -457,8 +468,9 @@ async def image_gallery_list(request):
         full_dir = _gallery_dir(folder)
         images = _image_files_in_dir(full_dir)
         folders = _subfolders_in_dir(full_dir)
+        items = await asyncio.to_thread(_image_items_in_dir, full_dir, images)
         await asyncio.to_thread(_cleanup_orphans_for_folder, folder, images)
-        return web.json_response({"folder": Path(folder).as_posix() if _is_abs_path(folder) else folder, "images": images, "folders": folders})
+        return web.json_response({"folder": Path(folder).as_posix() if _is_abs_path(folder) else folder, "images": images, "items": items, "folders": folders})
     except FileNotFoundError as exc:
         return web.json_response({"error": f"Folder not found: {exc}"}, status=404)
     except ValueError as exc:
@@ -507,6 +519,72 @@ async def image_gallery_source(request):
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
 
+
+# CIG_GALLERY_CONTEXT_PASTE_V1
+def _unique_paste_destination(folder: str, filename: str):
+    dest_dir = _gallery_dir(folder)
+    filename = os.path.basename(str(filename or "")).strip()
+    stem, ext = os.path.splitext(filename)
+    if not stem: stem = "pasted"
+    if not ext: ext = ".png"
+    candidate = os.path.join(dest_dir, stem + ext)
+    n = 2
+    while os.path.exists(candidate):
+        candidate = os.path.join(dest_dir, f"{stem} ({n}){ext}")
+        n += 1
+    return candidate, os.path.basename(candidate)
+
+@PromptServer.instance.routes.get("/image-gallery/original")
+async def image_gallery_original(request):
+    try:
+        folder = _normalize_gallery_folder(request.query.get("folder", ""))
+        filename = request.query.get("filename", "")
+        source, _ = _gallery_file(folder, filename)
+        return web.FileResponse(source, headers={"Cache-Control": "private, max-age=60"})
+    except FileNotFoundError:
+        return web.json_response({"error": "Image not found"}, status=404)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+@PromptServer.instance.routes.post("/image-gallery/paste")
+async def image_gallery_paste(request):
+    tmp = ""
+    try:
+        if request.content_type == "application/json":
+            data = await request.json()
+            source_folder = _normalize_gallery_folder(data.get("source_folder", ""))
+            target_folder = _normalize_gallery_folder(data.get("target_folder", ""))
+            source_filename = data.get("source_filename", "")
+            source, _ = _gallery_file(source_folder, source_filename)
+            dest, final_name = _unique_paste_destination(target_folder, source_filename)
+            await asyncio.to_thread(shutil.copy2, source, dest)
+            return web.json_response({"ok": True, "filename": final_name})
+        target_folder = _normalize_gallery_folder(request.query.get("folder", ""))
+        reader = await request.multipart()
+        field = await reader.next()
+        while field is not None and field.name != "file":
+            field = await reader.next()
+        if field is None:
+            return web.json_response({"error": "Image file missing"}, status=400)
+        filename = os.path.basename(field.filename or "pasted.png")
+        dest, final_name = _unique_paste_destination(target_folder, filename)
+        tmp = dest + f".uploading_{time.time_ns()}"
+        with open(tmp, "wb") as f:
+            while True:
+                chunk = await field.read_chunk(1024 * 1024)
+                if not chunk: break
+                f.write(chunk)
+        with Image.open(tmp) as im:
+            im.verify()
+        os.replace(tmp, dest)
+        tmp = ""
+        return web.json_response({"ok": True, "filename": final_name})
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+    finally:
+        if tmp and os.path.isfile(tmp):
+            try: os.remove(tmp)
+            except OSError: pass
 
 @PromptServer.instance.routes.get("/image-gallery/cache/stats")
 async def image_gallery_cache_stats(request):
