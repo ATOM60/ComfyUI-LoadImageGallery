@@ -29,6 +29,24 @@ function isPictureArea(video, event) {
     return localY < rect.height - nativeControlsHeight;
 }
 
+function isOverCustomControls(event) {
+    const x = event.clientX;
+    const y = event.clientY;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+
+    for (const control of document.querySelectorAll(".ovg-speed-control")) {
+        const style = getComputedStyle(control);
+        if (style.display === "none" || style.visibility === "hidden") continue;
+        const nodes = control.querySelectorAll(".ovg-player-control-button,.ovg-speed-panel,.ovg-speed-slider");
+        for (const node of nodes) {
+            const r = node.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+        }
+    }
+    return false;
+}
+
 function clearClickTimer(thumb) {
     const timer = clickTimers.get(thumb);
     if (timer) clearTimeout(timer);
@@ -138,6 +156,12 @@ function toggleFullscreen(thumb) {
 }
 
 function onClick(event) {
+    // In native fullscreen Chromium can report the underlying <video> as the
+    // event target even when our top-layer custom controls are visually under
+    // the pointer. Ignore those coordinates here so button presses never become
+    // preview play/pause clicks.
+    if (isOverCustomControls(event)) return;
+
     const thumb = getThumbFromEvent(event);
     if (!thumb) return;
 
@@ -159,6 +183,8 @@ function onClick(event) {
 }
 
 function onDoubleClick(event) {
+    if (isOverCustomControls(event)) return;
+
     const thumb = getThumbFromEvent(event);
     if (!thumb) return;
 
