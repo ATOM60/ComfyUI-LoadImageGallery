@@ -2,6 +2,7 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputVideoPlaybackControls";
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
+const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
 const STYLE_ID = "cig-output-video-playback-style";
 const attachedVideos = new Set();
 
@@ -24,6 +25,20 @@ function saveRate(value) {
     catch (_) {}
 }
 
+function loadVolume() {
+    try {
+        const raw = localStorage.getItem(VOLUME_KEY);
+        return raw == null ? 1 : clamp(raw, 0, 1);
+    } catch (_) {
+        return 1;
+    }
+}
+
+function saveVolume(value) {
+    try { localStorage.setItem(VOLUME_KEY, String(clamp(value, 0, 1))); }
+    catch (_) {}
+}
+
 function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement("style");
@@ -31,21 +46,24 @@ function injectStyles() {
     style.textContent = `
 .ovg-speed-control[popover]{
     display:none;
-    position:fixed;
-    right:58px;
-    bottom:8px;
-    top:auto;
-    left:auto;
-    transform:none;
-    margin:0;
-    padding:0;
-    border:0;
-    background:transparent;
+    position:fixed!important;
+    right:58px!important;
+    top:50%!important;
+    bottom:auto!important;
+    left:auto!important;
+    inset:auto 58px auto auto!important;
+    transform:translateY(-50%)!important;
+    margin:0!important;
+    padding:0!important;
+    border:0!important;
+    background:transparent!important;
     color:#fff;
-    overflow:visible;
-    flex-direction:column;
+    overflow:visible!important;
+    flex-direction:row;
     align-items:center;
-    gap:6px;
+    gap:8px;
+    width:auto!important;
+    height:auto!important;
     font-family:Arial,sans-serif;
     user-select:none;
 }
@@ -122,8 +140,15 @@ function attachPlaybackControls(video) {
         video.defaultPlaybackRate = rate;
         video.playbackRate = rate;
     };
+    const applySavedVolume = () => {
+        video.volume = loadVolume();
+    };
     applySavedRate();
-    video.addEventListener("loadedmetadata", applySavedRate, { once:true });
+    applySavedVolume();
+    video.addEventListener("loadedmetadata", () => {
+        applySavedRate();
+        applySavedVolume();
+    }, { once:true });
 
     const control = document.createElement("div");
     control.className = "ovg-speed-control";
@@ -162,8 +187,7 @@ function attachPlaybackControls(video) {
         updateRateUi();
     });
 
-    // The custom speed control lives visually in the native controls row. Consume
-    // all pointer/click events here so they never reach the video's play/pause handler.
+    // Consume all events on the custom speed control so it never triggers video play/pause.
     for (const type of ["pointerdown","pointerup","mousedown","mouseup","click","dblclick"]) {
         control.addEventListener(type, e => e.stopPropagation(), true);
     }
@@ -174,6 +198,9 @@ function attachPlaybackControls(video) {
         saveRate(rate);
         updateRateUi();
     });
+
+    // Persist volume changes made by the native slider, mute controls, or mouse wheel.
+    video.addEventListener("volumechange", () => saveVolume(video.volume));
 
     // Mouse wheel over the video adjusts volume instead of scrolling the gallery.
     video.addEventListener("wheel", e => {
