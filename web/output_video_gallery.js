@@ -6,7 +6,159 @@ const STYLE_ID = "comfy-image-gallery-output-video-style";
 const NODE_CLASS = "LoadImageGallery";
 const LS_SORT = "ComfyUI-LoadImageGallery.outputVideoSort";
 const LS_THUMB = "ComfyUI-LoadImageGallery.outputVideoThumb";
+const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const MAX_LIVE_PLAYERS = 3;
+const LANG = String(localStorage.getItem(LANG_KEY) || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
+
+const I18N = {
+    en: {
+        outputButton: "▦  Output Gallery",
+        title: "🎬 Video Gallery — output",
+        search: "🔍 Search by filename or folder…",
+        sortTitle: "Sorting",
+        previewSize: "Preview size",
+        refresh: "Refresh",
+        selectAll: "Select all",
+        clearAll: "Clear selection",
+        close: "Close",
+        dateDesc: "Newest first",
+        dateAsc: "Oldest first",
+        nameAsc: "Name A → Z",
+        nameDesc: "Name Z → A",
+        sizeDesc: "Largest first",
+        sizeAsc: "Smallest first",
+        play: "Play in gallery",
+        mark: "Select",
+        unmark: "Unselect",
+        copy: "Copy to clipboard",
+        copySelected: n => `Copy selected (${n}) to clipboard`,
+        rename: "Rename",
+        reveal: "Show in folder",
+        delete: "Delete",
+        deleteSelected: n => `Delete selected (${n})`,
+        empty: "No videos found in the output folder",
+        count: (shown, total, selected) => `${shown} of ${total} · selected ${selected}`,
+        help: "Help",
+        helpTitle: "Load Image Gallery — quick guide",
+        helpClose: "Close",
+        helpHtml: `
+            <h3>Images</h3>
+            <p>Click the image preview in the node to open the image gallery.</p>
+            <ul>
+                <li>Single click selects or deselects an image.</li>
+                <li>Double click loads an image into the node.</li>
+                <li>Drag a rectangle to select several images.</li>
+                <li>Use search, sorting, favorites and folders to find images faster.</li>
+                <li>Use the right-click menu to save, copy or paste images.</li>
+                <li>START queues the selected images one after another.</li>
+            </ul>
+            <h3>Output videos</h3>
+            <ul>
+                <li>Single click on a video preview starts or pauses playback.</li>
+                <li>Double click opens the video in fullscreen.</li>
+                <li>Double click in fullscreen pauses the video and exits fullscreen.</li>
+                <li>The controls on the right open the previous video, change playback speed and open the next video.</li>
+                <li>The mouse wheel over the video changes volume.</li>
+                <li>Playback speed and volume are remembered.</li>
+                <li>Videos loop automatically.</li>
+                <li>Right click opens actions for play, selection, copy, rename, show in folder and delete.</li>
+                <li>Several videos can be selected and copied or deleted together.</li>
+            </ul>
+        `,
+        error: "Error",
+        done: "Done",
+        fetchError: "Could not load the video list",
+        busy: "Working…",
+        selectFirst: "Select a video first",
+        copyBusy: n => `Copying ${n} file(s) to clipboard…`,
+        copyError: "Could not copy files to the clipboard",
+        copyDone: n => `Copied to clipboard: ${n}. You can now paste in Explorer with Ctrl+V.`,
+        renamePrompt: "New filename:",
+        renameError: "Could not rename the file",
+        deleteConfirm: n => `Delete selected video${n === 1 ? "" : "s"} (${n})?`,
+        deleteBusy: n => `Deleting ${n} file(s)…`,
+        deleteError: "Delete failed",
+        noRecycle: " (Recycle Bin is unavailable)",
+        deleted: (n, failed, suffix) => failed ? `Deleted: ${n}, errors: ${failed}${suffix}` : `Deleted: ${n}${suffix}`,
+        revealError: "Could not open the folder",
+        videoError: name => `Could not open video: ${name}`,
+        refreshBusy: "Refreshing…",
+    },
+    ru: {
+        outputButton: "▦  Галерея output",
+        title: "🎬 Галерея видео — output",
+        search: "🔍 Поиск по имени или папке…",
+        sortTitle: "Сортировка",
+        previewSize: "Размер превью",
+        refresh: "Обновить",
+        selectAll: "Выбрать все",
+        clearAll: "Снять выбор",
+        close: "Закрыть",
+        dateDesc: "Сначала новые",
+        dateAsc: "Сначала старые",
+        nameAsc: "Имя А → Я",
+        nameDesc: "Имя Я → А",
+        sizeDesc: "Сначала большие",
+        sizeAsc: "Сначала маленькие",
+        play: "Проиграть в галерее",
+        mark: "Выделить",
+        unmark: "Снять выделение",
+        copy: "Копировать в буфер",
+        copySelected: n => `Копировать выбранные (${n}) в буфер`,
+        rename: "Переименовать",
+        reveal: "Показать в папке",
+        delete: "Удалить",
+        deleteSelected: n => `Удалить выбранные (${n})`,
+        empty: "Видео не найдены в папке output",
+        count: (shown, total, selected) => `${shown} из ${total} · выбрано ${selected}`,
+        help: "Инструкция",
+        helpTitle: "Load Image Gallery — краткая инструкция",
+        helpClose: "Закрыть",
+        helpHtml: `
+            <h3>Изображения</h3>
+            <p>Нажмите на предпросмотр изображения в ноде, чтобы открыть галерею изображений.</p>
+            <ul>
+                <li>Один клик выделяет изображение или снимает выделение.</li>
+                <li>Двойной клик загружает изображение в ноду.</li>
+                <li>Рамкой можно выделить сразу несколько изображений.</li>
+                <li>Для быстрого поиска используйте поиск, сортировку, избранное и папки.</li>
+                <li>Через правую кнопку мыши можно сохранять, копировать и вставлять изображения.</li>
+                <li>Кнопка СТАРТ запускает выбранные изображения по очереди.</li>
+            </ul>
+            <h3>Видео из output</h3>
+            <ul>
+                <li>Один клик по предпросмотру запускает видео или ставит его на паузу.</li>
+                <li>Двойной клик открывает видео на весь экран.</li>
+                <li>Двойной клик в полноэкранном режиме ставит видео на паузу и выходит из полноэкранного режима.</li>
+                <li>Кнопки справа открывают предыдущее видео, меняют скорость воспроизведения и открывают следующее видео.</li>
+                <li>Колесо мыши над видео меняет громкость.</li>
+                <li>Скорость и громкость запоминаются.</li>
+                <li>Видео автоматически повторяется по кругу.</li>
+                <li>Правая кнопка мыши открывает действия: проиграть, выделить, копировать, переименовать, показать в папке и удалить.</li>
+                <li>Несколько видео можно выделить и затем скопировать или удалить вместе.</li>
+            </ul>
+        `,
+        error: "Ошибка",
+        done: "Готово",
+        fetchError: "Не удалось получить список видео",
+        busy: "Выполняется…",
+        selectFirst: "Сначала выделите видео",
+        copyBusy: n => `В буфер обмена: ${n} файл(ов)…`,
+        copyError: "Не удалось скопировать файлы в буфер обмена",
+        copyDone: n => `В буфер обмена скопировано: ${n}. Теперь можно Ctrl+V в Проводнике.`,
+        renamePrompt: "Новое имя файла:",
+        renameError: "Не удалось переименовать файл",
+        deleteConfirm: n => `Удалить выбранные видео (${n})?`,
+        deleteBusy: n => `Удаление: ${n} файл(ов)…`,
+        deleteError: "Ошибка удаления",
+        noRecycle: " (корзина недоступна)",
+        deleted: (n, failed, suffix) => failed ? `Удалено: ${n}, ошибок: ${failed}${suffix}` : `Удалено: ${n}${suffix}`,
+        revealError: "Не удалось открыть папку",
+        videoError: name => `Не удалось открыть видео: ${name}`,
+        refreshBusy: "Обновление…",
+    },
+};
+const t = I18N[LANG];
 
 function apiUrl(route) {
     try { if (typeof api.apiURL === "function") return api.apiURL(route); } catch (_) {}
@@ -35,13 +187,24 @@ function toast(message, kind = "info") {
     try {
         app.extensionManager?.toast?.add({
             severity: kind === "error" ? "error" : kind === "success" ? "success" : "info",
-            summary: kind === "error" ? "Ошибка" : kind === "success" ? "Готово" : "Output Gallery",
+            summary: kind === "error" ? t.error : kind === "success" ? t.done : "Output Gallery",
             detail: message,
             life: 3800,
         });
         return;
     } catch (_) {}
     if (kind === "error") alert(message);
+}
+
+function openHelp() {
+    document.querySelector(".ovg-help-overlay")?.remove();
+    const overlay = document.createElement("div");
+    overlay.className = "ovg-help-overlay";
+    overlay.innerHTML = `<div class="ovg-help-panel"><div class="ovg-help-head"><span>${t.helpTitle}</span><button type="button">${t.helpClose}</button></div><div class="ovg-help-body">${t.helpHtml}</div></div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector("button")?.addEventListener("click", close);
+    overlay.addEventListener("mousedown", e => { if (e.target === overlay) close(); });
 }
 
 function ensureStyles() {
@@ -64,6 +227,10 @@ function ensureStyles() {
 .ovg-menu{position:fixed;z-index:100003;min-width:225px;padding:5px;background:#202020;border:1px solid rgba(255,255,255,.16);border-radius:7px;box-shadow:0 10px 36px rgba(0,0,0,.5)}.ovg-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;color:#eee;padding:8px 10px;border-radius:5px;cursor:pointer}.ovg-menu button:hover{background:#383838}.ovg-menu .danger{color:#ff9898}
 .ovg-busy{position:absolute;inset:0;z-index:100005;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);font-size:15px}.ovg-select-box{position:fixed;z-index:100004;pointer-events:none;border:1px solid #4b91ff;background:rgba(75,145,255,.16)}
 .ovg-inline-video:fullscreen,:fullscreen .ovg-inline-video,.ovg-inline-video:-webkit-full-screen,:-webkit-full-screen .ovg-inline-video{object-fit:contain!important;width:100vw!important;height:100vh!important;max-width:100vw!important;max-height:100vh!important;background:#000!important}
+.ovg-help-overlay{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
+.ovg-help-panel{width:min(760px,94vw);max-height:88vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid rgba(255,255,255,.18);border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.6);font:14px/1.45 Arial,sans-serif}
+.ovg-help-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.12);font-size:17px;font-weight:700}.ovg-help-head span{flex:1}.ovg-help-head button{border:1px solid rgba(255,255,255,.15);background:#2b2b2b;color:#eee;border-radius:6px;padding:7px 10px;cursor:pointer}
+.ovg-help-body{padding:8px 20px 20px}.ovg-help-body h3{margin:16px 0 6px}.ovg-help-body p{margin:6px 0}.ovg-help-body ul{margin:6px 0 12px;padding-left:22px}.ovg-help-body li{margin:5px 0}
 @media(max-width:700px){.ovg-modal{padding:7px}.ovg-window{width:100vw;height:97vh}.ovg-grid{gap:7px}.ovg-toolbar{padding:7px}.ovg-search{min-width:150px}}
 `;
     document.head.appendChild(style);
@@ -107,7 +274,7 @@ app.registerExtension({
             async function fetchVideos({ clearSelection = false } = {}) {
                 const response = await api.fetchApi("/image-gallery/output/list");
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Не удалось получить список видео");
+                if (!response.ok) throw new Error(data.error || t.fetchError);
                 state.videos = data.videos || [];
                 if (clearSelection) state.marked.clear();
                 return state.videos;
@@ -133,7 +300,7 @@ app.registerExtension({
                 state.menu = null;
             }
 
-            function setBusy(message = "Выполняется…") {
+            function setBusy(message = t.busy) {
                 if (!state.modal) return () => {};
                 const win = state.modal.querySelector(".ovg-window");
                 const busy = document.createElement("div");
@@ -148,7 +315,7 @@ app.registerExtension({
                 if (!state.modal) return;
                 const rows = sortedFilteredVideos();
                 const count = state.modal.querySelector(".ovg-count");
-                if (count) count.textContent = `${rows.length} из ${state.videos.length} · выбрано ${state.marked.size}`;
+                if (count) count.textContent = t.count(rows.length, state.videos.length, state.marked.size);
             }
 
             function paintMarkedCards() {
@@ -165,26 +332,26 @@ app.registerExtension({
             }
 
             async function copyPaths(paths) {
-                if (!paths.length) { toast("Сначала выделите видео", "error"); return; }
-                const done = setBusy(`В буфер обмена: ${paths.length} файл(ов)…`);
+                if (!paths.length) { toast(t.selectFirst, "error"); return; }
+                const done = setBusy(t.copyBusy(paths.length));
                 try {
                     const response = await api.fetchApi("/image-gallery/output/clipboard", {
                         method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({paths}),
                     });
                     const data = await response.json();
-                    if (!response.ok) throw new Error(data.error || "Не удалось скопировать файлы в буфер обмена");
-                    toast(`В буфер обмена скопировано: ${data.count || paths.length}. Теперь можно Ctrl+V в Проводнике.`, "success");
+                    if (!response.ok) throw new Error(data.error || t.copyError);
+                    toast(t.copyDone(data.count || paths.length), "success");
                 } finally { done(); }
             }
 
             async function renameVideo(item) {
-                const next = prompt("Новое имя файла:", item.name);
+                const next = prompt(t.renamePrompt, item.name);
                 if (!next || next === item.name) return;
                 const response = await api.fetchApi("/image-gallery/output/rename", {
                     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path:item.path,new_name:next}),
                 });
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Не удалось переименовать файл");
+                if (!response.ok) throw new Error(data.error || t.renameError);
                 if (state.marked.delete(item.path)) state.marked.add(data.path);
                 await fetchVideos();
                 renderGrid();
@@ -192,20 +359,20 @@ app.registerExtension({
 
             async function deletePaths(paths) {
                 if (!paths.length) return;
-                if (!confirm(`Удалить выбранные видео (${paths.length})?${paths.length === 1 ? "\n" + paths[0] : ""}`)) return;
-                const done = setBusy(`Удаление: ${paths.length} файл(ов)…`);
+                if (!confirm(`${t.deleteConfirm(paths.length)}${paths.length === 1 ? "\n" + paths[0] : ""}`)) return;
+                const done = setBusy(t.deleteBusy(paths.length));
                 try {
                     const response = await api.fetchApi("/image-gallery/output/delete", {
                         method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({paths}),
                     });
                     const data = await response.json();
-                    if (!response.ok) throw new Error(data.error || "Ошибка удаления");
+                    if (!response.ok) throw new Error(data.error || t.deleteError);
                     for (const p of paths) state.marked.delete(p);
                     await fetchVideos();
                     renderGrid();
                     const deleted = data.deleted?.length || 0, failed = data.errors?.length || 0;
-                    const suffix = data.recycle_bin === false ? " (без корзины: send2trash не установлен)" : "";
-                    toast(failed ? `Удалено: ${deleted}, ошибок: ${failed}${suffix}` : `Удалено: ${deleted}${suffix}`, failed ? "info" : "success");
+                    const suffix = data.recycle_bin === false ? t.noRecycle : "";
+                    toast(t.deleted(deleted, failed, suffix), failed ? "info" : "success");
                 } finally { done(); }
             }
 
@@ -214,7 +381,7 @@ app.registerExtension({
                     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path:item.path}),
                 });
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Не удалось открыть папку");
+                if (!response.ok) throw new Error(data.error || t.revealError);
             }
 
             function contextActionPaths(item) {
@@ -278,7 +445,7 @@ app.registerExtension({
                 video.addEventListener("pointerdown", e => e.stopPropagation());
                 video.addEventListener("click", e => e.stopPropagation());
                 video.addEventListener("dblclick", e => e.stopPropagation());
-                video.addEventListener("error", () => { releaseInlinePlayer(item.path); toast(`Не удалось открыть видео: ${item.name}`, "error"); }, {once:true});
+                video.addEventListener("error", () => { releaseInlinePlayer(item.path); toast(t.videoError(item.name), "error"); }, {once:true});
                 try { await video.play(); } catch (_) {}
             }
 
@@ -295,12 +462,12 @@ app.registerExtension({
                 const menu = document.createElement("div");
                 menu.className = "ovg-menu";
                 menu.innerHTML = `
-                    <button data-action="open">▶ Проиграть в галерее</button>
-                    <button data-action="mark">${state.marked.has(item.path) ? "☐ Снять выделение" : "☑ Выделить"}</button>
-                    <button data-action="copy">⧉ Копировать${bulkCount > 1 ? ` выбранные (${bulkCount})` : ""} в буфер</button>
-                    <button data-action="rename">✎ Переименовать</button>
-                    <button data-action="reveal">⌖ Показать в папке</button>
-                    <button class="danger" data-action="delete">🗑 Удалить${bulkCount > 1 ? ` выбранные (${bulkCount})` : ""}</button>`;
+                    <button data-action="open">▶ ${t.play}</button>
+                    <button data-action="mark">${state.marked.has(item.path) ? `☐ ${t.unmark}` : `☑ ${t.mark}`}</button>
+                    <button data-action="copy">⧉ ${bulkCount > 1 ? t.copySelected(bulkCount) : t.copy}</button>
+                    <button data-action="rename">✎ ${t.rename}</button>
+                    <button data-action="reveal">⌖ ${t.reveal}</button>
+                    <button class="danger" data-action="delete">🗑 ${bulkCount > 1 ? t.deleteSelected(bulkCount) : t.delete}</button>`;
                 menu.style.left = `${Math.min(ev.clientX, window.innerWidth - 250)}px`;
                 menu.style.top = `${Math.min(ev.clientY, window.innerHeight - 270)}px`;
                 document.body.appendChild(menu); state.menu = menu;
@@ -351,7 +518,7 @@ app.registerExtension({
                 grid.style.setProperty("--ovg-card-size", `${state.thumbSize}px`);
                 grid.innerHTML = "";
                 if (!rows.length) {
-                    grid.innerHTML = `<div class="ovg-empty-grid">Видео не найдены в папке output</div>`;
+                    grid.innerHTML = `<div class="ovg-empty-grid">${t.empty}</div>`;
                     updateCount(); return;
                 }
                 const frag = document.createDocumentFragment();
@@ -361,7 +528,7 @@ app.registerExtension({
                     card.dataset.path = item.path;
                     const date = new Date(item.mtime * 1000).toLocaleString();
                     card.innerHTML = `
-                        <div class="ovg-thumb"><img alt="" draggable="false"><div class="ovg-thumb-fallback" style="display:none">🎬</div><button class="ovg-play" type="button" title="Проиграть прямо в галерее">▶</button></div>
+                        <div class="ovg-thumb"><img alt="" draggable="false"><div class="ovg-thumb-fallback" style="display:none">🎬</div><button class="ovg-play" type="button" title="${t.play}">▶</button></div>
                         <div class="ovg-card-info">
                             <div class="ovg-card-name" title="${esc(item.path)}">${esc(item.name)}</div>
                             <div class="ovg-card-meta"><span title="${esc(item.folder || "output")}">${esc(item.folder || "output")}</span><span>${formatBytes(item.size)}</span></div>
@@ -505,16 +672,17 @@ app.registerExtension({
                 const modal=document.createElement("div"); modal.className="ovg-modal";
                 modal.innerHTML=`
                     <div class="ovg-window">
-                        <div class="ovg-titlebar"><div class="ovg-title">🎬 Галерея видео — output</div><div class="ovg-count"></div><button class="ovg-btn ovg-close" title="Закрыть">×</button></div>
+                        <div class="ovg-titlebar"><div class="ovg-title">${t.title}</div><div class="ovg-count"></div><button class="ovg-btn ovg-close" title="${t.close}">×</button></div>
                         <div class="ovg-toolbar">
-                            <input class="ovg-search" type="text" placeholder="🔍 Поиск по имени или папке…">
-                            <select class="ovg-sort" title="Сортировка">
-                                <option value="date_desc">Сначала новые</option><option value="date_asc">Сначала старые</option><option value="name_asc">Имя А → Я</option><option value="name_desc">Имя Я → А</option><option value="size_desc">Сначала большие</option><option value="size_asc">Сначала маленькие</option>
+                            <input class="ovg-search" type="text" placeholder="${t.search}">
+                            <select class="ovg-sort" title="${t.sortTitle}">
+                                <option value="date_desc">${t.dateDesc}</option><option value="date_asc">${t.dateAsc}</option><option value="name_asc">${t.nameAsc}</option><option value="name_desc">${t.nameDesc}</option><option value="size_desc">${t.sizeDesc}</option><option value="size_asc">${t.sizeAsc}</option>
                             </select>
-                            <input class="ovg-size" type="range" min="120" max="320" step="10" value="${state.thumbSize}" title="Размер превью">
-                            <button class="ovg-btn ovg-refresh-modal" title="Обновить">↻</button>
-                            <button class="ovg-btn ovg-select-all">Выбрать все</button>
-                            <button class="ovg-btn ovg-clear-all">Снять выбор</button>
+                            <input class="ovg-size" type="range" min="120" max="320" step="10" value="${state.thumbSize}" title="${t.previewSize}">
+                            <button class="ovg-btn ovg-refresh-modal" title="${t.refresh}">↻</button>
+                            <button class="ovg-btn ovg-select-all">${t.selectAll}</button>
+                            <button class="ovg-btn ovg-clear-all">${t.clearAll}</button>
+                            <button class="ovg-btn ovg-help" title="${t.help}">?</button>
                         </div>
                         <div class="ovg-grid-wrap"><div class="ovg-grid"></div></div>
                     </div>`;
@@ -526,9 +694,10 @@ app.registerExtension({
                 modal.querySelector(".ovg-search").addEventListener("input",e=>{state.search=e.target.value;renderGrid();});
                 modal.querySelector(".ovg-sort").addEventListener("change",e=>{state.sort=e.target.value;localStorage.setItem(LS_SORT,state.sort);renderGrid();});
                 modal.querySelector(".ovg-size").addEventListener("input",e=>{state.thumbSize=Number(e.target.value);localStorage.setItem(LS_THUMB,String(state.thumbSize));renderGrid();});
-                modal.querySelector(".ovg-refresh-modal").onclick=async()=>{try{const done=setBusy("Обновление…");await fetchVideos({clearSelection:true});done();renderGrid();}catch(e){toast(e.message||String(e),"error");}};
+                modal.querySelector(".ovg-refresh-modal").onclick=async()=>{try{const done=setBusy(t.refreshBusy);await fetchVideos({clearSelection:true});done();renderGrid();}catch(e){toast(e.message||String(e),"error");}};
                 modal.querySelector(".ovg-select-all").onclick=()=>{for(const v of sortedFilteredVideos())state.marked.add(v.path);paintMarkedCards();};
                 modal.querySelector(".ovg-clear-all").onclick=()=>{state.marked.clear();paintMarkedCards();};
+                modal.querySelector(".ovg-help").onclick=e=>{e.preventDefault();e.stopPropagation();openHelp();};
                 setupRectangleSelection(modal); setupPlayerEvictionOnScroll(modal); updateCount();
                 state.escapeHandler=e=>{if(e.key==="Escape"&&state.modal===modal)closeModal();};
                 document.addEventListener("keydown",state.escapeHandler);
@@ -547,7 +716,7 @@ app.registerExtension({
                 button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});
                 button.drawWidget=function(ctx,options){
                     const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;
-                    ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("▦  Галерея output",width/2,y+h/2);ctx.restore();
+                    ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t.outputButton,width/2,y+h/2);ctx.restore();
                 };
                 const pi=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview"||(w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"&&w!==button));
                 const bi=node.widgets.indexOf(button);
