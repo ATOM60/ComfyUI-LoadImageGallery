@@ -9,6 +9,7 @@ const LABELS = LANG === "ru"
     ? { prev:"Предыдущее видео", speed:"Скорость воспроизведения", next:"Следующее видео" }
     : { prev:"Previous video", speed:"Playback speed", next:"Next video" };
 const attachedVideos = new Set();
+const modalObservers = new WeakMap();
 
 function clamp(value, min, max) {
     const n = Number(value);
@@ -203,12 +204,17 @@ function hideSpeedControl(video) {
     } catch (_) {}
 }
 
+function cleanupVideo(video) {
+    if (!(video instanceof HTMLVideoElement)) return;
+    hideSpeedControl(video);
+    video.__cigSpeedControl?.remove();
+    attachedVideos.delete(video);
+}
+
 function syncFullscreenControls() {
     for (const video of [...attachedVideos]) {
         if (!video.isConnected) {
-            hideSpeedControl(video);
-            video.__cigSpeedControl?.remove();
-            attachedVideos.delete(video);
+            cleanupVideo(video);
             continue;
         }
         if (isFullscreenVideo(video)) showSpeedControl(video);
@@ -330,47 +336,64 @@ function attachPlaybackControls(video) {
     video.addEventListener("webkitbeginfullscreen", () => setTimeout(syncFullscreenControls, 0));
     video.addEventListener("webkitendfullscreen", () => setTimeout(syncFullscreenControls, 0));
     video.addEventListener("emptied", () => {
-        if (!video.isConnected) {
-            hideSpeedControl(video);
-            control.remove();
-            attachedVideos.delete(video);
-        }
+        if (!video.isConnected) cleanupVideo(video);
     });
 
     queueMicrotask(syncFullscreenControls);
 }
 
-function scan(root = document) {
+function scan(root) {
+    if (!(root instanceof Element)) return;
     if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attachPlaybackControls(root);
     root.querySelectorAll?.("video.ovg-inline-video").forEach(attachPlaybackControls);
+}
+
+function cleanupRemoved(root) {
+    if (!(root instanceof Element)) return;
+    if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) cleanupVideo(root);
+    root.querySelectorAll?.("video.ovg-inline-video").forEach(cleanupVideo);
+}
+
+function installModal(modal) {
+    if (!(modal instanceof HTMLElement) || modalObservers.has(modal)) return;
+    scan(modal);
+    const observer = new MutationObserver(records => {
+        for (const record of records) {
+            for (const node of record.addedNodes) if (node instanceof Element) scan(node);
+            for (const node of record.removedNodes) if (node instanceof Element) cleanupRemoved(node);
+        }
+    });
+    observer.observe(modal, { childList:true, subtree:true });
+    modalObservers.set(modal, observer);
+}
+
+function uninstallModal(modal) {
+    cleanupRemoved(modal);
+    modalObservers.get(modal)?.disconnect();
+    modalObservers.delete(modal);
 }
 
 app.registerExtension({
     name: EXT_NAME,
     setup() {
         injectStyles();
-        scan();
         document.addEventListener("fullscreenchange", syncFullscreenControls);
         document.addEventListener("webkitfullscreenchange", syncFullscreenControls);
 
+        document.querySelectorAll(".ovg-modal").forEach(installModal);
+
+        // Observe the full subtree only inside an open output gallery. Outside of
+        // the gallery, ComfyUI DOM changes no longer trigger video-control scans.
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 for (const node of record.addedNodes) {
-                    if (node instanceof Element) scan(node);
+                    if (node instanceof HTMLElement && node.classList.contains("ovg-modal")) installModal(node);
                 }
                 for (const node of record.removedNodes) {
-                    if (!(node instanceof Element)) continue;
-                    const videos = [];
-                    if (node instanceof HTMLVideoElement && node.classList.contains("ovg-inline-video")) videos.push(node);
-                    node.querySelectorAll?.("video.ovg-inline-video").forEach(v => videos.push(v));
-                    for (const video of videos) {
-                        hideSpeedControl(video);
-                        video.__cigSpeedControl?.remove();
-                        attachedVideos.delete(video);
-                    }
+                    if (node instanceof HTMLElement && node.classList.contains("ovg-modal")) uninstallModal(node);
                 }
             }
         });
-        observer.observe(document.body, { childList:true, subtree:true });
+        observer.observe(document.body, { childList:true, subtree:false });
     },
 });
