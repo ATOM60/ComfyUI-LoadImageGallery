@@ -27,10 +27,11 @@ Use the large **Output Gallery / Галерея output** button at the top of th
 
 The video gallery lets you:
 
-- Browse videos from the ComfyUI `output` folder.
+- Browse videos from the ComfyUI `output` folder and selected external folders.
 - See video thumbnails.
 - Search by filename or folder.
 - Sort by date, name or file size.
+- Add videos to favorites with the heart under the video information; favorite videos are shown first.
 - Change the size of video cards.
 - Select one or many videos.
 - Select several videos with a rectangle.
