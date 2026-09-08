@@ -80,19 +80,53 @@ function updateButton(button, on) {
     button.setAttribute("aria-label", label);
 }
 
-function visibleAnchor(gridWrap, cards, excluded) {
+function cardKey(card) {
+    return normalizePath(card?.dataset?.path || "");
+}
+
+function captureViewport(gridWrap, ignoredCard = null) {
     if (!(gridWrap instanceof HTMLElement)) return null;
-    const wr = gridWrap.getBoundingClientRect();
+    const wrapRect = gridWrap.getBoundingClientRect();
+    const cards = [...gridWrap.querySelectorAll(".ovg-card")];
     let best = null;
+
     for (const card of cards) {
-        if (card === excluded) continue;
-        const r = card.getBoundingClientRect();
-        if (r.bottom <= wr.top || r.top >= wr.bottom) continue;
-        if (!best || r.top < best.rect.top || (Math.abs(r.top - best.rect.top) < 0.5 && r.left < best.rect.left)) {
-            best = { card, rect:r };
+        if (card === ignoredCard) continue;
+        const key = cardKey(card);
+        if (!key) continue;
+        const rect = card.getBoundingClientRect();
+        if (rect.bottom <= wrapRect.top || rect.top >= wrapRect.bottom) continue;
+
+        if (!best || rect.top < best.rect.top || (Math.abs(rect.top - best.rect.top) < 0.5 && rect.left < best.rect.left)) {
+            best = { key, rect };
         }
     }
-    return best ? { card:best.card, top:best.rect.top } : null;
+
+    return {
+        top: gridWrap.scrollTop,
+        left: gridWrap.scrollLeft,
+        anchorKey: best?.key || "",
+        anchorOffset: best ? best.rect.top - wrapRect.top : 0,
+    };
+}
+
+function restoreViewport(gridWrap, snapshot) {
+    if (!(gridWrap instanceof HTMLElement) || !gridWrap.isConnected || !snapshot) return;
+
+    if (snapshot.anchorKey) {
+        const wrapRect = gridWrap.getBoundingClientRect();
+        const anchor = [...gridWrap.querySelectorAll(".ovg-card")]
+            .find(card => cardKey(card) === snapshot.anchorKey);
+        if (anchor) {
+            const currentOffset = anchor.getBoundingClientRect().top - wrapRect.top;
+            gridWrap.scrollTop += currentOffset - snapshot.anchorOffset;
+            gridWrap.scrollLeft = snapshot.left;
+            return;
+        }
+    }
+
+    gridWrap.scrollTop = snapshot.top;
+    gridWrap.scrollLeft = snapshot.left;
 }
 
 function reorderGrid(modalState, clickedCard = null) {
@@ -108,8 +142,8 @@ function reorderGrid(modalState, clickedCard = null) {
 
     const favorites = loadFavorites();
     const ordered = [...cards].sort((a, b) => {
-        const af = favorites.has(normalizePath(a.dataset.path));
-        const bf = favorites.has(normalizePath(b.dataset.path));
+        const af = favorites.has(cardKey(a));
+        const bf = favorites.has(cardKey(b));
         if (af !== bf) return af ? -1 : 1;
         return Number(a.dataset.ovgFavoriteBaseOrder || 0) - Number(b.dataset.ovgFavoriteBaseOrder || 0);
     });
@@ -118,20 +152,29 @@ function reorderGrid(modalState, clickedCard = null) {
     if (alreadyOrdered) return;
 
     const gridWrap = modal.querySelector(".ovg-grid-wrap");
-    const anchor = visibleAnchor(gridWrap, cards, clickedCard);
-    const fallbackTop = gridWrap instanceof HTMLElement ? gridWrap.scrollTop : 0;
+    if (!(gridWrap instanceof HTMLElement)) return;
+
+    // Same viewport-preservation method used by the input gallery:
+    // keep a visible non-clicked card at the exact same visual Y position
+    // while the clicked favorite moves to or from the favorites section.
+    const snapshot = captureViewport(gridWrap, clickedCard);
+    const oldOverflowAnchor = gridWrap.style.overflowAnchor;
+    const oldScrollBehavior = gridWrap.style.scrollBehavior;
+    gridWrap.style.overflowAnchor = "none";
+    gridWrap.style.scrollBehavior = "auto";
 
     modalState.ignoreMutation = true;
     for (const card of ordered) grid.appendChild(card);
 
-    if (gridWrap instanceof HTMLElement) {
-        if (anchor?.card?.isConnected) {
-            const after = anchor.card.getBoundingClientRect().top;
-            gridWrap.scrollTop += after - anchor.top;
-        } else {
-            gridWrap.scrollTop = fallbackTop;
-        }
-    }
+    restoreViewport(gridWrap, snapshot);
+    requestAnimationFrame(() => {
+        restoreViewport(gridWrap, snapshot);
+        requestAnimationFrame(() => {
+            restoreViewport(gridWrap, snapshot);
+            gridWrap.style.overflowAnchor = oldOverflowAnchor;
+            gridWrap.style.scrollBehavior = oldScrollBehavior;
+        });
+    });
 }
 
 function installFavoriteButton(modalState, card) {
@@ -145,7 +188,7 @@ function installFavoriteButton(modalState, card) {
     button.className = "ovg-favorite";
     info.appendChild(button);
 
-    const path = () => normalizePath(card.dataset.path);
+    const path = () => cardKey(card);
     updateButton(button, loadFavorites().has(path()));
 
     button.addEventListener("pointerdown", event => event.stopPropagation());
@@ -182,10 +225,11 @@ function patchGrid(modalState) {
         cards.forEach((card, index) => { card.dataset.ovgFavoriteBaseOrder = String(index); });
     }
 
+    const favorites = loadFavorites();
     for (const card of cards) {
         installFavoriteButton(modalState, card);
         const button = card.querySelector(".ovg-favorite");
-        if (button) updateButton(button, loadFavorites().has(normalizePath(card.dataset.path)));
+        if (button) updateButton(button, favorites.has(cardKey(card)));
     }
 
     reorderGrid(modalState);
