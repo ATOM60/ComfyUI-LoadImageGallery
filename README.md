@@ -32,6 +32,7 @@ The video gallery lets you:
 - Search by filename or folder.
 - Sort by date, name or file size.
 - Add videos to favorites with the heart under the video information; favorite videos are shown first.
+- Keep the current scroll position stable when adding or removing videos from favorites.
 - Change the size of video cards.
 - Select one or many videos.
 - Select several videos with a rectangle.
@@ -52,16 +53,33 @@ The video gallery lets you:
 - Volume is remembered.
 - Playback speed is remembered.
 - Fullscreen controls on the right let you open the previous video, change playback speed and open the next video.
-- Up to three inline video players can stay active in the gallery.
-- A compact **CPU** switch is available in the top row without adding another toolbar row.
-- CPU mode moves the main video decoding work to the processor, which can make playback smoother while ComfyUI is heavily using the GPU.
-- CPU mode keeps single-click play/pause, double-click fullscreen, looping, remembered volume, remembered playback speed and previous/next fullscreen navigation.
+- Up to three inline video players can stay active in normal playback mode.
+
+### CPU playback mode
+
+A compact **CPU** switch is available in the top row without adding another toolbar row.
+
+CPU mode moves the main video decoding work to the processor, which can make playback smoother while ComfyUI is heavily using the GPU.
+
+CPU playback keeps a familiar video-player interface with:
+
+- Play / pause.
+- Seek timeline.
+- Current time and total duration.
+- Volume control.
+- Fullscreen control.
+- Previous / next video navigation in fullscreen.
+- Playback speed control.
+- Remembered volume and playback speed.
+- Automatic looping.
+
+Only one CPU video stream is active at a time. Switching between previous and next videos stops the previous CPU stream before starting the next one.
 
 ## Languages
 
 The image gallery and the output video gallery support **English and Russian**.
 
-The output gallery follows the same language setting as the image gallery, including toolbar buttons, context-menu actions, playback-control tooltips and the built-in help.
+The output gallery follows the same language setting as the image gallery, including toolbar buttons, context-menu actions, CPU playback controls, playback-control tooltips and the built-in help.
 
 ## Built-in instruction
 
