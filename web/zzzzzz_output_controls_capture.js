@@ -28,6 +28,10 @@ function saveRate(rate) {
     catch (_) {}
 }
 
+function controlsActive() {
+    return !!document.querySelector(".ovg-modal,.ovg-speed-control");
+}
+
 function lockRightEdge(control) {
     if (!(control instanceof HTMLElement)) return;
     control.style.setProperty("position", "fixed", "important");
@@ -150,7 +154,7 @@ function consume(event) {
 }
 
 function onPointerDown(event) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !controlsActive()) return;
     lockAllControls();
     const x = event.clientX, y = event.clientY;
 
@@ -192,6 +196,7 @@ function onPointerUp(event) {
 }
 
 function blockClicks(event) {
+    if (!controlsActive()) return;
     lockAllControls();
     const x = event.clientX, y = event.clientY;
     if (hitElement(".ovg-player-control-button,.ovg-speed-slider,.ovg-speed-panel", x, y)) consume(event);
@@ -221,8 +226,31 @@ app.registerExtension({
         document.addEventListener("fullscreenchange", () => requestAnimationFrame(lockAllControls), true);
         document.addEventListener("webkitfullscreenchange", () => requestAnimationFrame(lockAllControls), true);
 
-        const observer = new MutationObserver(() => requestAnimationFrame(lockAllControls));
-        observer.observe(document.body, { childList:true, subtree:true });
+        let lockRaf = 0;
+        const scheduleLock = () => {
+            if (lockRaf) return;
+            lockRaf = requestAnimationFrame(() => {
+                lockRaf = 0;
+                if (controlsActive()) lockAllControls();
+            });
+        };
+        const observer = new MutationObserver(records => {
+            let relevant = false;
+            for (const record of records) {
+                for (const node of [...record.addedNodes, ...record.removedNodes]) {
+                    if (!(node instanceof Element)) continue;
+                    if (node.matches?.(".ovg-modal,.ovg-speed-control") || node.querySelector?.(".ovg-speed-control")) {
+                        relevant = true;
+                        break;
+                    }
+                }
+                if (relevant) break;
+            }
+            if (relevant) scheduleLock();
+        });
+        // The modal and fullscreen speed controls are direct children of body.
+        // Avoid observing every DOM mutation in the whole ComfyUI interface.
+        observer.observe(document.body, { childList:true, subtree:false });
 
         // Capture before the fullscreen <video> / its native UI sees the pointer.
         document.addEventListener("pointerdown", onPointerDown, true);
