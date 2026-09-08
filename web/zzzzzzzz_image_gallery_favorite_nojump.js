@@ -4,6 +4,7 @@ import { api } from "/scripts/api.js";
 const EXT_NAME = "Comfy.ImageGallery.FavoriteNoJump";
 const FAVORITES_KEY = "ComfyUI-LoadImageGallery.favorites";
 const SORT_KEY = "ComfyUI-LoadImageGallery.sortMode";
+const installedOverlays = new WeakSet();
 
 function normalizePath(value) {
     return String(value ?? "")
@@ -171,37 +172,55 @@ async function reorderGallery(body, grid, folder, clickedCard) {
     });
 }
 
+function installOverlay(overlay) {
+    if (!(overlay instanceof HTMLElement) || installedOverlays.has(overlay)) return;
+    installedOverlays.add(overlay);
+
+    overlay.addEventListener("click", event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const button = target?.closest?.(".cig-favorite");
+        if (!button || !overlay.contains(button)) return;
+
+        const card = button.closest?.(".cig-card");
+        const relative = cardKey(card);
+        if (!relative) return;
+
+        const body = overlay.querySelector?.(".cig-body");
+        const grid = overlay.querySelector?.(".cig-grid");
+        if (!(body instanceof HTMLElement) || !(grid instanceof HTMLElement)) return;
+
+        // Intercept on the gallery overlay during capture so the original favorite
+        // handler in image_gallery.js never rebuilds the whole grid or jumps scroll.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        const favorites = loadFavorites();
+        const on = !favorites.has(relative);
+        if (on) favorites.add(relative);
+        else favorites.delete(relative);
+        saveFavorites(favorites);
+        updateFavoriteButton(button, on);
+
+        const folder = splitPath(relative).folder;
+        void reorderGallery(body, grid, folder, card);
+    }, true);
+}
+
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        document.addEventListener("click", event => {
-            const target = event.target instanceof Element ? event.target : null;
-            const button = target?.closest?.(".cig-favorite");
-            if (!button) return;
+        document.querySelectorAll(".cig-overlay").forEach(installOverlay);
 
-            const card = button.closest?.(".cig-card");
-            const relative = cardKey(card);
-            if (!relative) return;
-
-            const overlay = button.closest?.(".cig-overlay");
-            const body = overlay?.querySelector?.(".cig-body");
-            const grid = overlay?.querySelector?.(".cig-grid");
-            if (!(body instanceof HTMLElement) || !(grid instanceof HTMLElement)) return;
-
-            // Handle the favorite click here instead of letting image_gallery.js
-            // rebuild the whole grid and scroll the moved card into view.
-            event.preventDefault();
-            event.stopImmediatePropagation();
-
-            const favorites = loadFavorites();
-            const on = !favorites.has(relative);
-            if (on) favorites.add(relative);
-            else favorites.delete(relative);
-            saveFavorites(favorites);
-            updateFavoriteButton(button, on);
-
-            const folder = splitPath(relative).folder;
-            void reorderGallery(body, grid, folder, card);
-        }, true);
+        const observer = new MutationObserver(records => {
+            for (const record of records) {
+                for (const node of record.addedNodes) {
+                    if (!(node instanceof Element)) continue;
+                    if (node.classList.contains("cig-overlay")) installOverlay(node);
+                }
+            }
+        });
+        // Input gallery overlays are direct body children. No global click capture
+        // is needed while the gallery is closed.
+        observer.observe(document.body, { childList:true, subtree:false });
     },
 });
