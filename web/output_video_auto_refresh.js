@@ -19,6 +19,7 @@ const TEXT = RU ? {
 
 const modalState = new WeakMap();
 let eventTimer = 0;
+let tickTimer = 0;
 
 function activeModal() {
     const modals = [...document.querySelectorAll(".ovg-modal")];
@@ -148,6 +149,21 @@ async function checkActiveModal({ force = false } = {}) {
     }
 }
 
+function stopTicker() {
+    if (!tickTimer) return;
+    clearInterval(tickTimer);
+    tickTimer = 0;
+}
+
+function syncTicker() {
+    if (document.hidden || !activeModal()) {
+        stopTicker();
+        return;
+    }
+    if (tickTimer) return;
+    tickTimer = setInterval(() => checkActiveModal(), TICK_MS);
+}
+
 function scheduleEventCheck() {
     if (!activeModal() || document.hidden) return;
     clearTimeout(eventTimer);
@@ -179,19 +195,31 @@ function installHelp(root = document) {
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        setInterval(() => checkActiveModal(), TICK_MS);
+        syncTicker();
 
         for (const eventName of ["executed", "execution_success"]) {
             try { api.addEventListener?.(eventName, scheduleEventCheck); }
             catch (_) {}
         }
 
+        document.addEventListener("visibilitychange", () => {
+            syncTicker();
+            if (!document.hidden && activeModal()) checkActiveModal({ force:true });
+        });
+
         const observer = new MutationObserver(records => {
+            let modalChanged = false;
             for (const record of records) {
                 for (const node of record.addedNodes) {
-                    if (node instanceof Element) installHelp(node);
+                    if (!(node instanceof Element)) continue;
+                    installHelp(node);
+                    if (node.classList.contains("ovg-modal")) modalChanged = true;
+                }
+                for (const node of record.removedNodes) {
+                    if (node instanceof Element && node.classList.contains("ovg-modal")) modalChanged = true;
                 }
             }
+            if (modalChanged) syncTicker();
         });
         observer.observe(document.body, { childList: true, subtree: false });
     },
