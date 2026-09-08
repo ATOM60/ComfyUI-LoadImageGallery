@@ -41,7 +41,10 @@ The video gallery lets you:
 - Rename videos.
 - Show a video in its folder.
 - Delete one or several selected videos.
-- Open the right-click menu for play, selection, copy, rename, show in folder and delete actions.
+- Open supported videos as a ComfyUI workflow from the right-click menu when workflow metadata is embedded in the file.
+- Open the right-click menu for play, workflow loading, selection, copy, rename, show in folder and delete actions.
+
+**Open as workflow / Открыть как workflow** supports the video formats that ComfyUI can read workflow metadata from: **MP4, MOV, M4V and WebM**.
 
 ### Video playback
 
