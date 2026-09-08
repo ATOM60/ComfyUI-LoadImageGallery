@@ -3,6 +3,7 @@ import { app } from "/scripts/app.js";
 const EXT_NAME = "Comfy.ImageGallery.OutputDirectGestures";
 const CLICK_DELAY_MS = 300;
 const clickTimers = new WeakMap();
+const modalObservers = new WeakMap();
 
 function fullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -209,26 +210,54 @@ function protectContextMenu(menu) {
     });
 }
 
-function scan(root = document) {
-    if (root instanceof HTMLElement && root.classList.contains("ovg-thumb")) attachThumb(root);
+function scanGallery(root) {
+    if (!(root instanceof Element)) return;
+    if (root.classList.contains("ovg-thumb")) attachThumb(root);
     if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attachVideo(root);
-    if (root instanceof HTMLElement && root.classList.contains("ovg-menu")) protectContextMenu(root);
     root.querySelectorAll?.(".ovg-thumb").forEach(attachThumb);
     root.querySelectorAll?.("video.ovg-inline-video").forEach(attachVideo);
-    root.querySelectorAll?.(".ovg-menu").forEach(protectContextMenu);
+}
+
+function installModal(modal) {
+    if (!(modal instanceof HTMLElement) || modalObservers.has(modal)) return;
+    scanGallery(modal);
+    const observer = new MutationObserver(records => {
+        for (const record of records) {
+            for (const node of record.addedNodes) {
+                if (node instanceof Element) scanGallery(node);
+            }
+        }
+    });
+    observer.observe(modal, { childList:true, subtree:true });
+    modalObservers.set(modal, observer);
+}
+
+function uninstallModal(modal) {
+    const observer = modalObservers.get(modal);
+    observer?.disconnect();
+    modalObservers.delete(modal);
 }
 
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        scan();
+        document.querySelectorAll(".ovg-modal").forEach(installModal);
+        document.querySelectorAll(".ovg-menu").forEach(protectContextMenu);
+
+        // Only watch direct body children. The heavy subtree observer is attached
+        // locally to an output gallery while that gallery is actually open.
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 for (const node of record.addedNodes) {
-                    if (node instanceof Element) scan(node);
+                    if (!(node instanceof Element)) continue;
+                    if (node.classList.contains("ovg-modal")) installModal(node);
+                    if (node.classList.contains("ovg-menu")) protectContextMenu(node);
+                }
+                for (const node of record.removedNodes) {
+                    if (node instanceof HTMLElement && node.classList.contains("ovg-modal")) uninstallModal(node);
                 }
             }
         });
-        observer.observe(document.body, { childList:true, subtree:true });
+        observer.observe(document.body, { childList:true, subtree:false });
     },
 });
