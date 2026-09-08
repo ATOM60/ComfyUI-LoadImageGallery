@@ -9,6 +9,7 @@ A visual image loader for ComfyUI with an integrated gallery for videos from `ou
 - Browse images from the ComfyUI `input` folder and external folders.
 - Open nested folders without leaving the gallery.
 - Search by filename.
+- Change image card and preview size with the slider to the right of search; the selected size is remembered.
 - Sort by name, date or file size.
 - Add images to favorites.
 - Select one or many images.
