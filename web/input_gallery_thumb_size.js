@@ -138,9 +138,8 @@ function applySize(overlay, size, { preserveViewport = false } = {}) {
 
 function installOverlay(overlay) {
     if (!(overlay instanceof HTMLElement) || overlay.dataset.cigThumbSizeInstalled === "1") return;
-    const header = overlay.querySelector(".cig-header");
     const search = overlay.querySelector(".cig-search");
-    if (!(header instanceof HTMLElement) || !(search instanceof HTMLInputElement)) return;
+    if (!(search instanceof HTMLInputElement)) return;
 
     overlay.dataset.cigThumbSizeInstalled = "1";
     const size = loadSize();
@@ -159,7 +158,7 @@ function installOverlay(overlay) {
     applySize(overlay, size);
 
     slider.addEventListener("input", event => {
-        const next = clampSize(event.target.value);
+        const next = clampSize(event.target?.value);
         saveSize(next);
         applySize(overlay, next, { preserveViewport: true });
     });
@@ -167,7 +166,8 @@ function installOverlay(overlay) {
 
 function installHelp(overlay) {
     if (!(overlay instanceof HTMLElement) || overlay.dataset.cigThumbSizeHelp === "1") return;
-    const content = overlay.querySelector("div > div:last-child");
+    const box = overlay.firstElementChild;
+    const content = box?.lastElementChild;
     if (!(content instanceof HTMLElement)) return;
 
     overlay.dataset.cigThumbSizeHelp = "1";
