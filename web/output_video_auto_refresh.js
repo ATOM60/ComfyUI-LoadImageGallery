@@ -41,6 +41,7 @@ function getState(modal) {
             folder: folderKey(modal),
             signature: null,
             pendingRefresh: false,
+            pendingVideos: null,
             inFlight: false,
             lastCheck: 0,
         };
@@ -51,6 +52,7 @@ function getState(modal) {
         state.folder = folder;
         state.signature = null;
         state.pendingRefresh = false;
+        state.pendingVideos = null;
     }
     return state;
 }
@@ -91,11 +93,42 @@ function safeToRefresh(modal) {
     return true;
 }
 
-function performRefresh(modal, state) {
+function applyFetchedList(modal, videos) {
+    const graph = app.graph || app.rootGraph;
+    const nodes = Array.isArray(graph?._nodes) ? graph._nodes : [];
+    const gallery = nodes
+        .map(node => node?._outputVideoGallery)
+        .find(state => state?.modal === modal);
+    if (!gallery) return false;
+
+    gallery.videos = Array.isArray(videos) ? videos : [];
+
+    // Re-use the gallery's existing render path instead of clicking Refresh.
+    // Dispatching input with the unchanged search value only re-renders the already
+    // fetched list; it does not perform another backend scan.
+    const search = modal.querySelector(".ovg-search");
+    if (!(search instanceof HTMLInputElement)) return false;
+    search.dispatchEvent(new Event("input", { bubbles:true }));
+    return true;
+}
+
+function performRefresh(modal, state, videos = null) {
+    if (Array.isArray(videos)) state.pendingVideos = videos;
+
     if (!safeToRefresh(modal)) {
         state.pendingRefresh = true;
         return false;
     }
+
+    if (Array.isArray(state.pendingVideos)) {
+        const pending = state.pendingVideos;
+        state.pendingVideos = null;
+        state.pendingRefresh = false;
+        if (applyFetchedList(modal, pending)) return true;
+    }
+
+    // Compatibility fallback: if the internal gallery state cannot be located,
+    // preserve the old behavior and use the normal Refresh button.
     const button = modal.querySelector(".ovg-refresh-modal");
     if (!(button instanceof HTMLElement) || button.hasAttribute("disabled")) {
         state.pendingRefresh = true;
@@ -132,7 +165,8 @@ async function checkActiveModal({ force = false } = {}) {
         const data = await response.json();
         if (!modal.isConnected || activeModal() !== modal) return;
 
-        const signature = listSignature(data?.videos || []);
+        const videos = Array.isArray(data?.videos) ? data.videos : [];
+        const signature = listSignature(videos);
         if (state.signature === null) {
             state.signature = signature;
             return;
@@ -140,7 +174,7 @@ async function checkActiveModal({ force = false } = {}) {
         if (signature === state.signature) return;
 
         state.signature = signature;
-        performRefresh(modal, state);
+        performRefresh(modal, state, videos);
     } catch (_) {
         // Auto-refresh is intentionally silent. The manual refresh button still
         // reports errors in the normal gallery UI.
