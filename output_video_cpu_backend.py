@@ -1,7 +1,7 @@
 import asyncio
+import contextlib
 import json
 import math
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -109,12 +109,52 @@ async def _terminate_process(proc):
     except Exception:
         return
     try:
-        await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=1.5)
+        await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=1.0)
     except Exception:
         try:
             proc.kill()
         except Exception:
             pass
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=0.5)
+
+
+async def _watch_disconnect(ws, disconnected: asyncio.Event):
+    try:
+        async for _ in ws:
+            pass
+    except (ConnectionResetError, asyncio.CancelledError):
+        pass
+    except Exception:
+        pass
+    finally:
+        disconnected.set()
+
+
+async def _read_chunk_or_disconnect(proc, disconnected: asyncio.Event):
+    if proc.stdout is None:
+        return b"", True
+
+    read_task = asyncio.create_task(asyncio.to_thread(proc.stdout.read, 65536))
+    disconnect_task = asyncio.create_task(disconnected.wait())
+    done, _ = await asyncio.wait(
+        {read_task, disconnect_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    if disconnect_task in done:
+        await _terminate_process(proc)
+        try:
+            chunk = await asyncio.wait_for(read_task, timeout=0.5)
+        except Exception:
+            read_task.cancel()
+            chunk = b""
+        return chunk, True
+
+    disconnect_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await disconnect_task
+    return read_task.result(), False
 
 
 @PromptServer.instance.routes.get("/image-gallery/output/cpu-stream")
@@ -122,7 +162,10 @@ async def cpu_video_stream(request):
     ws = web.WebSocketResponse(heartbeat=20, max_msg_size=1024 * 1024)
     await ws.prepare(request)
 
+    disconnected = asyncio.Event()
+    disconnect_watcher = asyncio.create_task(_watch_disconnect(ws, disconnected))
     proc = None
+
     try:
         raw_path = request.query.get("path", "")
         try:
@@ -137,9 +180,14 @@ async def cpu_video_stream(request):
 
         path = base._resolve(raw_path)
         meta = await asyncio.to_thread(_probe_video, path)
+        if disconnected.is_set():
+            return ws
         await ws.send_str(json.dumps({"type": "meta", **meta}, ensure_ascii=False))
 
         async with _STREAM_LIMIT:
+            if disconnected.is_set():
+                return ws
+
             proc = subprocess.Popen(
                 _ffmpeg_command(path, start),
                 stdin=subprocess.DEVNULL,
@@ -156,13 +204,15 @@ async def cpu_video_stream(request):
             loop = asyncio.get_running_loop()
             next_frame_at = loop.time()
 
-            while not ws.closed:
-                chunk = await asyncio.to_thread(proc.stdout.read, 65536)
+            while not ws.closed and not disconnected.is_set():
+                chunk, was_disconnected = await _read_chunk_or_disconnect(proc, disconnected)
+                if was_disconnected:
+                    break
                 if not chunk:
                     break
                 buffer.extend(chunk)
 
-                while not ws.closed:
+                while not ws.closed and not disconnected.is_set():
                     start_marker = buffer.find(b"\xff\xd8")
                     if start_marker < 0:
                         if len(buffer) > 2:
@@ -177,32 +227,40 @@ async def cpu_video_stream(request):
 
                     frame = bytes(buffer[:end_marker + 2])
                     del buffer[:end_marker + 2]
-                    await ws.send_bytes(frame)
+                    try:
+                        await ws.send_bytes(frame)
+                    except (ConnectionResetError, RuntimeError):
+                        disconnected.set()
+                        break
 
                     next_frame_at += frame_interval
                     delay = next_frame_at - loop.time()
                     if delay > 0:
-                        await asyncio.sleep(delay)
+                        try:
+                            await asyncio.wait_for(disconnected.wait(), timeout=delay)
+                            break
+                        except asyncio.TimeoutError:
+                            pass
                     elif delay < -0.5:
                         next_frame_at = loop.time()
 
-            if not ws.closed:
+            if not disconnected.is_set() and not ws.closed:
                 await ws.send_str(json.dumps({"type": "eof"}))
 
     except (ConnectionResetError, asyncio.CancelledError):
         pass
     except Exception as exc:
-        if not ws.closed:
-            try:
+        if not disconnected.is_set() and not ws.closed:
+            with contextlib.suppress(Exception):
                 await ws.send_str(json.dumps({"type": "error", "error": str(exc)}, ensure_ascii=False))
-            except Exception:
-                pass
     finally:
+        disconnected.set()
         await _terminate_process(proc)
+        disconnect_watcher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await disconnect_watcher
         if not ws.closed:
-            try:
+            with contextlib.suppress(Exception):
                 await ws.close()
-            except Exception:
-                pass
 
     return ws
