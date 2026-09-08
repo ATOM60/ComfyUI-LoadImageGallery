@@ -53,6 +53,9 @@ The video gallery lets you:
 - Playback speed is remembered.
 - Fullscreen controls on the right let you open the previous video, change playback speed and open the next video.
 - Up to three inline video players can stay active in the gallery.
+- A compact **CPU** switch is available in the top row without adding another toolbar row.
+- CPU mode moves the main video decoding work to the processor, which can make playback smoother while ComfyUI is heavily using the GPU.
+- CPU mode keeps single-click play/pause, double-click fullscreen, looping, remembered volume, remembered playback speed and previous/next fullscreen navigation.
 
 ## Languages
 
