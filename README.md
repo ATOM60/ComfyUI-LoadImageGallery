@@ -31,6 +31,8 @@ The video gallery lets you:
 - Browse videos from the ComfyUI `output` folder and selected external folders.
 - See video thumbnails.
 - Search by filename or folder.
+- Automatically detect new output videos while the gallery is open. Checks are triggered after ComfyUI execution events and use a low-frequency fallback check about every 10 seconds.
+- Avoid unnecessary redraws: the gallery only refreshes when the video list actually changes, and refresh is deferred while a video is playing or videos are selected.
 - Sort by date, name or file size.
 - Add videos to favorites with the heart under the video information; favorite videos are shown first.
 - Keep the current scroll position stable when adding or removing videos from favorites.
