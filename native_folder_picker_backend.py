@@ -11,100 +11,30 @@ def _pick_folder_native_modern() -> str:
     if os.name != "nt":
         return _ORIGINAL_PICK_FOLDER()
 
-    # Use the actual Windows IFileOpenDialog in FOS_PICKFOLDERS mode. This keeps
-    # the normal Explorer-style common dialog while making folders selectable
-    # directly instead of relying on the OpenFileDialog "fake filename" trick.
+    # Use the modern Windows folder picker (Explorer-style common dialog) and
+    # opt the picker thread into per-monitor-v2 DPI awareness so the dialog is
+    # rendered natively on high-DPI displays instead of being bitmap-scaled.
     script = r'''
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-
-[ComImport]
-[Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
-internal class FileOpenDialogRCW {}
-
-[ComImport]
-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-[Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
-internal interface IFileDialog {
-    [PreserveSig] int Show(IntPtr parent);
-    void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
-    void SetFileTypeIndex(uint iFileType);
-    void GetFileTypeIndex(out uint piFileType);
-    void Advise(IntPtr pfde, out uint pdwCookie);
-    void Unadvise(uint dwCookie);
-    void SetOptions(uint fos);
-    void GetOptions(out uint pfos);
-    void SetDefaultFolder(IShellItem psi);
-    void SetFolder(IShellItem psi);
-    void GetFolder(out IShellItem ppsi);
-    void GetCurrentSelection(out IShellItem ppsi);
-    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-    void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
-    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
-    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
-    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
-    void GetResult(out IShellItem ppsi);
-    void AddPlace(IShellItem psi, int fdap);
-    void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
-    void Close(int hr);
-    void SetClientGuid(ref Guid guid);
-    void ClearClientData();
-    void SetFilter(IntPtr pFilter);
-}
-
-[ComImport]
-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-[Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
-internal interface IShellItem {
-    void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
-    void GetParent(out IShellItem ppsi);
-    void GetDisplayName(uint sigdnName, out IntPtr ppszName);
-    void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
-    void Compare(IShellItem psi, uint hint, out int piOrder);
-}
-
-public static class CIGFolderPicker {
-    const uint FOS_PICKFOLDERS = 0x00000020;
-    const uint FOS_FORCEFILESYSTEM = 0x00000040;
-    const uint FOS_NOCHANGEDIR = 0x00000008;
-    const uint FOS_PATHMUSTEXIST = 0x00000800;
-    const uint SIGDN_FILESYSPATH = 0x80058000;
-
+public static class CIGDpiAwareness {
     [DllImport("user32.dll")]
-    static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
-
-    public static string Pick() {
-        try { SetThreadDpiAwarenessContext(new IntPtr(-4)); } catch {}
-
-        IFileDialog dialog = null;
-        IShellItem item = null;
-        IntPtr pathPtr = IntPtr.Zero;
-        try {
-            dialog = (IFileDialog)new FileOpenDialogRCW();
-            uint options;
-            dialog.GetOptions(out options);
-            dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR | FOS_PATHMUSTEXIST);
-            dialog.SetTitle("Select folder");
-            dialog.SetOkButtonLabel("Select folder");
-
-            int hr = dialog.Show(IntPtr.Zero);
-            if (hr != 0) return String.Empty;
-
-            dialog.GetResult(out item);
-            item.GetDisplayName(SIGDN_FILESYSPATH, out pathPtr);
-            return Marshal.PtrToStringUni(pathPtr) ?? String.Empty;
-        }
-        finally {
-            if (pathPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(pathPtr);
-            if (item != null && Marshal.IsComObject(item)) Marshal.ReleaseComObject(item);
-            if (dialog != null && Marshal.IsComObject(dialog)) Marshal.ReleaseComObject(dialog);
-        }
-    }
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
 }
 "@
-[Console]::Write([CIGFolderPicker]::Pick())
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+try { [CIGDpiAwareness]::SetThreadDpiAwarenessContext([IntPtr](-4)) | Out-Null } catch {}
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = "Select folder"
+$d.ShowNewFolderButton = $true
+try { $d.AutoUpgradeEnabled = $true } catch {}
+try { $d.UseDescriptionForTitle = $true } catch {}
+if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Write($d.SelectedPath)
+}
 '''
     result = subprocess.run(
         [
@@ -127,6 +57,6 @@ public static class CIGFolderPicker {
     return result.stdout.strip()
 
 
-# Both Input Gallery and Output Gallery use the shared /image-gallery/pick-folder
-# route, so they get exactly the same working Explorer folder picker.
+# The input and output galleries both call /image-gallery/pick-folder, whose
+# route resolves this function from image_gallery_core at request time.
 core._pick_folder_native = _pick_folder_native_modern
