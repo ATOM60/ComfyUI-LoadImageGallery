@@ -2,8 +2,28 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputDirectGestures";
 const CLICK_DELAY_MS = 300;
+const TOUCH_LOCK_PX = 14;
+const TOUCH_DIRECTION_RATIO = 1.2;
+const TOUCH_CLICK_SUPPRESS_MS = 650;
 const clickTimers = new WeakMap();
 const modalObservers = new WeakMap();
+const touchSuppressUntil = new WeakMap();
+
+function clamp(value, min, max) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+}
+
+function fmtTime(value) {
+    let s = Math.max(0, Math.floor(Number(value) || 0));
+    const h = Math.floor(s / 3600);
+    s -= h * 3600;
+    const m = Math.floor(s / 60);
+    s %= 60;
+    return h
+        ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function fullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -137,7 +157,24 @@ function toggleFullscreen(thumb) {
     enterFullscreen(video);
 }
 
+function suppressTouchClick(video, thumb) {
+    const until = performance.now() + TOUCH_CLICK_SUPPRESS_MS;
+    touchSuppressUntil.set(video, until);
+    if (thumb) touchSuppressUntil.set(thumb, until);
+}
+
+function isTouchClickSuppressed(targetKey, thumb) {
+    const now = performance.now();
+    return (touchSuppressUntil.get(targetKey) || 0) > now || (touchSuppressUntil.get(thumb) || 0) > now;
+}
+
 function handleClick(targetKey, thumb, event) {
+    if (isTouchClickSuppressed(targetKey, thumb)) {
+        clearSingle(targetKey);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+    }
     if (isOverCustomControls(event)) return;
     if (event.target instanceof HTMLVideoElement && !isPictureArea(event.target, event)) return;
 
@@ -159,9 +196,119 @@ function handleClick(targetKey, thumb, event) {
     clickTimers.set(targetKey, timer);
 }
 
+function targetForTouchSwipe(startTime, duration, dx, width, elapsedMs) {
+    const w = Math.max(120, Number(width) || 1);
+    const ratio = dx / w;
+    const span = clamp(duration * 0.35, 12, 90);
+    const velocity = Math.abs(dx) / Math.max(70, elapsedMs || 0);
+    const momentum = clamp(1 + velocity * 0.9, 1, 2.5);
+    const curved = Math.sign(ratio) * Math.pow(Math.abs(ratio), 0.92);
+    return clamp(startTime + curved * span * momentum, 0, duration);
+}
+
+function touchHud(video, text) {
+    const host = video.closest(".ovg-thumb");
+    if (!(host instanceof HTMLElement)) return;
+    let hud = host.querySelector(":scope > .cig-gpu-touch-hud");
+    if (!(hud instanceof HTMLElement)) {
+        hud = document.createElement("div");
+        hud.className = "cig-gpu-touch-hud";
+        hud.style.cssText = "position:absolute;left:50%;top:50%;z-index:2147483646;transform:translate(-50%,-50%);pointer-events:none;padding:9px 13px;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:700 14px/1.2 Arial,sans-serif;white-space:nowrap;box-shadow:0 4px 18px rgba(0,0,0,.35);";
+        host.appendChild(hud);
+    }
+    hud.textContent = text;
+}
+
+function hideTouchHud(video) {
+    video.closest(".ovg-thumb")?.querySelector?.(":scope > .cig-gpu-touch-hud")?.remove();
+}
+
+function attachTouchSeek(video) {
+    let gesture = null;
+
+    video.addEventListener("touchstart", event => {
+        if (event.touches.length !== 1) return;
+        const point = event.touches[0];
+        if (!isPictureArea(video, point)) return;
+
+        const duration = Number(video.duration);
+        const current = Number(video.currentTime);
+        if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(current)) return;
+
+        gesture = {
+            startX:point.clientX,
+            startY:point.clientY,
+            startedAt:performance.now(),
+            startTime:current,
+            duration,
+            targetTime:current,
+            locked:false,
+            cancelled:false,
+        };
+    }, { passive:true });
+
+    video.addEventListener("touchmove", event => {
+        const g = gesture;
+        if (!g || g.cancelled || event.touches.length !== 1) return;
+        const point = event.touches[0];
+        const dx = point.clientX - g.startX;
+        const dy = point.clientY - g.startY;
+        const ax = Math.abs(dx), ay = Math.abs(dy);
+
+        if (!g.locked) {
+            if (Math.max(ax, ay) < TOUCH_LOCK_PX) return;
+            if (ay > ax * TOUCH_DIRECTION_RATIO) {
+                g.cancelled = true;
+                hideTouchHud(video);
+                return;
+            }
+            if (ax <= ay * TOUCH_DIRECTION_RATIO) return;
+            g.locked = true;
+        }
+
+        if (!g.locked) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const elapsed = performance.now() - g.startedAt;
+        g.targetTime = targetForTouchSwipe(g.startTime, g.duration, dx, video.getBoundingClientRect().width, elapsed);
+        const signed = g.targetTime - g.startTime;
+        const sign = signed > .05 ? "+" : signed < -.05 ? "−" : "";
+        touchHud(video, `${sign}${Math.abs(signed).toFixed(Math.abs(signed) < 10 ? 1 : 0)} с   ${fmtTime(g.targetTime)} / ${fmtTime(g.duration)}`);
+    }, { passive:false });
+
+    video.addEventListener("touchend", event => {
+        const g = gesture;
+        gesture = null;
+        hideTouchHud(video);
+        if (!g || !g.locked || g.cancelled) return;
+
+        const point = event.changedTouches?.[0];
+        if (point) {
+            const dx = point.clientX - g.startX;
+            const elapsed = performance.now() - g.startedAt;
+            g.targetTime = targetForTouchSwipe(g.startTime, g.duration, dx, video.getBoundingClientRect().width, elapsed);
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const thumb = video.closest(".ovg-thumb");
+        suppressTouchClick(video, thumb);
+        clearSingle(video);
+        try { video.currentTime = g.targetTime; } catch (_) {}
+    }, { passive:false });
+
+    video.addEventListener("touchcancel", () => {
+        gesture = null;
+        hideTouchHud(video);
+    }, { passive:true });
+}
+
 function attachVideo(video) {
     if (!(video instanceof HTMLVideoElement) || video.dataset.cigDirectGestures === "1") return;
     video.dataset.cigDirectGestures = "1";
+
+    attachTouchSeek(video);
 
     video.addEventListener("click", event => {
         const thumb = video.closest(".ovg-thumb");
