@@ -4,7 +4,6 @@ import { api } from "/scripts/api.js";
 const EXT_NAME = "Comfy.ImageGallery.OutputExternalGpuRetry";
 const EXTERNAL_PREFIX = "__cig_external__/";
 const installed = new WeakSet();
-const objectUrls = new WeakMap();
 
 function apiUrl(route) {
     try { if (typeof api.apiURL === "function") return api.apiURL(route); } catch (_) {}
@@ -38,97 +37,84 @@ function mediaErrorText(video) {
     return message ? `${name}: ${message}` : name;
 }
 
-function revokeObjectUrl(video) {
-    const url = objectUrls.get(video);
-    if (!url) return;
-    objectUrls.delete(video);
-    try { URL.revokeObjectURL(url); } catch (_) {}
+function statusNote(video, text, failed = false) {
+    const holder = video.closest(".ovg-thumb");
+    if (!(holder instanceof HTMLElement)) return null;
+    let note = holder.querySelector(":scope > .ovg-external-gpu-error");
+    if (!(note instanceof HTMLElement)) {
+        note = document.createElement("div");
+        note.className = "ovg-external-gpu-error";
+        note.style.cssText = "position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;text-align:center;background:rgba(0,0,0,.78);color:#e7e7e7;font:12px/1.35 Arial,sans-serif;white-space:normal;pointer-events:none";
+        holder.appendChild(note);
+    }
+    note.style.color = failed ? "#ffb3b3" : "#e7e7e7";
+    note.textContent = text;
+    return note;
 }
 
-async function blobFallback(video, path, name) {
-    const route = `/image-gallery/output/video-folder?path=${encodeURIComponent(path)}&v=${Date.now()}`;
-    let response;
-    try {
-        response = await fetch(apiUrl(route), { cache: "no-store" });
-    } catch (error) {
-        throw new Error(`Сеть: ${error?.message || String(error)}`);
-    }
-
-    if (!response.ok) {
-        let detail = "";
-        try { detail = (await response.text()).trim().slice(0, 240); } catch (_) {}
-        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
-    }
-
-    const blob = await response.blob();
-    if (!blob.size) throw new Error("сервер вернул пустой файл");
-
-    const objectUrl = URL.createObjectURL(blob);
-    revokeObjectUrl(video);
-    objectUrls.set(video, objectUrl);
-    video.dataset.cigExternalGpuBlob = "1";
-    video.dataset.cigExternalGpuState = "blob";
-
-    return await new Promise((resolve, reject) => {
-        let settled = false;
-        const cleanup = () => {
-            video.removeEventListener("canplay", onCanPlay, true);
-            video.removeEventListener("error", onError, true);
-        };
-        const onCanPlay = () => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            resolve();
-        };
-        const onError = event => {
-            if (settled) return;
-            settled = true;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            cleanup();
-            reject(new Error(mediaErrorText(video)));
-        };
-
-        video.addEventListener("canplay", onCanPlay, true);
-        video.addEventListener("error", onError, true);
-        try {
-            video.src = objectUrl;
-            video.load();
-        } catch (error) {
-            settled = true;
-            cleanup();
-            reject(error);
-        }
-    });
+function clearStatus(video) {
+    video.closest(".ovg-thumb")?.querySelector?.(":scope > .ovg-external-gpu-error")?.remove();
 }
 
 function keepFailedPlayer(video, name, error) {
     video.dataset.cigExternalGpuState = "failed";
     try { video.pause(); } catch (_) {}
-    const holder = video.closest(".ovg-thumb");
-    if (holder instanceof HTMLElement) {
-        let note = holder.querySelector(":scope > .ovg-external-gpu-error");
-        if (!(note instanceof HTMLElement)) {
-            note = document.createElement("div");
-            note.className = "ovg-external-gpu-error";
-            note.style.cssText = "position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;text-align:center;background:rgba(0,0,0,.78);color:#ffb3b3;font:12px/1.35 Arial,sans-serif;white-space:normal;pointer-events:none";
-            holder.appendChild(note);
-        }
-        note.textContent = `GPU: ${error?.message || String(error)}`;
-    }
+    statusNote(video, `GPU: ${error?.message || String(error)}`, true);
     toast(`GPU не смог открыть «${name}»: ${error?.message || String(error)}`);
+}
+
+async function prepareCompatibleProxy(video, path, name) {
+    statusNote(video, "Браузер не поддерживает исходный контейнер/кодек. Подготавливаю совместимую H.264 MP4-копию…");
+    video.dataset.cigExternalGpuState = "preparing";
+    try { video.pause(); } catch (_) {}
+
+    let response;
+    try {
+        response = await api.fetchApi("/image-gallery/output/browser-proxy-prepare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path }),
+        });
+    } catch (error) {
+        throw new Error(`Сеть: ${error?.message || String(error)}`);
+    }
+
+    let data = null;
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) {
+        throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+    if (!video.isConnected) return;
+
+    const version = data?.version || Date.now();
+    const url = apiUrl(`/image-gallery/output/browser-proxy?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`);
+    video.dataset.cigExternalGpuState = "proxy-loading";
+    statusNote(video, "Совместимая копия готова. Запускаю GPU-плеер…");
+
+    const onCanPlay = () => {
+        if (!video.isConnected) return;
+        video.dataset.cigExternalGpuState = "playing";
+        clearStatus(video);
+        try { video.play()?.catch?.(() => {}); } catch (_) {}
+    };
+    video.addEventListener("canplay", onCanPlay, { once:true });
+
+    try {
+        video.src = url;
+        video.load();
+    } catch (error) {
+        throw error;
+    }
 }
 
 function install(modal) {
     if (!(modal instanceof HTMLElement) || installed.has(modal)) return;
     installed.add(modal);
 
-    // Media errors do not bubble, but they do travel through capture. For an
-    // external item we intercept the first direct-stream error before the core
-    // gallery removes the player, then retry from a fetched Blob URL. This
-    // bypasses Range/query-path quirks while leaving internal-output playback
-    // completely untouched.
+    // Media errors do not bubble but do traverse capture. External videos that
+    // Chromium cannot demux are intercepted before the core gallery removes the
+    // player. We prepare a browser-safe H.264/AAC MP4 proxy and then keep using
+    // the normal <video> element, so decoding remains the browser/GPU path.
     modal.addEventListener("error", event => {
         const video = event.target;
         if (!(video instanceof HTMLVideoElement) || !video.classList.contains("ovg-inline-video")) return;
@@ -137,47 +123,24 @@ function install(modal) {
         const path = String(card?.dataset?.path || "");
         if (!path.startsWith(EXTERNAL_PREFIX)) return;
 
+        const name = card?.querySelector(".ovg-card-name")?.textContent?.trim() || "video";
         const state = String(video.dataset.cigExternalGpuState || "");
-        if (state === "blob" || state === "failed" || state === "loading") {
-            // blobFallback installs its own capture listener for its media error.
-            // If another error arrives after that listener is gone, keep the
-            // player visible and report the actual browser media error instead
-            // of letting the core remove it instantly.
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (state !== "loading" && state !== "failed") {
-                keepFailedPlayer(video, card?.querySelector(".ovg-card-name")?.textContent?.trim() || "video", new Error(mediaErrorText(video)));
-            }
-            return;
-        }
 
         event.preventDefault();
         event.stopImmediatePropagation();
-        video.dataset.cigExternalGpuState = "loading";
 
-        const name = card?.querySelector(".ovg-card-name")?.textContent?.trim() || "video";
-        blobFallback(video, path, name)
-            .then(() => {
-                if (!video.isConnected) return;
-                video.dataset.cigExternalGpuState = "playing";
-                try { video.play()?.catch?.(() => {}); } catch (_) {}
-            })
-            .catch(error => {
-                if (!video.isConnected) return;
-                keepFailedPlayer(video, name, error);
-            });
-    }, true);
-
-    const observer = new MutationObserver(records => {
-        for (const record of records) {
-            for (const node of record.removedNodes) {
-                if (!(node instanceof Element)) continue;
-                if (node instanceof HTMLVideoElement) revokeObjectUrl(node);
-                node.querySelectorAll?.("video.ovg-inline-video").forEach(revokeObjectUrl);
-            }
+        if (state === "preparing") return;
+        if (state === "proxy-loading") {
+            keepFailedPlayer(video, name, new Error(mediaErrorText(video)));
+            return;
         }
-    });
-    observer.observe(modal, { childList:true, subtree:true });
+        if (state === "failed") return;
+
+        prepareCompatibleProxy(video, path, name).catch(error => {
+            if (!video.isConnected) return;
+            keepFailedPlayer(video, name, error);
+        });
+    }, true);
 }
 
 function scan(root = document) {
