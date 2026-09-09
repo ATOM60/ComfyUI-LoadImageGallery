@@ -112,6 +112,7 @@ def _scan_folder(folder: str):
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames.sort(key=str.lower)
+        filenames.sort(key=str.lower)
         for filename in filenames:
             path = Path(dirpath) / filename
             if path.suffix.lower() not in base.VIDEO_EXTENSIONS:
@@ -143,6 +144,10 @@ def _scan_folder(folder: str):
                 "ext": path.suffix.lower(),
             })
 
+    # Keep scan order deterministic. Auto-refresh signatures are order-sensitive,
+    # so an unstable os.walk/file-system order must never cause a false refresh
+    # that tears down an active external player.
+    rows.sort(key=lambda row: str(row.get("path") or "").casefold())
     return rows, root
 
 
