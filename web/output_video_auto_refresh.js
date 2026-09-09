@@ -12,9 +12,9 @@ const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
     .toLowerCase().startsWith("ru");
 
 const TEXT = RU ? {
-    help: "Список видео обновляется автоматически: после событий выполнения ComfyUI и дополнительно примерно раз в 10 секунд, пока галерея открыта. Если идёт воспроизведение или есть выделенные видео, обновление откладывается, чтобы не прерывать работу.",
+    help: "Список видео обновляется автоматически: после событий выполнения ComfyUI и дополнительно примерно раз в 10 секунд, пока галерея открыта. Если открыт видеоплеер или есть выделенные видео, обновление откладывается, чтобы не прерывать работу.",
 } : {
-    help: "The video list refreshes automatically after ComfyUI execution events and also about every 10 seconds while the gallery is open. Refresh is deferred while a video is playing or videos are selected, so playback and selection are not interrupted.",
+    help: "The video list refreshes automatically after ComfyUI execution events and also about every 10 seconds while the gallery is open. Refresh is deferred while a video player is open or videos are selected, so playback and selection are not interrupted.",
 };
 
 const modalState = new WeakMap();
@@ -64,9 +64,10 @@ function listSignature(videos) {
             hash = Math.imul(hash, 16777619) >>> 0;
         }
     };
-    let count = 0;
-    for (const item of Array.isArray(videos) ? videos : []) {
-        count++;
+    const rows = Array.isArray(videos)
+        ? [...videos].sort((a, b) => String(a?.path || "").localeCompare(String(b?.path || "")))
+        : [];
+    for (const item of rows) {
         feed(item?.path);
         feed("|");
         feed(item?.mtime);
@@ -74,7 +75,7 @@ function listSignature(videos) {
         feed(item?.size);
         feed(";");
     }
-    return `${count}:${hash.toString(16)}`;
+    return `${rows.length}:${hash.toString(16)}`;
 }
 
 function safeToRefresh(modal) {
@@ -82,9 +83,11 @@ function safeToRefresh(modal) {
     if (modal.querySelector(".ovg-busy")) return false;
     if (modal.querySelector(".ovg-card.marked")) return false;
 
-    for (const video of modal.querySelectorAll("video")) {
-        if (video instanceof HTMLVideoElement && !video.paused && !video.ended) return false;
-    }
+    // renderGrid() releases every inline player. Never auto-refresh while a GPU
+    // player element exists, even if it is still loading or currently paused.
+    // This prevents a just-created external player from disappearing before its
+    // first play() promise/metadata load settles.
+    if (modal.querySelector("video.ovg-inline-video")) return false;
 
     const cpu = modal.querySelector(".ovg-cpu-player");
     if (cpu instanceof HTMLElement && !cpu.classList.contains("paused")) return false;

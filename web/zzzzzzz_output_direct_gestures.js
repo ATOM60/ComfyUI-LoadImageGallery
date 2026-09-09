@@ -1,9 +1,17 @@
 import { app } from "/scripts/app.js";
 
-const EXT_NAME = "Comfy.ImageGallery.OutputDirectGestures";
-const CLICK_DELAY_MS = 300;
-const clickTimers = new WeakMap();
-const modalObservers = new WeakMap();
+const EXT_NAME = "Comfy.ImageGallery.OutputPreviewInteractions";
+const SINGLE_CLICK_DELAY_MS = 260;
+const DOUBLE_CLICK_WINDOW_MS = 360;
+const clickState = new WeakMap();
+
+function getThumbFromEvent(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    const thumb = target?.closest?.(".ovg-thumb");
+    if (!thumb || !thumb.closest(".ovg-card")) return null;
+    if (target.closest?.("button")) return null;
+    return thumb;
+}
 
 function fullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -30,65 +38,59 @@ function isOverCustomControls(event) {
     for (const control of document.querySelectorAll(".ovg-speed-control")) {
         const style = getComputedStyle(control);
         if (style.display === "none" || style.visibility === "hidden") continue;
-        for (const el of control.querySelectorAll(".ovg-player-control-button,.ovg-speed-panel,.ovg-speed-slider")) {
-            const r = el.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+        const nodes = control.querySelectorAll(".ovg-player-control-button,.ovg-speed-panel,.ovg-speed-slider");
+        for (const node of nodes) {
+            const r = node.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
         }
     }
     return false;
 }
 
-function clearSingle(target) {
-    const timer = clickTimers.get(target);
-    if (timer) clearTimeout(timer);
-    clickTimers.delete(target);
+function findPlayer(thumb) {
+    return thumb.querySelector("video.ovg-inline-video");
 }
 
-function playerForThumb(thumb) {
-    return thumb?.querySelector?.("video.ovg-inline-video") || null;
-}
+function createPlayer(thumb) {
+    const existing = findPlayer(thumb);
+    if (existing) return { video: existing, created: false };
 
-function createPlayerNow(thumb) {
-    const existing = playerForThumb(thumb);
-    if (existing) return existing;
+    const playButton = thumb.querySelector(".ovg-play");
+    if (!playButton) return { video: null, created: false };
 
-    const playButton = thumb?.querySelector?.(".ovg-play");
-    if (!playButton) return null;
-
-    // The gallery inserts the video before its first await, so click() gives us
-    // the video synchronously while the browser still considers this a user gesture.
     playButton.click();
-    return playerForThumb(thumb);
+    return { video: findPlayer(thumb), created: true };
 }
 
-function play(video) {
+function ensurePlaying(video) {
     if (!video) return;
-    try {
-        const p = video.play();
-        p?.catch?.(() => {});
-    } catch (_) {}
+    queueMicrotask(() => {
+        if (video.isConnected && video.paused) video.play().catch(() => {});
+    });
 }
 
 function togglePlayback(thumb) {
-    let video = playerForThumb(thumb);
-    if (!video) {
-        video = createPlayerNow(thumb);
-        play(video);
-        queueMicrotask(() => { if (video?.isConnected && video.paused) play(video); });
+    const { video, created } = createPlayer(thumb);
+    if (!video) return;
+
+    if (created) {
+        ensurePlaying(video);
         return;
     }
-    if (video.paused) play(video);
+
+    if (video.paused) video.play().catch(() => {});
     else video.pause();
 }
 
 function enterFullscreen(video) {
     if (!video) return;
-    play(video);
+    try { video.play().catch(() => {}); } catch (_) {}
 
     try {
         if (video.requestFullscreen) {
-            const p = video.requestFullscreen();
-            p?.catch?.(() => {});
+            const result = video.requestFullscreen();
+            result?.catch?.(() => {});
             return;
         }
     } catch (_) {}
@@ -100,18 +102,21 @@ function enterFullscreen(video) {
         }
     } catch (_) {}
 
-    try { video.webkitEnterFullscreen?.(); } catch (_) {}
+    try {
+        if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    } catch (_) {}
 }
 
 function exitFullscreenAndPause(video) {
-    try { video?.pause?.(); } catch (_) {}
+    if (!video) return;
+    try { video.pause(); } catch (_) {}
 
     const fs = fullscreenElement();
     if (fs) {
         try {
             if (document.exitFullscreen) {
-                const p = document.exitFullscreen();
-                p?.catch?.(() => {});
+                const result = document.exitFullscreen();
+                result?.catch?.(() => {});
                 return;
             }
         } catch (_) {}
@@ -123,138 +128,88 @@ function exitFullscreenAndPause(video) {
         } catch (_) {}
     }
 
-    try { video?.webkitExitFullscreen?.(); } catch (_) {}
+    try {
+        if (video.webkitDisplayingFullscreen && video.webkitExitFullscreen) video.webkitExitFullscreen();
+    } catch (_) {}
 }
 
 function toggleFullscreen(thumb) {
-    let video = playerForThumb(thumb);
-    if (video && isFullscreenVideo(video)) {
-        exitFullscreenAndPause(video);
+    const existing = findPlayer(thumb);
+    if (existing && isFullscreenVideo(existing)) {
+        exitFullscreenAndPause(existing);
         return;
     }
 
-    if (!video) video = createPlayerNow(thumb);
+    const { video, created } = createPlayer(thumb);
+    if (!video) return;
+    if (created) ensurePlaying(video);
     enterFullscreen(video);
 }
 
-function handleClick(targetKey, thumb, event) {
-    if (isOverCustomControls(event)) return;
-    if (event.target instanceof HTMLVideoElement && !isPictureArea(event.target, event)) return;
+function validPreviewInteraction(event) {
+    if (isOverCustomControls(event)) return null;
+    const thumb = getThumbFromEvent(event);
+    if (!thumb) return null;
+    if (event.target instanceof HTMLVideoElement && !isPictureArea(event.target, event)) return null;
+    return thumb;
+}
 
+function consume(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
+}
 
-    if (event.detail >= 2) {
-        clearSingle(targetKey);
+function onPointerUp(event) {
+    if (event.button !== 0) return;
+    const thumb = validPreviewInteraction(event);
+    if (!thumb) return;
+
+    consume(event);
+
+    const now = performance.now();
+    const pending = clickState.get(thumb);
+    if (pending && now - pending.time <= DOUBLE_CLICK_WINDOW_MS) {
+        clearTimeout(pending.timer);
+        clickState.delete(thumb);
         toggleFullscreen(thumb);
         return;
     }
 
-    clearSingle(targetKey);
+    if (pending) clearTimeout(pending.timer);
     const timer = setTimeout(() => {
-        clickTimers.delete(targetKey);
+        clickState.delete(thumb);
         if (!thumb.isConnected) return;
         togglePlayback(thumb);
-    }, CLICK_DELAY_MS);
-    clickTimers.set(targetKey, timer);
+    }, SINGLE_CLICK_DELAY_MS);
+    clickState.set(thumb, { time: now, timer });
 }
 
-function attachVideo(video) {
-    if (!(video instanceof HTMLVideoElement) || video.dataset.cigDirectGestures === "1") return;
-    video.dataset.cigDirectGestures = "1";
-
-    video.addEventListener("click", event => {
-        const thumb = video.closest(".ovg-thumb");
-        if (!thumb) return;
-        handleClick(video, thumb, event);
-    }, true);
-
-    // The second click already performed the fullscreen action above. Suppress
-    // the browser/native dblclick action so it cannot undo our result.
-    video.addEventListener("dblclick", event => {
-        if (!isPictureArea(video, event) || isOverCustomControls(event)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-    }, true);
-}
-
-function attachThumb(thumb) {
-    if (!(thumb instanceof HTMLElement) || thumb.dataset.cigDirectGestures === "1") return;
-    thumb.dataset.cigDirectGestures = "1";
-
-    thumb.addEventListener("click", event => {
-        if (event.target instanceof HTMLVideoElement) return;
-        if (event.target.closest?.("button")) return;
-        handleClick(thumb, thumb, event);
-    }, true);
-
-    thumb.addEventListener("dblclick", event => {
-        if (event.target instanceof HTMLVideoElement) return;
-        if (event.target.closest?.("button")) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-    }, true);
-
-    thumb.querySelectorAll("video.ovg-inline-video").forEach(attachVideo);
+function suppressGeneratedClick(event) {
+    const thumb = validPreviewInteraction(event);
+    if (!thumb) return;
+    consume(event);
 }
 
 function protectContextMenu(menu) {
     if (!(menu instanceof HTMLElement) || menu.dataset.cigContextMenuProtected === "1") return;
     menu.dataset.cigContextMenuProtected = "1";
-
-    // output_video_gallery.js closes the menu on the next document pointerdown.
-    // Stop pointerdown inside the menu from bubbling to that outside-click handler,
-    // otherwise the menu is removed before its button's click event can fire.
-    menu.addEventListener("pointerdown", event => {
-        event.stopPropagation();
-    });
-}
-
-function scanGallery(root) {
-    if (!(root instanceof Element)) return;
-    if (root.classList.contains("ovg-thumb")) attachThumb(root);
-    if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attachVideo(root);
-    root.querySelectorAll?.(".ovg-thumb").forEach(attachThumb);
-    root.querySelectorAll?.("video.ovg-inline-video").forEach(attachVideo);
-}
-
-function installModal(modal) {
-    if (!(modal instanceof HTMLElement) || modalObservers.has(modal)) return;
-    scanGallery(modal);
-    const observer = new MutationObserver(records => {
-        for (const record of records) {
-            for (const node of record.addedNodes) {
-                if (node instanceof Element) scanGallery(node);
-            }
-        }
-    });
-    observer.observe(modal, { childList:true, subtree:true });
-    modalObservers.set(modal, observer);
-}
-
-function uninstallModal(modal) {
-    const observer = modalObservers.get(modal);
-    observer?.disconnect();
-    modalObservers.delete(modal);
+    menu.addEventListener("pointerdown", event => event.stopPropagation());
 }
 
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        document.querySelectorAll(".ovg-modal").forEach(installModal);
+        document.addEventListener("pointerup", onPointerUp, true);
+        document.addEventListener("click", suppressGeneratedClick, true);
+        document.addEventListener("dblclick", suppressGeneratedClick, true);
         document.querySelectorAll(".ovg-menu").forEach(protectContextMenu);
 
-        // Only watch direct body children. The heavy subtree observer is attached
-        // locally to an output gallery while that gallery is actually open.
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 for (const node of record.addedNodes) {
                     if (!(node instanceof Element)) continue;
-                    if (node.classList.contains("ovg-modal")) installModal(node);
                     if (node.classList.contains("ovg-menu")) protectContextMenu(node);
-                }
-                for (const node of record.removedNodes) {
-                    if (node instanceof HTMLElement && node.classList.contains("ovg-modal")) uninstallModal(node);
+                    node.querySelectorAll?.(".ovg-menu").forEach(protectContextMenu);
                 }
             }
         });

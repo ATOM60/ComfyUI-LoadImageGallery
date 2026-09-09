@@ -224,7 +224,7 @@ function installControls(modal) {
         event.stopPropagation();
         pick.disabled = true;
         try {
-            const response = await api.fetchApi("/image-gallery/pick-folder", { method: "POST" });
+            const response = await api.fetchApi("/image-gallery/output/pick-folder", { method: "POST" });
             const data = await response.json();
             if (!response.ok) throw new Error(data?.error || TEXT.error);
             if (!data?.path) return;
