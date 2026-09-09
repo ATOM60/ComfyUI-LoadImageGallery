@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import os
+import subprocess
+import threading
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -22,6 +24,8 @@ _ORIGINAL_REL = base._rel
 # also reused by copy/rename/delete/reveal/CPU playback through base._resolve.
 _EXTERNAL_PREFIX = "__cig_external__/"
 _EXTERNAL_PATHS: dict[str, Path] = {}
+_PROXY_LOCK = threading.Lock()
+_PROXY_CACHE_LIMIT = 5 * 1024 * 1024 * 1024
 
 
 def _raw_path(value: str) -> str:
@@ -144,11 +148,122 @@ def _scan_folder(folder: str):
                 "ext": path.suffix.lower(),
             })
 
-    # Keep scan order deterministic. Auto-refresh signatures are order-sensitive,
-    # so an unstable os.walk/file-system order must never cause a false refresh
-    # that tears down an active external player.
-    rows.sort(key=lambda row: str(row.get("path") or "").casefold())
     return rows, root
+
+
+def _proxy_cache() -> Path:
+    path = base._cache() / "browser_proxy"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _proxy_path(source: Path) -> Path:
+    st = source.stat()
+    stamp = f"{source.resolve()}|{st.st_mtime_ns}|{st.st_size}"
+    digest = hashlib.sha256(stamp.encode("utf-8", "surrogatepass")).hexdigest()
+    return _proxy_cache() / f"{digest}.mp4"
+
+
+def _cleanup_proxy_cache(keep: Path | None = None):
+    try:
+        files = [p for p in _proxy_cache().glob("*.mp4") if p.is_file()]
+        total = sum(p.stat().st_size for p in files)
+        if total <= _PROXY_CACHE_LIMIT:
+            return
+        files.sort(key=lambda p: p.stat().st_mtime)
+        for path in files:
+            if keep is not None and path == keep:
+                continue
+            try:
+                size = path.stat().st_size
+                path.unlink()
+                total -= size
+            except OSError:
+                pass
+            if total <= _PROXY_CACHE_LIMIT:
+                break
+    except Exception:
+        pass
+
+
+def _run_proxy_ffmpeg(ffmpeg: str, source: Path, target: Path, use_nvenc: bool):
+    common = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-i", str(source),
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    ]
+    if use_nvenc:
+        video_args = [
+            "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "21", "-b:v", "0",
+            "-pix_fmt", "yuv420p",
+        ]
+    else:
+        video_args = [
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-pix_fmt", "yuv420p",
+        ]
+    cmd = common + video_args + [
+        "-c:a", "aac", "-b:a", "160k",
+        "-movflags", "+faststart",
+        str(target),
+    ]
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=1800,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def _ensure_browser_proxy(source: Path) -> Path:
+    target = _proxy_path(source)
+    if target.exists() and target.stat().st_size > 0:
+        try:
+            os.utime(target, None)
+        except OSError:
+            pass
+        return target
+
+    ffmpeg = base._find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg не найден — невозможно подготовить совместимый GPU-поток")
+
+    with _PROXY_LOCK:
+        if target.exists() and target.stat().st_size > 0:
+            return target
+
+        tmp = target.with_suffix(".tmp.mp4")
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        last_error = ""
+        for use_nvenc in (True, False):
+            try:
+                result = _run_proxy_ffmpeg(ffmpeg, source, tmp, use_nvenc)
+                last_error = (result.stderr or "").strip()
+                if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+                    tmp.replace(target)
+                    _cleanup_proxy_cache(target)
+                    return target
+            except subprocess.TimeoutExpired:
+                last_error = "превышено время подготовки видео"
+            except Exception as exc:
+                last_error = str(exc)
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        detail = last_error[-1200:] if last_error else "неизвестная ошибка FFmpeg"
+        raise RuntimeError(f"Не удалось подготовить H.264 MP4: {detail}")
 
 
 @PromptServer.instance.routes.post("/image-gallery/output/pick-folder")
@@ -171,6 +286,41 @@ async def external_video_file(request):
         return web.Response(status=403, text=str(exc))
     except Exception as exc:
         return web.Response(status=400, text=str(exc))
+
+
+@PromptServer.instance.routes.post("/image-gallery/output/browser-proxy-prepare")
+async def prepare_browser_proxy(request):
+    try:
+        data = await request.json()
+        raw = str(data.get("path", ""))
+        if not _raw_path(raw).startswith(_EXTERNAL_PREFIX):
+            return web.json_response({"error": "Прокси разрешён только для внешних видео"}, status=400)
+        source = _resolve_extended(raw)
+        proxy = await asyncio.to_thread(_ensure_browser_proxy, source)
+        st = proxy.stat()
+        return web.json_response({"status": "ok", "version": st.st_mtime_ns, "size": st.st_size})
+    except FileNotFoundError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.get("/image-gallery/output/browser-proxy")
+async def browser_proxy_file(request):
+    try:
+        raw = request.query.get("path", "")
+        if not _raw_path(raw).startswith(_EXTERNAL_PREFIX):
+            return web.Response(status=400, text="Прокси разрешён только для внешних видео")
+        source = _resolve_extended(raw)
+        proxy = await asyncio.to_thread(_ensure_browser_proxy, source)
+        return web.FileResponse(
+            proxy,
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+    except FileNotFoundError:
+        return web.Response(status=404, text="Видео не найдено")
+    except Exception as exc:
+        return web.Response(status=500, text=str(exc))
 
 
 @PromptServer.instance.routes.get("/image-gallery/output/list-folder")
