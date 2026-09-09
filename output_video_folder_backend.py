@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 from urllib.parse import unquote
@@ -10,13 +11,17 @@ from . import image_gallery_core as gallery_core
 from . import output_video_gallery_backend as base
 
 
-# Capture the original Explorer-style Windows picker before
-# native_folder_picker_backend replaces the shared input-gallery picker.
-# Output Gallery should use the same familiar file-dialog style as the normal
-# ComfyUI input chooser instead of the separate FolderBrowserDialog UI.
+# Capture the original Explorer-style Windows picker before any optional shared
+# picker override can replace it. Output Gallery keeps the familiar Explorer UI.
 _OUTPUT_PICK_FOLDER = gallery_core._pick_folder_native
 _ORIGINAL_RESOLVE = base._resolve
 _ORIGINAL_REL = base._rel
+
+# Do not send Windows absolute paths (drive letters, backslashes, UNC paths) as
+# the gallery's item id. A stable opaque token is safer for <video> URLs and is
+# also reused by copy/rename/delete/reveal/CPU playback through base._resolve.
+_EXTERNAL_PREFIX = "__cig_external__/"
+_EXTERNAL_PATHS: dict[str, Path] = {}
 
 
 def _raw_path(value: str) -> str:
@@ -27,9 +32,6 @@ def _is_absolute(value: str) -> bool:
     raw = _raw_path(value)
     if not raw:
         return False
-    # os.path.isabs() is sufficient on native Windows, but keep an explicit
-    # drive/UNC check so the route also behaves correctly if ComfyUI is launched
-    # through an environment whose path module does not recognize Windows paths.
     if len(raw) >= 3 and raw[0].isalpha() and raw[1] == ":" and raw[2] == "/":
         return True
     if raw.startswith("//"):
@@ -40,8 +42,33 @@ def _is_absolute(value: str) -> bool:
         return False
 
 
+def _external_token(path: Path) -> str:
+    resolved = path.resolve()
+    key = str(resolved)
+    # Windows paths are case-insensitive in normal ComfyUI use; casefold keeps
+    # the id stable if Explorer returns the same path with different casing.
+    digest = hashlib.sha256(key.casefold().encode("utf-8", "surrogatepass")).hexdigest()[:32]
+    token = f"{_EXTERNAL_PREFIX}{digest}"
+    _EXTERNAL_PATHS[token] = resolved
+    return token
+
+
+def _resolve_external_token(raw: str, must_exist: bool = True) -> Path:
+    path = _EXTERNAL_PATHS.get(raw)
+    if path is None:
+        raise FileNotFoundError(raw)
+    if path.suffix.lower() not in base.VIDEO_EXTENSIONS:
+        raise ValueError("Неподдерживаемое расширение видео")
+    if must_exist and (not path.exists() or not path.is_file()):
+        raise FileNotFoundError(str(path))
+    return path
+
+
 def _resolve_extended(value: str, must_exist: bool = True) -> Path:
     raw = _raw_path(value)
+    if raw.startswith(_EXTERNAL_PREFIX):
+        return _resolve_external_token(raw, must_exist)
+
     if not _is_absolute(raw):
         return _ORIGINAL_RESOLVE(value, must_exist)
 
@@ -57,12 +84,12 @@ def _rel_extended(path: Path) -> str:
     try:
         return _ORIGINAL_REL(path)
     except Exception:
-        return str(path.resolve())
+        return _external_token(path)
 
 
-# Existing output routes resolve globals at call time, so extending these two
-# helpers automatically gives playback/copy/rename/delete/reveal support to
-# videos selected from an external folder without duplicating those routes.
+# Existing output routes resolve globals at call time. Extending these helpers
+# therefore gives token-based external support to video/thumb/copy/rename/delete/
+# reveal and to the CPU stream without duplicating those routes.
 base._resolve = _resolve_extended
 base._rel = _rel_extended
 
@@ -94,10 +121,11 @@ def _scan_folder(folder: str):
             except OSError:
                 continue
 
-            if use_output_relative:
-                stored_path = path.relative_to(output_root).as_posix()
-            else:
-                stored_path = str(path.resolve())
+            stored_path = (
+                path.relative_to(output_root).as_posix()
+                if use_output_relative
+                else _external_token(path)
+            )
 
             folder_label = ""
             if path.parent != root:
@@ -131,8 +159,6 @@ async def pick_output_video_folder(request):
 async def external_video_file(request):
     try:
         path = _resolve_extended(request.query.get("path", ""))
-        if not _is_absolute(str(path)):
-            return web.Response(status=400, text="Ожидался абсолютный путь к видео")
         return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
     except FileNotFoundError:
         return web.Response(status=404, text="Видео не найдено")
