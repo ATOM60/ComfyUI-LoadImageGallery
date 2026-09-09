@@ -3,7 +3,26 @@ import { app } from "/scripts/app.js";
 const EXT_NAME = "Comfy.ImageGallery.OutputPreviewInteractions";
 const SINGLE_CLICK_DELAY_MS = 260;
 const DOUBLE_CLICK_WINDOW_MS = 360;
+const TOUCH_LOCK_PX = 14;
+const TOUCH_DIRECTION_RATIO = 1.2;
 const clickState = new WeakMap();
+const touchGestures = new Map();
+
+function clamp(value, min, max) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+}
+
+function fmtTime(value) {
+    let s = Math.max(0, Math.floor(Number(value) || 0));
+    const h = Math.floor(s / 3600);
+    s -= h * 3600;
+    const m = Math.floor(s / 60);
+    s %= 60;
+    return h
+        ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function getThumbFromEvent(event) {
     const target = event.target instanceof Element ? event.target : null;
@@ -159,7 +178,119 @@ function consume(event) {
     event.stopImmediatePropagation();
 }
 
+function targetForTouchSwipe(startTime, duration, dx, width, elapsedMs) {
+    const w = Math.max(120, Number(width) || 1);
+    const ratio = dx / w;
+    const span = clamp(duration * 0.35, 12, 90);
+    const velocity = Math.abs(dx) / Math.max(70, elapsedMs || 0);
+    const momentum = clamp(1 + velocity * 0.9, 1, 2.5);
+    const curved = Math.sign(ratio) * Math.pow(Math.abs(ratio), 0.92);
+    return clamp(startTime + curved * span * momentum, 0, duration);
+}
+
+function showTouchHud(video, text) {
+    const host = video.closest(".ovg-thumb");
+    if (!(host instanceof HTMLElement)) return;
+    let hud = host.querySelector(":scope > .cig-gpu-touch-hud");
+    if (!(hud instanceof HTMLElement)) {
+        hud = document.createElement("div");
+        hud.className = "cig-gpu-touch-hud";
+        hud.style.cssText = "position:absolute;left:50%;top:50%;z-index:2147483646;transform:translate(-50%,-50%);pointer-events:none;padding:9px 13px;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:700 14px/1.2 Arial,sans-serif;white-space:nowrap;box-shadow:0 4px 18px rgba(0,0,0,.35);";
+        host.appendChild(hud);
+    }
+    hud.textContent = text;
+}
+
+function hideTouchHud(video) {
+    video?.closest?.(".ovg-thumb")?.querySelector?.(":scope > .cig-gpu-touch-hud")?.remove();
+}
+
+function onTouchPointerDown(event) {
+    if (event.pointerType !== "touch" || !event.isPrimary) return;
+    const video = event.target instanceof HTMLVideoElement && event.target.classList.contains("ovg-inline-video")
+        ? event.target
+        : null;
+    if (!video || isOverCustomControls(event) || !isPictureArea(video, event)) return;
+
+    const duration = Number(video.duration);
+    const current = Number(video.currentTime);
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(current)) return;
+
+    touchGestures.set(event.pointerId, {
+        video,
+        thumb: video.closest(".ovg-thumb"),
+        startX: event.clientX,
+        startY: event.clientY,
+        startedAt: performance.now(),
+        startTime: current,
+        duration,
+        targetTime: current,
+        locked: false,
+        cancelled: false,
+    });
+}
+
+function onTouchPointerMove(event) {
+    const g = touchGestures.get(event.pointerId);
+    if (!g || g.cancelled) return;
+
+    const dx = event.clientX - g.startX;
+    const dy = event.clientY - g.startY;
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+
+    if (!g.locked) {
+        if (Math.max(ax, ay) < TOUCH_LOCK_PX) return;
+        if (ay > ax * TOUCH_DIRECTION_RATIO) {
+            g.cancelled = true;
+            hideTouchHud(g.video);
+            return;
+        }
+        if (ax <= ay * TOUCH_DIRECTION_RATIO) return;
+        g.locked = true;
+    }
+
+    if (!g.locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const elapsed = performance.now() - g.startedAt;
+    g.targetTime = targetForTouchSwipe(
+        g.startTime,
+        g.duration,
+        dx,
+        g.video.getBoundingClientRect().width,
+        elapsed,
+    );
+    const signed = g.targetTime - g.startTime;
+    const sign = signed > .05 ? "+" : signed < -.05 ? "−" : "";
+    showTouchHud(g.video, `${sign}${Math.abs(signed).toFixed(Math.abs(signed) < 10 ? 1 : 0)} с   ${fmtTime(g.targetTime)} / ${fmtTime(g.duration)}`);
+}
+
+function finishTouchPointer(event, cancelled = false) {
+    const g = touchGestures.get(event.pointerId);
+    if (!g) return false;
+    touchGestures.delete(event.pointerId);
+    hideTouchHud(g.video);
+
+    if (cancelled || g.cancelled || !g.locked) return false;
+
+    const dx = event.clientX - g.startX;
+    const elapsed = performance.now() - g.startedAt;
+    g.targetTime = targetForTouchSwipe(
+        g.startTime,
+        g.duration,
+        dx,
+        g.video.getBoundingClientRect().width,
+        elapsed,
+    );
+    try { g.video.currentTime = g.targetTime; } catch (_) {}
+    consume(event);
+    return true;
+}
+
 function onPointerUp(event) {
+    if (event.pointerType === "touch" && finishTouchPointer(event, false)) return;
     if (event.button !== 0) return;
     const thumb = validPreviewInteraction(event);
     if (!thumb) return;
@@ -184,6 +315,11 @@ function onPointerUp(event) {
     clickState.set(thumb, { time: now, timer });
 }
 
+function onPointerCancel(event) {
+    if (event.pointerType !== "touch") return;
+    finishTouchPointer(event, true);
+}
+
 function suppressGeneratedClick(event) {
     const thumb = validPreviewInteraction(event);
     if (!thumb) return;
@@ -199,7 +335,10 @@ function protectContextMenu(menu) {
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        document.addEventListener("pointerup", onPointerUp, true);
+        document.addEventListener("pointerdown", onTouchPointerDown, { capture:true, passive:true });
+        document.addEventListener("pointermove", onTouchPointerMove, { capture:true, passive:false });
+        document.addEventListener("pointerup", onPointerUp, { capture:true, passive:false });
+        document.addEventListener("pointercancel", onPointerCancel, { capture:true, passive:false });
         document.addEventListener("click", suppressGeneratedClick, true);
         document.addEventListener("dblclick", suppressGeneratedClick, true);
         document.querySelectorAll(".ovg-menu").forEach(protectContextMenu);
