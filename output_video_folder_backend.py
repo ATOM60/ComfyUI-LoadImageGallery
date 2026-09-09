@@ -27,6 +27,13 @@ def _is_absolute(value: str) -> bool:
     raw = _raw_path(value)
     if not raw:
         return False
+    # os.path.isabs() is sufficient on native Windows, but keep an explicit
+    # drive/UNC check so the route also behaves correctly if ComfyUI is launched
+    # through an environment whose path module does not recognize Windows paths.
+    if len(raw) >= 3 and raw[0].isalpha() and raw[1] == ":" and raw[2] == "/":
+        return True
+    if raw.startswith("//"):
+        return True
     try:
         return os.path.isabs(os.path.expanduser(raw))
     except Exception:
@@ -118,6 +125,21 @@ async def pick_output_video_folder(request):
         return web.json_response({"path": path or ""})
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.get("/image-gallery/output/video-folder")
+async def external_video_file(request):
+    try:
+        path = _resolve_extended(request.query.get("path", ""))
+        if not _is_absolute(str(path)):
+            return web.Response(status=400, text="Ожидался абсолютный путь к видео")
+        return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
+    except FileNotFoundError:
+        return web.Response(status=404, text="Видео не найдено")
+    except PermissionError as exc:
+        return web.Response(status=403, text=str(exc))
+    except Exception as exc:
+        return web.Response(status=400, text=str(exc))
 
 
 @PromptServer.instance.routes.get("/image-gallery/output/list-folder")
