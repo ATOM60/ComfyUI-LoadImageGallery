@@ -6,9 +6,15 @@ from urllib.parse import unquote
 from aiohttp import web
 from server import PromptServer
 
+from . import image_gallery_core as gallery_core
 from . import output_video_gallery_backend as base
 
 
+# Capture the original Explorer-style Windows picker before
+# native_folder_picker_backend replaces the shared input-gallery picker.
+# Output Gallery should use the same familiar file-dialog style as the normal
+# ComfyUI input chooser instead of the separate FolderBrowserDialog UI.
+_OUTPUT_PICK_FOLDER = gallery_core._pick_folder_native
 _ORIGINAL_RESOLVE = base._resolve
 _ORIGINAL_REL = base._rel
 
@@ -103,6 +109,15 @@ def _scan_folder(folder: str):
             })
 
     return rows, root
+
+
+@PromptServer.instance.routes.post("/image-gallery/output/pick-folder")
+async def pick_output_video_folder(request):
+    try:
+        path = await asyncio.to_thread(_OUTPUT_PICK_FOLDER)
+        return web.json_response({"path": path or ""})
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
 
 
 @PromptServer.instance.routes.get("/image-gallery/output/list-folder")
