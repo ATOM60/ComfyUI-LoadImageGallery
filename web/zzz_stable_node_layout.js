@@ -7,6 +7,7 @@ const START_BUTTON = "▶ СТАРТ";
 const LEGACY_BUTTON = "🖼 Превью папки";
 const LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 const OUTPUT_BUTTON_LABEL = LANG === "ru" ? "▦  Галерея output" : "▦  Output Gallery";
+const START_BUTTON_LABEL = LANG === "ru" ? "▶  СТАРТ" : "▶  START";
 
 function exactPreview(node) {
     return node?.widgets?.find(w => w?.name === "$$canvas-image-preview" || w?.type === "IMAGE_PREVIEW") || null;
@@ -21,33 +22,85 @@ function hideAux(w) {
     // internally by ComfyUI even while hidden.
 }
 
-function restoreOutputButton(node, button) {
+function hideStartInRow(start) {
+    if (!start) return;
+    start.hidden = true;
+    start.computeSize = () => [0, 0];
+    start.computeLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
+}
+
+function restoreOutputButton(node, button, start) {
     if (!button) return;
+
     button.hidden = false;
     button.serialize = false;
     button.computeSize = width => [width ?? node.size?.[0] ?? 320, 64];
     button.computeLayoutSize = () => ({ minHeight:64, maxHeight:64, minWidth:0 });
-    button.drawWidget = function(ctx, options) {
-        const h = this.computedHeight ?? 64;
-        const y = this.y ?? 0;
-        const width = options?.width ?? node.size?.[0] ?? 320;
-        const m = 8;
-        ctx.save();
-        ctx.globalAlpha = this.computedDisabled ? .45 : 1;
-        ctx.fillStyle = this.clicked ? this.outline_color : this.background_color;
-        ctx.strokeStyle = this.outline_color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(m, y, width - m * 2, h, 12);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = this.text_color;
-        ctx.font = "700 20px Arial,sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(OUTPUT_BUTTON_LABEL, width / 2, y + h / 2);
-        ctx.restore();
-    };
+
+    // Keep the original callbacks intact and use the output widget as a single
+    // 64 px row containing two equal visual buttons. This avoids changing the
+    // proven preview widget or creating another layout widget.
+    if (!button.__cigRowOutputCallback) button.__cigRowOutputCallback = button.callback;
+    if (start && !button.__cigRowStartCallback) button.__cigRowStartCallback = start.callback;
+    button.__cigRowStartWidget = start || button.__cigRowStartWidget || null;
+
+    if (!button.__cigRowDraw) {
+        button.__cigRowDraw = function(ctx, options) {
+            const h = this.computedHeight ?? 64;
+            const y = this.y ?? 0;
+            const width = options?.width ?? node.size?.[0] ?? 320;
+            const outer = 8;
+            const gap = 8;
+            const available = Math.max(2, width - outer * 2 - gap);
+            const half = available / 2;
+            const startWidget = this.__cigRowStartWidget;
+
+            const drawHalf = (x, w, label, sourceWidget) => {
+                ctx.save();
+                ctx.globalAlpha = sourceWidget?.computedDisabled ? .45 : 1;
+                ctx.fillStyle = sourceWidget?.background_color ?? this.background_color;
+                ctx.strokeStyle = sourceWidget?.outline_color ?? this.outline_color;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(x, y, w, h, 12);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = sourceWidget?.text_color ?? this.text_color;
+                ctx.font = "700 16px Arial,sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(label, x + w / 2, y + h / 2);
+                ctx.restore();
+            };
+
+            drawHalf(outer, half, OUTPUT_BUTTON_LABEL, this);
+            drawHalf(outer + half + gap, half, START_BUTTON_LABEL, startWidget);
+        };
+    }
+    button.drawWidget = button.__cigRowDraw;
+
+    if (!button.__cigRowPointerDown) {
+        button.__cigRowPointerDown = function(pointer, nodeArg, canvas) {
+            const down = pointer?.eDown;
+            if (down?.button != null && down.button !== 0) return true;
+
+            const localX = Number(down?.canvasX) - Number(node.pos?.[0] ?? 0);
+            const width = Number(node.size?.[0] ?? 320);
+            const leftHalf = !Number.isFinite(localX) || localX < width / 2;
+
+            pointer.onClick = upEvent => {
+                const cb = leftHalf ? this.__cigRowOutputCallback : this.__cigRowStartCallback;
+                const source = leftHalf ? this : this.__cigRowStartWidget;
+                try {
+                    cb?.(source?.value, canvas, nodeArg ?? node, [localX, Number(down?.canvasY) - Number(node.pos?.[1] ?? 0)], upEvent ?? down);
+                } catch (error) {
+                    console.error("[ImageGallery] button row callback:", error);
+                }
+            };
+            return true;
+        };
+    }
+    button.onPointerDown = button.__cigRowPointerDown;
 }
 
 function stabilize(node) {
@@ -69,8 +122,8 @@ function stabilize(node) {
     // Never replace preview drawWidget, computeSize or onPointerDown. image_gallery.js
     // owns those methods and draws the image plus the previous/next arrows there.
     preview.hidden = false;
-    restoreOutputButton(node, output);
-    if (start) start.hidden = false;
+    restoreOutputButton(node, output, start);
+    hideStartInRow(start);
 
     for (const w of node.widgets) {
         if (!w || w === preview || w === output || w === start) continue;
@@ -79,8 +132,8 @@ function stabilize(node) {
 
     const hidden = node.widgets.filter(w => w !== output && w !== preview && w !== start);
     const ordered = [];
-    if (output) ordered.push(output);
     ordered.push(preview);
+    if (output) ordered.push(output);
     if (start) ordered.push(start);
     ordered.push(...hidden);
     node.widgets.splice(0, node.widgets.length, ...ordered);
