@@ -1,10 +1,10 @@
 import { app } from "/scripts/app.js";
 
-const EXT_NAME = "Comfy.ImageGallery.OutputTouchScrub";
-const STYLE_ID = "cig-output-touch-scrub-style";
+const EXT_NAME = "Comfy.ImageGallery.OutputCpuTouchScrub";
+const STYLE_ID = "cig-output-cpu-touch-scrub-style";
 const LOCK_PX = 12;
 const DIRECTION_RATIO = 1.15;
-const CLICK_SUPPRESS_MS = 500;
+const CLICK_SUPPRESS_MS = 550;
 
 const attached = new WeakSet();
 const modalObservers = new WeakMap();
@@ -30,7 +30,7 @@ function ensureStyles() {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-video.ovg-inline-video,.ovg-cpu-hit{touch-action:pan-y pinch-zoom!important}
+.ovg-cpu-hit{touch-action:pan-y pinch-zoom!important}
 .cig-touch-scrub-hud{
     position:absolute;left:50%;top:50%;z-index:2147483646;
     transform:translate(-50%,-50%);pointer-events:none;
@@ -43,13 +43,12 @@ video.ovg-inline-video,.ovg-cpu-hit{touch-action:pan-y pinch-zoom!important}
 }
 
 function hudHost(target) {
-    if (target instanceof HTMLVideoElement) return target.closest(".ovg-thumb") || target.parentElement;
     return target.closest?.(".ovg-cpu-player") || target.parentElement;
 }
 
 function showHud(target, text) {
     const host = hudHost(target);
-    if (!(host instanceof HTMLElement)) return null;
+    if (!(host instanceof HTMLElement)) return;
     let hud = host.querySelector(":scope > .cig-touch-scrub-hud");
     if (!(hud instanceof HTMLElement)) {
         hud = document.createElement("div");
@@ -57,24 +56,10 @@ function showHud(target, text) {
         host.appendChild(hud);
     }
     hud.textContent = text;
-    return hud;
 }
 
 function hideHud(target) {
     hudHost(target)?.querySelector?.(":scope > .cig-touch-scrub-hud")?.remove();
-}
-
-function normalInfo(video) {
-    const duration = Number(video.duration);
-    const current = Number(video.currentTime);
-    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(current)) return null;
-    return {
-        duration,
-        current,
-        seek(value) {
-            try { video.currentTime = clamp(value, 0, duration); } catch (_) {}
-        },
-    };
 }
 
 function cpuInfo(hit) {
@@ -96,17 +81,15 @@ function cpuInfo(hit) {
     };
 }
 
-function playerInfo(target) {
-    return target instanceof HTMLVideoElement ? normalInfo(target) : cpuInfo(target);
-}
-
-function isNativeControlsArea(video, event) {
-    if (!(video instanceof HTMLVideoElement)) return false;
-    const rect = video.getBoundingClientRect();
-    const y = event.clientY - rect.top;
-    const fullscreen = document.fullscreenElement === video || document.fullscreenElement === video.closest(".ovg-thumb");
-    const reserve = fullscreen ? 86 : 58;
-    return y >= rect.height - reserve;
+function targetForSwipe(startTime, duration, dx, width, elapsedMs) {
+    const w = Math.max(120, Number(width) || 1);
+    const ratio = dx / w;
+    const span = clamp(duration * 0.35, 12, 90);
+    const velocity = Math.abs(dx) / Math.max(70, elapsedMs || 0); // px/ms
+    const momentum = clamp(1 + velocity * 0.9, 1, 2.5);
+    const curved = Math.sign(ratio) * Math.pow(Math.abs(ratio), 0.92);
+    const delta = curved * span * momentum;
+    return clamp(startTime + delta, 0, duration);
 }
 
 function attach(target) {
@@ -118,14 +101,14 @@ function attach(target) {
 
     target.addEventListener("pointerdown", event => {
         if (event.pointerType !== "touch" || !event.isPrimary) return;
-        if (target instanceof HTMLVideoElement && isNativeControlsArea(target, event)) return;
-        const info = playerInfo(target);
+        const info = cpuInfo(target);
         if (!info) return;
 
         gesture = {
             id:event.pointerId,
             startX:event.clientX,
             startY:event.clientY,
+            startedAt:performance.now(),
             startTime:info.current,
             duration:info.duration,
             targetTime:info.current,
@@ -158,9 +141,9 @@ function attach(target) {
         event.preventDefault();
         event.stopPropagation();
 
-        const width = Math.max(120, target.getBoundingClientRect().width || 1);
-        const deltaSeconds = (dx / width) * g.duration;
-        g.targetTime = clamp(g.startTime + deltaSeconds, 0, g.duration);
+        const elapsed = performance.now() - g.startedAt;
+        const width = target.getBoundingClientRect().width;
+        g.targetTime = targetForSwipe(g.startTime, g.duration, dx, width, elapsed);
         const signed = g.targetTime - g.startTime;
         const sign = signed > .05 ? "+" : signed < -.05 ? "−" : "";
         showHud(target, `${sign}${Math.abs(signed).toFixed(Math.abs(signed) < 10 ? 1 : 0)} с   ${fmtTime(g.targetTime)} / ${fmtTime(g.duration)}`);
@@ -176,15 +159,22 @@ function attach(target) {
         if (!g.locked || g.cancelled || cancelled) return;
         event.preventDefault();
         event.stopPropagation();
+
+        // Recalculate from the final finger position so both distance and the
+        // actual swipe speed affect the seek amount, even when the browser did
+        // not emit a final pointermove before pointerup.
+        const dx = event.clientX - g.startX;
+        const elapsed = performance.now() - g.startedAt;
+        const width = target.getBoundingClientRect().width;
+        g.targetTime = targetForSwipe(g.startTime, g.duration, dx, width, elapsed);
+
         suppressClickUntil = Date.now() + CLICK_SUPPRESS_MS;
-        playerInfo(target)?.seek(g.targetTime);
+        cpuInfo(target)?.seek(g.targetTime);
     };
 
     target.addEventListener("pointerup", event => finish(event, false), { passive:false });
     target.addEventListener("pointercancel", event => finish(event, true), { passive:false });
 
-    // A completed swipe must not also trigger the player's normal single-click
-    // play/pause gesture on touch release.
     target.addEventListener("click", event => {
         if (Date.now() >= suppressClickUntil) return;
         event.preventDefault();
@@ -194,9 +184,8 @@ function attach(target) {
 
 function scan(root) {
     if (!(root instanceof Element)) return;
-    if (root instanceof HTMLVideoElement && root.classList.contains("ovg-inline-video")) attach(root);
     if (root.classList.contains("ovg-cpu-hit")) attach(root);
-    root.querySelectorAll?.("video.ovg-inline-video,.ovg-cpu-hit").forEach(attach);
+    root.querySelectorAll?.(".ovg-cpu-hit").forEach(attach);
 }
 
 function installModal(modal) {
