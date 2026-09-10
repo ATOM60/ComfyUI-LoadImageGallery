@@ -3,6 +3,7 @@ globalThis.__CIG_SHARED_OUTPUT_PLAYER_V1 = true;
 const STYLE_ID = "cig-output-video-player-shared-style";
 export const PLAYER_CLICK_DELAY = 260;
 export const PLAYER_DOUBLE_CLICK_WINDOW_MS = 360;
+const FULLSCREEN_UI_HIDE_DELAY = 1800;
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
 const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
 
@@ -58,7 +59,7 @@ export function ensureOutputVideoPlayerStyles() {
 .ovg-shared-player{position:absolute;inset:0;z-index:9;background:#000;overflow:hidden;container-type:inline-size}
 .ovg-shared-surface{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:block!important;background:#000!important;border:0!important;border-radius:0!important;pointer-events:none!important;object-fit:contain!important}
 .ovg-shared-hit{position:absolute;inset:0;z-index:2;width:100%;height:100%;padding:0;margin:0;border:0;background:transparent;cursor:pointer}
-.ovg-shared-badge{position:absolute;left:8px;top:7px;z-index:4;padding:3px 6px;border-radius:5px;background:rgba(0,0,0,.62);color:#d6e8ff;font:700 10px/1.2 Arial,sans-serif;pointer-events:none;letter-spacing:.3px}
+.ovg-shared-badge{position:absolute;left:8px;top:7px;z-index:4;padding:3px 6px;border-radius:5px;background:rgba(0,0,0,.62);color:#d6e8ff;font:700 10px/1.2 Arial,sans-serif;pointer-events:none;letter-spacing:.3px;transition:opacity .16s ease}
 .ovg-shared-paused{position:absolute;left:50%;top:50%;z-index:4;transform:translate(-50%,-50%);width:48px;height:48px;border-radius:50%;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.58);color:#fff;font-size:23px;pointer-events:none}
 .ovg-shared-player.paused .ovg-shared-paused{display:flex}
 .ovg-shared-native{position:absolute;left:0;right:0;bottom:0;z-index:12;padding:18px 8px 5px;box-sizing:border-box;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.55) 58%,transparent 100%);opacity:0;transform:translateY(2px);transition:opacity .13s ease,transform .13s ease;pointer-events:none;color:#fff;font:12px Arial,sans-serif}
@@ -70,7 +71,7 @@ export function ensureOutputVideoPlayerStyles() {
 .ovg-shared-time{white-space:nowrap;opacity:.92;font-variant-numeric:tabular-nums}
 .ovg-shared-spacer{flex:1 1 auto;min-width:2px}
 .ovg-shared-volume{width:78px!important;max-width:90px!important;min-width:46px!important;height:auto!important;margin:0!important;writing-mode:horizontal-tb!important;direction:ltr!important;accent-color:#fff!important;cursor:pointer!important}
-.ovg-shared-fs-controls{display:none;position:absolute;right:28px;top:50%;z-index:14;transform:translateY(-50%);flex-direction:column;gap:8px;align-items:center}
+.ovg-shared-fs-controls{display:none;position:absolute;right:28px;top:50%;z-index:14;transform:translateY(-50%);flex-direction:column;gap:8px;align-items:center;opacity:1;transition:opacity .16s ease}
 .ovg-shared-fs-controls button{width:44px;height:44px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:rgba(20,20,20,.72);color:#fff;font:18px/42px Arial,sans-serif;padding:0;cursor:pointer;backdrop-filter:blur(5px)}
 .ovg-shared-fs-controls button:hover{background:rgba(45,45,45,.86)}
 .ovg-shared-speed-panel{display:none;position:absolute;right:54px;top:50%;transform:translateY(-50%);padding:10px 12px;border:1px solid rgba(255,255,255,.18);border-radius:8px;background:rgba(20,20,20,.86);white-space:nowrap;color:#fff;font:12px Arial,sans-serif;align-items:center;gap:8px}
@@ -82,6 +83,10 @@ export function ensureOutputVideoPlayerStyles() {
 .ovg-shared-player:fullscreen .ovg-shared-fs-controls,.ovg-shared-player:-webkit-full-screen .ovg-shared-fs-controls{display:flex!important}
 .ovg-shared-player:fullscreen .ovg-shared-native,.ovg-shared-player:-webkit-full-screen .ovg-shared-native{padding:24px 14px 9px}
 .ovg-shared-player:fullscreen .ovg-shared-volume,.ovg-shared-player:-webkit-full-screen .ovg-shared-volume{width:100px!important;max-width:120px!important}
+.ovg-shared-player:fullscreen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-native,.ovg-shared-player:-webkit-full-screen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-native{opacity:0!important;transform:translateY(6px)!important;pointer-events:none!important}
+.ovg-shared-player:fullscreen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-fs-controls,.ovg-shared-player:-webkit-full-screen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-fs-controls{opacity:0!important;pointer-events:none!important}
+.ovg-shared-player:fullscreen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-badge,.ovg-shared-player:-webkit-full-screen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-badge{opacity:0!important}
+.ovg-shared-player:fullscreen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-hit,.ovg-shared-player:-webkit-full-screen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-hit{cursor:none!important}
 body:has(.ovg-shared-player[data-ovg-decoder="GPU"])>.ovg-speed-control[popover]{display:none!important}
 @container (max-width:360px){.ovg-shared-time,.ovg-shared-volume{display:none!important}.ovg-shared-native-row{gap:2px}.ovg-shared-native{padding-left:5px;padding-right:5px}}
 `;
@@ -177,6 +182,47 @@ export function createOutputVideoPlayer({
     addAliases(ui.volume, aliases.volume);
     addAliases(ui.speedRange, aliases.speedRange);
 
+    let uiHideTimer = 0;
+    let lastPaused = null;
+
+    const clearUiHideTimer = () => {
+        if (!uiHideTimer) return;
+        clearTimeout(uiHideTimer);
+        uiHideTimer = 0;
+    };
+
+    const keepFullscreenUiVisible = () => {
+        clearUiHideTimer();
+        player.classList.remove("ovg-shared-ui-hidden");
+    };
+
+    const scheduleFullscreenUiHide = () => {
+        keepFullscreenUiVisible();
+        if (fullscreenElement() !== player) return;
+        if (call(adapter, "isPaused")) return;
+        if (ui.seeking || ui.rateEditing || ui.speedPanel.classList.contains("open")) return;
+        uiHideTimer = setTimeout(() => {
+            uiHideTimer = 0;
+            if (fullscreenElement() !== player) return;
+            if (call(adapter, "isPaused")) return;
+            if (ui.seeking || ui.rateEditing || ui.speedPanel.classList.contains("open")) return;
+            player.classList.add("ovg-shared-ui-hidden");
+        }, FULLSCREEN_UI_HIDE_DELAY);
+    };
+
+    const onFullscreenActivity = () => {
+        if (fullscreenElement() === player) scheduleFullscreenUiHide();
+    };
+
+    const onFullscreenKeyActivity = () => {
+        if (fullscreenElement() === player) scheduleFullscreenUiHide();
+    };
+
+    player.addEventListener("pointermove", onFullscreenActivity, true);
+    player.addEventListener("pointerdown", onFullscreenActivity, true);
+    player.addEventListener("touchstart", onFullscreenActivity, { capture:true, passive:true });
+    document.addEventListener("keydown", onFullscreenKeyActivity, true);
+
     const update = () => {
         if (!player.isConnected && !player.parentNode) return;
         const paused = !!call(adapter, "isPaused");
@@ -186,9 +232,16 @@ export function createOutputVideoPlayer({
         const rate = clamp(call(adapter, "getRate"), .25, 3, loadSharedRate());
 
         player.classList.toggle("paused", paused);
-        ui.hit.title = paused ? labels.play : labels.pause;
+        ui.hit.removeAttribute("title");
         ui.play.textContent = paused ? "▶" : "❚❚";
         ui.play.title = paused ? labels.play : labels.pause;
+
+        if (paused) {
+            keepFullscreenUiVisible();
+        } else if (lastPaused === true && fullscreenElement() === player) {
+            scheduleFullscreenUiHide();
+        }
+        lastPaused = paused;
 
         if (!ui.seeking) {
             ui.seek.max = String(Math.max(.001, duration));
@@ -264,7 +317,10 @@ export function createOutputVideoPlayer({
         togglePlayback();
     });
 
-    ui.seek.addEventListener("pointerdown", () => { ui.seeking = true; });
+    ui.seek.addEventListener("pointerdown", () => {
+        ui.seeking = true;
+        keepFullscreenUiVisible();
+    });
     ui.seek.addEventListener("input", () => {
         ui.seeking = true;
         ui.time.textContent = `${formatPlayerTime(ui.seek.value)} / ${formatPlayerTime(call(adapter, "getDuration"))}`;
@@ -274,14 +330,19 @@ export function createOutputVideoPlayer({
         call(adapter, "seek", clamp(ui.seek.value, 0, duration, 0));
         ui.seeking = false;
         update();
+        scheduleFullscreenUiHide();
     });
-    ui.seek.addEventListener("pointerup", () => { ui.seeking = false; });
+    ui.seek.addEventListener("pointerup", () => {
+        ui.seeking = false;
+        scheduleFullscreenUiHide();
+    });
 
     ui.volume.addEventListener("input", () => {
         const value = clamp(ui.volume.value, 0, 1, 1);
         saveSharedVolume(value);
         call(adapter, "setVolume", value);
         update();
+        scheduleFullscreenUiHide();
     });
 
     ui.fullscreen.addEventListener("click", event => {
@@ -306,8 +367,13 @@ export function createOutputVideoPlayer({
         event.preventDefault();
         event.stopPropagation();
         ui.speedPanel.classList.toggle("open");
+        if (ui.speedPanel.classList.contains("open")) keepFullscreenUiVisible();
+        else scheduleFullscreenUiHide();
     });
-    ui.speedRange.addEventListener("pointerdown", () => { ui.rateEditing = true; });
+    ui.speedRange.addEventListener("pointerdown", () => {
+        ui.rateEditing = true;
+        keepFullscreenUiVisible();
+    });
     ui.speedRange.addEventListener("input", () => {
         ui.rateEditing = true;
         const value = clamp(ui.speedRange.value, .25, 3, 1);
@@ -319,13 +385,18 @@ export function createOutputVideoPlayer({
         call(adapter, "setRate", value);
         ui.rateEditing = false;
         update();
+        if (!ui.speedPanel.classList.contains("open")) scheduleFullscreenUiHide();
     });
-    ui.speedRange.addEventListener("pointerup", () => { ui.rateEditing = false; });
+    ui.speedRange.addEventListener("pointerup", () => {
+        ui.rateEditing = false;
+        if (!ui.speedPanel.classList.contains("open")) scheduleFullscreenUiHide();
+    });
 
     player.addEventListener("wheel", event => {
         if (event.target instanceof Element && event.target.closest("input")) return;
         event.preventDefault();
         event.stopPropagation();
+        scheduleFullscreenUiHide();
         const current = clamp(call(adapter, "getVolume"), 0, 1, loadSharedVolume());
         const next = clamp(current + (event.deltaY < 0 ? .05 : -.05), 0, 1, 1);
         saveSharedVolume(next);
@@ -334,8 +405,11 @@ export function createOutputVideoPlayer({
     }, { passive: false });
 
     const onFs = () => {
+        const active = fullscreenElement() === player;
+        if (active) scheduleFullscreenUiHide();
+        else keepFullscreenUiVisible();
         update();
-        try { onFullscreenChange?.(fullscreenElement() === player); } catch (_) {}
+        try { onFullscreenChange?.(active); } catch (_) {}
     };
     document.addEventListener("fullscreenchange", onFs);
     document.addEventListener("webkitfullscreenchange", onFs);
@@ -351,7 +425,12 @@ export function createOutputVideoPlayer({
 
     const destroy = () => {
         if (clickTimer) clearTimeout(clickTimer);
+        clearUiHideTimer();
         if (raf) cancelAnimationFrame(raf);
+        player.removeEventListener("pointermove", onFullscreenActivity, true);
+        player.removeEventListener("pointerdown", onFullscreenActivity, true);
+        player.removeEventListener("touchstart", onFullscreenActivity, true);
+        document.removeEventListener("keydown", onFullscreenKeyActivity, true);
         document.removeEventListener("fullscreenchange", onFs);
         document.removeEventListener("webkitfullscreenchange", onFs);
         ui.speedPanel.classList.remove("open");
