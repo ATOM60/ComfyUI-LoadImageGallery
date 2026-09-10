@@ -41,7 +41,7 @@ function galleryPaths(video) {
         .filter(Boolean);
 }
 
-async function navigate(video,dir) {
+async function navigateGpu(video,dir) {
     const paths=galleryPaths(video);
     if(paths.length<2)return;
     let index=paths.indexOf(currentPath(video));
@@ -59,6 +59,29 @@ async function navigate(video,dir) {
     video.volume=loadSharedVolume();
     try{await video.play();}catch(_){}
     video.__cigGpuShell?.update();
+}
+
+function createGpuBackend(video) {
+    return {
+        getCurrentTime:()=>Number(video.currentTime)||0,
+        getDuration:()=>Number(video.duration)||0,
+        isPaused:()=>video.paused,
+        getVolume:()=>video.volume,
+        getRate:()=>video.playbackRate,
+        play:()=>video.play().catch(()=>{}),
+        pause:()=>video.pause(),
+        seek:value=>{try{video.currentTime=clamp(value,0,Math.max(0,Number(video.duration)||value),0);}catch(_){}},
+        setVolume:value=>{
+            video.volume=clamp(value,0,1,1);
+            if(video.volume>0&&video.muted)video.muted=false;
+        },
+        setRate:value=>{
+            const rate=clamp(value,.25,3,1);
+            video.defaultPlaybackRate=rate;
+            video.playbackRate=rate;
+        },
+        navigate:dir=>navigateGpu(video,dir),
+    };
 }
 
 function attachVideo(video) {
@@ -84,6 +107,22 @@ function attachVideo(video) {
         delete video.__cigSpeedControl;
     }catch(_){}
 
+    const gpuBackend=createGpuBackend(video);
+    let activeBackend=gpuBackend;
+    const adapter={
+        getCurrentTime:()=>activeBackend?.getCurrentTime?.(),
+        getDuration:()=>activeBackend?.getDuration?.(),
+        isPaused:()=>activeBackend?.isPaused?.(),
+        getVolume:()=>activeBackend?.getVolume?.(),
+        getRate:()=>activeBackend?.getRate?.(),
+        play:()=>activeBackend?.play?.(),
+        pause:()=>activeBackend?.pause?.(),
+        seek:value=>activeBackend?.seek?.(value),
+        setVolume:value=>activeBackend?.setVolume?.(value),
+        setRate:value=>activeBackend?.setRate?.(value),
+        navigate:dir=>activeBackend?.navigate?.(dir),
+    };
+
     const shell=createOutputVideoPlayer({
         mode:"GPU",
         surface:video,
@@ -94,31 +133,18 @@ function attachVideo(video) {
             hit:["ovg-gpu-hit"],
             seek:["ovg-gpu-seek"],
         },
-        adapter:{
-            getCurrentTime:()=>Number(video.currentTime)||0,
-            getDuration:()=>Number(video.duration)||0,
-            isPaused:()=>video.paused,
-            getVolume:()=>video.volume,
-            getRate:()=>video.playbackRate,
-            play:()=>video.play().catch(()=>{}),
-            pause:()=>video.pause(),
-            seek:value=>{try{video.currentTime=clamp(value,0,Math.max(0,Number(video.duration)||value),0);}catch(_){}},
-            setVolume:value=>{
-                video.volume=clamp(value,0,1,1);
-                if(video.volume>0&&video.muted)video.muted=false;
-            },
-            setRate:value=>{
-                const rate=clamp(value,.25,3,1);
-                video.defaultPlaybackRate=rate;
-                video.playbackRate=rate;
-            },
-            navigate:dir=>navigate(video,dir),
-        },
+        adapter,
     });
 
     video.__cigGpuShell=shell;
     video.__cigGpuPlayer=shell.player;
     video.__cigGpuUi=shell.ui;
+    video.__cigGpuBackend=gpuBackend;
+    video.__cigSetPlayerBackend=backend=>{
+        activeBackend=backend||gpuBackend;
+        shell.update();
+    };
+    video.__cigGetPlayerBackend=()=>activeBackend;
 
     const attrObserver=new MutationObserver(()=>{
         if(video.hasAttribute("controls")){
@@ -219,10 +245,16 @@ function cleanupVideo(video) {
     }
     delete video.__cigGpuUpdate;
 
+    const holder=video.closest?.(".ovg-thumb");
+    holder?.__cigAutoCpuFallback?.destroy?.();
+
     video.__cigGpuShell?.destroy?.();
     delete video.__cigGpuShell;
     delete video.__cigGpuUi;
     delete video.__cigGpuPlayer;
+    delete video.__cigGpuBackend;
+    delete video.__cigSetPlayerBackend;
+    delete video.__cigGetPlayerBackend;
     delete video.dataset.cigGpuCpuStyle;
     attached.delete(video);
 }
@@ -276,8 +308,7 @@ app.registerExtension({
         });
         observer.observe(document.body,{childList:true,subtree:false});
 
-        // Window capture runs before the older document-level direct-gesture handler,
-        // so bare GPU previews enter the exact same shared fullscreen as the player button.
+        // Bare GPU previews use the same shared fullscreen as the in-player button.
         window.addEventListener("pointerup",onPreviewPointerUp,true);
         window.addEventListener("click",blockPreviewGeneratedClicks,true);
         window.addEventListener("dblclick",blockPreviewGeneratedClicks,true);
