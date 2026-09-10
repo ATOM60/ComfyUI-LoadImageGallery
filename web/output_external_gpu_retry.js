@@ -3,7 +3,25 @@ import { api } from "/scripts/api.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputExternalGpuRetry";
 const EXTERNAL_PREFIX = "__cig_external__/";
+const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const installed = new WeakSet();
+
+const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
+    .toLowerCase().startsWith("ru");
+
+const TEXT = RU ? {
+    unknownMedia: "неизвестная ошибка media",
+    gpuFailed: (name, error) => `GPU не смог открыть «${name}»: ${error}`,
+    preparing: "Браузер не поддерживает исходный контейнер/кодек. Подготавливаю совместимую H.264 MP4-копию…",
+    network: error => `Сеть: ${error}`,
+    ready: "Совместимая копия готова. Запускаю GPU-плеер…",
+} : {
+    unknownMedia: "unknown media error",
+    gpuFailed: (name, error) => `GPU could not open “${name}”: ${error}`,
+    preparing: "The browser does not support the source container/codec. Preparing a compatible H.264 MP4 copy…",
+    network: error => `Network: ${error}`,
+    ready: "Compatible copy is ready. Starting GPU playback…",
+};
 
 function apiUrl(route) {
     try { if (typeof api.apiURL === "function") return api.apiURL(route); } catch (_) {}
@@ -25,7 +43,7 @@ function toast(message, kind = "error") {
 
 function mediaErrorText(video) {
     const err = video?.error;
-    if (!err) return "неизвестная ошибка media";
+    if (!err) return TEXT.unknownMedia;
     const codes = {
         1: "MEDIA_ERR_ABORTED",
         2: "MEDIA_ERR_NETWORK",
@@ -59,12 +77,13 @@ function clearStatus(video) {
 function keepFailedPlayer(video, name, error) {
     video.dataset.cigExternalGpuState = "failed";
     try { video.pause(); } catch (_) {}
-    statusNote(video, `GPU: ${error?.message || String(error)}`, true);
-    toast(`GPU не смог открыть «${name}»: ${error?.message || String(error)}`);
+    const detail = error?.message || String(error);
+    statusNote(video, `GPU: ${detail}`, true);
+    toast(TEXT.gpuFailed(name, detail));
 }
 
 async function prepareCompatibleProxy(video, path, name) {
-    statusNote(video, "Браузер не поддерживает исходный контейнер/кодек. Подготавливаю совместимую H.264 MP4-копию…");
+    statusNote(video, TEXT.preparing);
     video.dataset.cigExternalGpuState = "preparing";
     try { video.pause(); } catch (_) {}
 
@@ -76,7 +95,7 @@ async function prepareCompatibleProxy(video, path, name) {
             body: JSON.stringify({ path }),
         });
     } catch (error) {
-        throw new Error(`Сеть: ${error?.message || String(error)}`);
+        throw new Error(TEXT.network(error?.message || String(error)));
     }
 
     let data = null;
@@ -89,7 +108,7 @@ async function prepareCompatibleProxy(video, path, name) {
     const version = data?.version || Date.now();
     const url = apiUrl(`/image-gallery/output/browser-proxy?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`);
     video.dataset.cigExternalGpuState = "proxy-loading";
-    statusNote(video, "Совместимая копия готова. Запускаю GPU-плеер…");
+    statusNote(video, TEXT.ready);
 
     const onCanPlay = () => {
         if (!video.isConnected) return;
