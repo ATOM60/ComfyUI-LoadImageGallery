@@ -91,6 +91,8 @@ function injectStyles() {
     line-height:38px!important;
 }
 .cig-help-close-unified{
+    position:relative!important;
+    z-index:2!important;
     width:34px!important;
     min-width:34px!important;
     height:34px!important;
@@ -98,6 +100,8 @@ function injectStyles() {
     margin:0!important;
     font-size:18px!important;
     line-height:32px!important;
+    pointer-events:auto!important;
+    touch-action:manipulation!important;
 }
 `;
     document.head.appendChild(style);
@@ -138,6 +142,16 @@ function patchHelpOverlay(root = document) {
         for (const button of buttons) {
             if (!(button instanceof HTMLButtonElement) || button.textContent?.trim() !== "✕") continue;
             button.classList.add("cig-help-close-unified");
+            if (button.dataset.cigUnifiedCloseBound === "1") continue;
+            button.dataset.cigUnifiedCloseBound = "1";
+            button.addEventListener("pointerdown", event => {
+                event.stopPropagation();
+            });
+            button.addEventListener("click", event => {
+                event.preventDefault();
+                event.stopPropagation();
+                overlay.remove();
+            });
         }
     }
 }
