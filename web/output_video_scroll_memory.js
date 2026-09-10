@@ -1,9 +1,9 @@
 import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputVideoScrollMemory";
-const STORAGE_KEY = "ComfyUI-LoadImageGallery.outputVideoScrollPositions";
+const STORAGE_KEY = "ComfyUI-LoadImageGallery.outputVideoScrollPositions.v2";
 const CURRENT_FOLDER_KEY = "ComfyUI-LoadImageGallery.outputVideoFolder";
-const MAX_FOLDERS = 100;
+const CPU_MODE_KEY = "ComfyUI-LoadImageGallery.outputVideoCpuPlayback";
 
 const states = new WeakMap();
 
@@ -14,15 +14,26 @@ function normalizeFolder(value) {
     return raw;
 }
 
-function folderKey(modal) {
-    let folder = "";
+function currentFolder(modal) {
     if (modal?.dataset && Object.prototype.hasOwnProperty.call(modal.dataset, "ovgFolder")) {
-        folder = normalizeFolder(modal.dataset.ovgFolder || "");
-    } else {
-        try { folder = normalizeFolder(localStorage.getItem(CURRENT_FOLDER_KEY) || ""); }
-        catch (_) {}
+        return normalizeFolder(modal.dataset.ovgFolder || "");
     }
-    return folder ? `folder:${folder}` : "output";
+    try { return normalizeFolder(localStorage.getItem(CURRENT_FOLDER_KEY) || ""); }
+    catch (_) { return ""; }
+}
+
+function currentMode(modal) {
+    if (modal?.dataset && Object.prototype.hasOwnProperty.call(modal.dataset, "ovgCpuMode")) {
+        return modal.dataset.ovgCpuMode === "1" ? "cpu" : "gpu";
+    }
+    try { return localStorage.getItem(CPU_MODE_KEY) === "1" ? "cpu" : "gpu"; }
+    catch (_) { return "gpu"; }
+}
+
+function positionKey(modal) {
+    const folder = currentFolder(modal);
+    const scope = folder ? `folder:${folder}` : "output";
+    return `${currentMode(modal)}|${scope}`;
 }
 
 function loadPositions() {
@@ -36,43 +47,45 @@ function loadPositions() {
 
 function savedTop(key) {
     const item = loadPositions()[key];
+    if (item == null) return null;
     if (typeof item === "number") return Math.max(0, item);
     const top = Number(item?.top);
-    return Number.isFinite(top) ? Math.max(0, top) : 0;
+    return Number.isFinite(top) ? Math.max(0, top) : null;
 }
 
 function saveTop(key, top) {
     if (!key) return;
     try {
         const positions = loadPositions();
-        positions[key] = { top: Math.max(0, Number(top) || 0), ts: Date.now() };
-
-        const entries = Object.entries(positions);
-        if (entries.length > MAX_FOLDERS) {
-            entries
-                .sort((a, b) => Number(b[1]?.ts || 0) - Number(a[1]?.ts || 0))
-                .slice(MAX_FOLDERS)
-                .forEach(([oldKey]) => delete positions[oldKey]);
-        }
+        positions[key] = {
+            top: Math.max(0, Number(top) || 0),
+            ts: Date.now(),
+        };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
     } catch (_) {}
 }
 
-function clearTimers(state) {
-    for (const id of state.restoreTimers) clearTimeout(id);
-    state.restoreTimers.length = 0;
+function clearRestore(state) {
     if (state.restoreRaf) cancelAnimationFrame(state.restoreRaf);
     state.restoreRaf = 0;
+    for (const id of state.restoreTimers) clearTimeout(id);
+    state.restoreTimers.length = 0;
+    state.restoring = false;
 }
 
-function restorePosition(state) {
+function restorePosition(state, requestedTop = null) {
     if (!state.wrap?.isConnected) return;
-    clearTimers(state);
-    const wanted = savedTop(state.key);
+
+    clearRestore(state);
+    const stored = requestedTop == null ? savedTop(state.key) : Number(requestedTop);
+    const wanted = Number.isFinite(stored) ? Math.max(0, stored) : 0;
+    const generation = ++state.restoreGeneration;
+
+    state.lastUserTop = wanted;
     state.restoring = true;
 
     const apply = () => {
-        if (!state.wrap?.isConnected) return;
+        if (!state.wrap?.isConnected || generation !== state.restoreGeneration) return;
         const max = Math.max(0, state.wrap.scrollHeight - state.wrap.clientHeight);
         state.wrap.scrollTop = Math.min(wanted, max);
     };
@@ -80,19 +93,69 @@ function restorePosition(state) {
     state.restoreRaf = requestAnimationFrame(() => {
         state.restoreRaf = 0;
         apply();
+        requestAnimationFrame(apply);
     });
-    state.restoreTimers.push(setTimeout(apply, 40));
-    state.restoreTimers.push(setTimeout(apply, 120));
+
+    for (const ms of [40, 100, 220, 450, 800, 1250]) {
+        state.restoreTimers.push(setTimeout(apply, ms));
+    }
+
     state.restoreTimers.push(setTimeout(() => {
+        if (generation !== state.restoreGeneration) return;
         apply();
         state.restoring = false;
         state.restoreTimers.length = 0;
-    }, 240));
+    }, 1600));
 }
 
-function saveCurrent(state) {
-    if (!state.wrap?.isConnected || state.restoring) return;
-    saveTop(state.key, state.wrap.scrollTop);
+function cancelRestoreForUser(state) {
+    clearRestore(state);
+    state.restoreGeneration += 1;
+    state.userScrollUntil = performance.now() + 900;
+}
+
+function scheduleUserSave(state) {
+    if (state.saveRaf || !state.wrap?.isConnected) return;
+    state.saveRaf = requestAnimationFrame(() => {
+        state.saveRaf = 0;
+        if (!state.wrap?.isConnected || state.restoring) return;
+        const top = Math.max(0, Number(state.wrap.scrollTop) || 0);
+        state.lastUserTop = top;
+        saveTop(state.key, top);
+    });
+}
+
+function searchIsActive(state) {
+    const search = state.modal.querySelector(".ovg-search");
+    return search instanceof HTMLInputElement && search.value.trim() !== "";
+}
+
+function snapshotCurrent(state) {
+    if (!state.wrap?.isConnected || state.restoring || searchIsActive(state)) return;
+    const top = Math.max(0, Number(state.wrap.scrollTop) || 0);
+    state.lastUserTop = top;
+    saveTop(state.key, top);
+}
+
+function syncKey(state, { restore = true } = {}) {
+    const nextKey = positionKey(state.modal);
+    if (nextKey === state.key) return false;
+
+    state.key = nextKey;
+    state.lastUserTop = savedTop(nextKey) ?? 0;
+    if (restore) restorePosition(state, state.lastUserTop);
+    return true;
+}
+
+function isScrollKey(event) {
+    return ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key);
+}
+
+function isTextControl(target) {
+    return target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable;
 }
 
 function installModal(modal) {
@@ -101,58 +164,151 @@ function installModal(modal) {
     const grid = modal.querySelector(".ovg-grid");
     if (!(wrap instanceof HTMLElement) || !(grid instanceof HTMLElement)) return;
 
+    const key = positionKey(modal);
     const state = {
         modal,
         wrap,
         grid,
-        key: folderKey(modal),
+        key,
+        lastUserTop: savedTop(key) ?? Math.max(0, Number(wrap.scrollTop) || 0),
         restoring: false,
-        saveRaf: 0,
+        restoreGeneration: 0,
         restoreRaf: 0,
         restoreTimers: [],
+        saveRaf: 0,
+        userScrollUntil: 0,
+        scrollbarDragging: false,
+        skipGridRestoreUntil: 0,
         attrObserver: null,
         gridObserver: null,
         onScroll: null,
+        onWheel: null,
+        onTouchMove: null,
+        onPointerDown: null,
+        onPointerUp: null,
+        onKeyDown: null,
+        onChangeCapture: null,
+        onClickCapture: null,
+        onInputCapture: null,
     };
     states.set(modal, state);
 
+    state.onWheel = () => {
+        cancelRestoreForUser(state);
+    };
+    wrap.addEventListener("wheel", state.onWheel, { passive: true, capture: true });
+
+    state.onTouchMove = () => {
+        cancelRestoreForUser(state);
+    };
+    wrap.addEventListener("touchmove", state.onTouchMove, { passive: true, capture: true });
+
+    state.onPointerDown = event => {
+        const rect = wrap.getBoundingClientRect();
+        const scrollbarWidth = Math.max(0, rect.width - wrap.clientWidth);
+        const inVerticalScrollbar = scrollbarWidth > 0 && event.clientX >= rect.right - scrollbarWidth - 3;
+        if (!inVerticalScrollbar) return;
+        state.scrollbarDragging = true;
+        cancelRestoreForUser(state);
+    };
+    wrap.addEventListener("pointerdown", state.onPointerDown, true);
+
+    state.onPointerUp = () => {
+        if (!state.scrollbarDragging) return;
+        state.scrollbarDragging = false;
+        scheduleUserSave(state);
+    };
+    window.addEventListener("pointerup", state.onPointerUp, true);
+
+    state.onKeyDown = event => {
+        if (!isScrollKey(event) || isTextControl(event.target)) return;
+        cancelRestoreForUser(state);
+    };
+    modal.addEventListener("keydown", state.onKeyDown, true);
+
     state.onScroll = () => {
         if (state.restoring) return;
-        if (state.saveRaf) return;
-        state.saveRaf = requestAnimationFrame(() => {
-            state.saveRaf = 0;
-            saveCurrent(state);
-        });
+        if (state.scrollbarDragging || performance.now() <= state.userScrollUntil) {
+            scheduleUserSave(state);
+        }
     };
     wrap.addEventListener("scroll", state.onScroll, { passive: true });
 
-    state.attrObserver = new MutationObserver(records => {
-        for (const record of records) {
-            if (record.type !== "attributes" || record.attributeName !== "data-ovg-folder") continue;
-            saveTop(state.key, state.wrap.scrollTop);
-            state.key = folderKey(modal);
-            restorePosition(state);
-        }
-    });
-    state.attrObserver.observe(modal, { attributes: true, attributeFilter: ["data-ovg-folder"] });
+    // Save the old folder/mode before their handlers rebuild the grid and can
+    // synchronously force scrollTop to 0.
+    state.onChangeCapture = event => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.matches(".ovg-folder-select, .ovg-sort, .ovg-size")) snapshotCurrent(state);
+    };
+    modal.addEventListener("change", state.onChangeCapture, true);
 
-    // renderGrid replaces the direct card children. Restoring here also keeps
-    // the same position when switching CPU/GPU, sorting, refreshing, etc.
-    state.gridObserver = new MutationObserver(() => restorePosition(state));
+    state.onClickCapture = event => {
+        const target = event.target instanceof Element ? event.target.closest(".ovg-folder-pick, .ovg-cpu-toggle, .ovg-refresh-modal") : null;
+        if (target) snapshotCurrent(state);
+    };
+    modal.addEventListener("click", state.onClickCapture, true);
+
+    // Search intentionally starts from the top, but it must not erase the
+    // remembered position of the underlying folder.
+    state.onInputCapture = event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.matches(".ovg-search")) return;
+        clearRestore(state);
+        state.restoreGeneration += 1;
+        if (target.value.trim()) {
+            state.skipGridRestoreUntil = performance.now() + 700;
+        } else {
+            state.skipGridRestoreUntil = 0;
+        }
+    };
+    modal.addEventListener("input", state.onInputCapture, true);
+
+    state.attrObserver = new MutationObserver(records => {
+        let relevant = false;
+        for (const record of records) {
+            if (record.type !== "attributes") continue;
+            if (record.attributeName === "data-ovg-folder" || record.attributeName === "data-ovg-cpu-mode") {
+                relevant = true;
+                break;
+            }
+        }
+        if (relevant) syncKey(state, { restore: true });
+    });
+    state.attrObserver.observe(modal, {
+        attributes: true,
+        attributeFilter: ["data-ovg-folder", "data-ovg-cpu-mode"],
+    });
+
+    state.gridObserver = new MutationObserver(() => {
+        if (syncKey(state, { restore: true })) return;
+        if (performance.now() <= state.skipGridRestoreUntil) return;
+        restorePosition(state, state.lastUserTop);
+    });
     state.gridObserver.observe(grid, { childList: true, subtree: false });
 
-    restorePosition(state);
+    restorePosition(state, state.lastUserTop);
 }
 
 function uninstallModal(modal) {
     const state = states.get(modal);
     if (!state) return;
-    if (!state.restoring) saveTop(state.key, state.wrap?.scrollTop || 0);
+
+    if (!searchIsActive(state)) saveTop(state.key, state.lastUserTop);
     if (state.saveRaf) cancelAnimationFrame(state.saveRaf);
-    clearTimers(state);
+    state.saveRaf = 0;
+    clearRestore(state);
     state.attrObserver?.disconnect();
     state.gridObserver?.disconnect();
+    state.wrap?.removeEventListener("wheel", state.onWheel, true);
+    state.wrap?.removeEventListener("touchmove", state.onTouchMove, true);
+    state.wrap?.removeEventListener("pointerdown", state.onPointerDown, true);
     state.wrap?.removeEventListener("scroll", state.onScroll);
+    state.modal?.removeEventListener("keydown", state.onKeyDown, true);
+    state.modal?.removeEventListener("change", state.onChangeCapture, true);
+    state.modal?.removeEventListener("click", state.onClickCapture, true);
+    state.modal?.removeEventListener("input", state.onInputCapture, true);
+    window.removeEventListener("pointerup", state.onPointerUp, true);
     states.delete(modal);
 }
 
