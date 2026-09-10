@@ -81,6 +81,7 @@ function fmtTime(value) {
 
 function getThumbFromEvent(event) {
     const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest?.(".ovg-cpu-player")) return null;
     const thumb = target?.closest?.(".ovg-thumb");
     if (!thumb || !thumb.closest(".ovg-card")) return null;
     if (target.closest?.("button")) return null;
