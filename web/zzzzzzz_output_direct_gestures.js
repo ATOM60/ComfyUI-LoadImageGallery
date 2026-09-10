@@ -1,12 +1,27 @@
 import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputPreviewInteractions";
+const STYLE_ID = "cig-output-gpu-touch-style";
 const SINGLE_CLICK_DELAY_MS = 260;
 const DOUBLE_CLICK_WINDOW_MS = 360;
 const TOUCH_LOCK_PX = 14;
 const TOUCH_DIRECTION_RATIO = 1.2;
 const clickState = new WeakMap();
 const touchGestures = new Map();
+
+function ensureTouchStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+video.ovg-inline-video{
+    touch-action:pan-y pinch-zoom!important;
+    -webkit-user-select:none!important;
+    user-select:none!important;
+}
+`;
+    document.head.appendChild(style);
+}
 
 function clamp(value, min, max) {
     const n = Number(value);
@@ -335,6 +350,7 @@ function protectContextMenu(menu) {
 app.registerExtension({
     name: EXT_NAME,
     setup() {
+        ensureTouchStyles();
         document.addEventListener("pointerdown", onTouchPointerDown, { capture:true, passive:true });
         document.addEventListener("pointermove", onTouchPointerMove, { capture:true, passive:false });
         document.addEventListener("pointerup", onPointerUp, { capture:true, passive:false });
