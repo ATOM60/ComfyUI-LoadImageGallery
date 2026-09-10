@@ -3,7 +3,6 @@ import { app } from "/scripts/app.js";
 const EXT_NAME = "Comfy.ImageGallery.OutputVideoScrollMemory";
 const STORAGE_KEY = "ComfyUI-LoadImageGallery.outputVideoScrollPositions.v2";
 const CURRENT_FOLDER_KEY = "ComfyUI-LoadImageGallery.outputVideoFolder";
-const CPU_MODE_KEY = "ComfyUI-LoadImageGallery.outputVideoCpuPlayback";
 
 const states = new WeakMap();
 
@@ -22,18 +21,9 @@ function currentFolder(modal) {
     catch (_) { return ""; }
 }
 
-function currentMode(modal) {
-    if (modal?.dataset && Object.prototype.hasOwnProperty.call(modal.dataset, "ovgCpuMode")) {
-        return modal.dataset.ovgCpuMode === "1" ? "cpu" : "gpu";
-    }
-    try { return localStorage.getItem(CPU_MODE_KEY) === "1" ? "cpu" : "gpu"; }
-    catch (_) { return "gpu"; }
-}
-
 function positionKey(modal) {
     const folder = currentFolder(modal);
-    const scope = folder ? `folder:${folder}` : "output";
-    return `${currentMode(modal)}|${scope}`;
+    return folder ? `folder:${folder}` : "output";
 }
 
 function loadPositions() {
@@ -45,12 +35,31 @@ function loadPositions() {
     }
 }
 
-function savedTop(key) {
-    const item = loadPositions()[key];
+function itemTop(item) {
     if (item == null) return null;
     if (typeof item === "number") return Math.max(0, item);
     const top = Number(item?.top);
     return Number.isFinite(top) ? Math.max(0, top) : null;
+}
+
+function itemTs(item) {
+    if (typeof item === "number") return 0;
+    const ts = Number(item?.ts);
+    return Number.isFinite(ts) ? ts : 0;
+}
+
+function savedTop(key) {
+    const positions = loadPositions();
+    const direct = itemTop(positions[key]);
+    if (direct != null) return direct;
+
+    // Migrate the previous per-mode values automatically. CPU and GPU now
+    // share one scroll position for the same folder, so use whichever old
+    // value was written most recently.
+    const legacy = [positions[`cpu|${key}`], positions[`gpu|${key}`]]
+        .filter(item => itemTop(item) != null)
+        .sort((a, b) => itemTs(b) - itemTs(a))[0];
+    return itemTop(legacy);
 }
 
 function saveTop(key, top) {
@@ -234,8 +243,8 @@ function installModal(modal) {
     };
     wrap.addEventListener("scroll", state.onScroll, { passive: true });
 
-    // Save the old folder/mode before their handlers rebuild the grid and can
-    // synchronously force scrollTop to 0.
+    // Save before controls rebuild the grid and can synchronously force
+    // scrollTop to 0. CPU/GPU intentionally share the same folder key.
     state.onChangeCapture = event => {
         const target = event.target;
         if (!(target instanceof Element)) return;
@@ -264,20 +273,19 @@ function installModal(modal) {
     };
     modal.addEventListener("input", state.onInputCapture, true);
 
+    // Only folder changes select another saved scroll position. CPU/GPU mode
+    // changes keep the same key and the following grid rerender restores the
+    // current folder position instead of jumping to the top.
     state.attrObserver = new MutationObserver(records => {
-        let relevant = false;
         for (const record of records) {
-            if (record.type !== "attributes") continue;
-            if (record.attributeName === "data-ovg-folder" || record.attributeName === "data-ovg-cpu-mode") {
-                relevant = true;
-                break;
-            }
+            if (record.type !== "attributes" || record.attributeName !== "data-ovg-folder") continue;
+            syncKey(state, { restore: true });
+            break;
         }
-        if (relevant) syncKey(state, { restore: true });
     });
     state.attrObserver.observe(modal, {
         attributes: true,
-        attributeFilter: ["data-ovg-folder", "data-ovg-cpu-mode"],
+        attributeFilter: ["data-ovg-folder"],
     });
 
     state.gridObserver = new MutationObserver(() => {
