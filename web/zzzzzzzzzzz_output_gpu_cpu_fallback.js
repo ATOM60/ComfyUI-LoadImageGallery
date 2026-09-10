@@ -2,7 +2,6 @@ import { app } from "/scripts/app.js";
 import { startCpuFallback } from "./output_video_cpu_fallback_backend.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputGpuCpuFallback";
-const STYLE_ID = "cig-output-gpu-cpu-fallback-style";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 
 const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en").toLowerCase().startsWith("ru");
@@ -15,18 +14,6 @@ const LABELS = RU ? {
     speed:"Playback speed", volume:"Volume", fullscreen:"Fullscreen",
     exitFullscreen:"Exit fullscreen",
 };
-
-function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
-.ovg-thumb:has(.ovg-auto-cpu-fallback) > .ovg-shared-player[data-ovg-decoder="GPU"]{
-    display:none!important;
-}
-`;
-    document.head.appendChild(style);
-}
 
 function galleryPaths(holder) {
     const grid = holder?.closest?.(".ovg-card")?.closest?.(".ovg-grid");
@@ -68,6 +55,7 @@ function fallbackToCpu(video, sourceError = null) {
         paths:() => galleryPaths(holder),
         labels:LABELS,
         gpuShell:video.__cigGpuShell || null,
+        video,
     });
 
     if (!state) {
@@ -82,8 +70,8 @@ function onMediaError(event) {
     if (!(video instanceof HTMLVideoElement)) return;
     if (!fallbackToCpu(video)) return;
 
-    // Suppress the old gallery "video cannot be played" cleanup/toast: the
-    // same item is now successfully being handled by the CPU decoder.
+    // The same fullscreen shell continues with CPU decoding, so prevent the
+    // gallery's original video-error handler from tearing that shell down.
     event.preventDefault?.();
     event.stopImmediatePropagation?.();
 }
@@ -91,9 +79,8 @@ function onMediaError(event) {
 app.registerExtension({
     name:EXT_NAME,
     setup() {
-        ensureStyles();
-        // Media error does not bubble reliably, so capture it before the
-        // original per-video error handler removes the inline player.
+        // Media error does not bubble reliably; capture it before the original
+        // per-video cleanup handler can remove the active shared player.
         document.addEventListener("error", onMediaError, true);
     },
 });
