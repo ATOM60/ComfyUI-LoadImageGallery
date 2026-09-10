@@ -13,6 +13,10 @@ function exactPreview(node) {
     return node?.widgets?.find(w => w?.name === "$$canvas-image-preview" || w?.type === "IMAGE_PREVIEW") || null;
 }
 
+function rawSplice(array, ...args) {
+    return Array.prototype.splice.call(array, ...args);
+}
+
 function hideAux(w) {
     if (!w) return false;
     let changed = false;
@@ -32,8 +36,6 @@ function hideAux(w) {
         w.computeLayoutSize = w.__cigHiddenLayoutSize;
         changed = true;
     }
-    // Do not overwrite drawWidget/onPointerDown here. Some stock widgets are used
-    // internally by ComfyUI even while hidden.
     return changed;
 }
 
@@ -84,9 +86,6 @@ function restoreOutputButton(node, button, start) {
         changed = true;
     }
 
-    // Keep the original callbacks intact and use the output widget as a single
-    // 64 px row containing two equal visual buttons. This avoids changing the
-    // proven preview widget or creating another layout widget.
     if (!button.__cigRowOutputCallback) {
         button.__cigRowOutputCallback = button.callback;
         changed = true;
@@ -173,28 +172,137 @@ function sameOrder(a, b) {
     return a.length === b.length && a.every((item, index) => item === b[index]);
 }
 
+function lockFixedProperty(object, key, value) {
+    if (!object) return;
+    if (!object.__cigUnifiedLocks) {
+        try {
+            Object.defineProperty(object, "__cigUnifiedLocks", {
+                configurable:true,
+                enumerable:false,
+                writable:false,
+                value:Object.create(null),
+            });
+        } catch (_) {
+            object.__cigUnifiedLocks = Object.create(null);
+        }
+    }
+    const locks = object.__cigUnifiedLocks;
+    if (locks[key]) {
+        locks[key].value = value;
+        return;
+    }
+    const slot = { value };
+    locks[key] = slot;
+    try {
+        Object.defineProperty(object, key, {
+            configurable:true,
+            enumerable:true,
+            get() { return slot.value; },
+            // Old cold-start installers are still allowed to run, but once the
+            // unified row exists they may no longer hide or redraw these widgets.
+            set(_) {},
+        });
+    } catch (_) {
+        try { object[key] = value; } catch (_) {}
+    }
+}
+
+function lockUnifiedButtonState(button, start) {
+    if (!button || !start) return;
+
+    lockFixedProperty(button, "hidden", false);
+    lockFixedProperty(button, "serialize", false);
+    lockFixedProperty(button, "computeSize", button.__cigRowComputeSize);
+    lockFixedProperty(button, "computeLayoutSize", button.__cigRowComputeLayoutSize);
+    lockFixedProperty(button, "drawWidget", button.__cigRowDraw);
+    lockFixedProperty(button, "onPointerDown", button.__cigRowPointerDown);
+
+    lockFixedProperty(start, "hidden", true);
+    lockFixedProperty(start, "computeSize", start.__cigRowHiddenSize);
+    lockFixedProperty(start, "computeLayoutSize", start.__cigRowHiddenLayoutSize);
+}
+
+function installMoveGuard(node, output, start) {
+    const widgets = node?.widgets;
+    if (!widgets || !output || !start) return;
+
+    if (!widgets.__cigUnifiedProtected) {
+        try {
+            Object.defineProperty(widgets, "__cigUnifiedProtected", {
+                configurable:true,
+                enumerable:false,
+                writable:true,
+                value:new Set(),
+            });
+        } catch (_) {
+            widgets.__cigUnifiedProtected = new Set();
+        }
+    }
+    widgets.__cigUnifiedProtected.clear();
+    widgets.__cigUnifiedProtected.add(output);
+    widgets.__cigUnifiedProtected.add(start);
+
+    if (widgets.__cigUnifiedSpliceGuard) return;
+    const guardedSplice = function(startIndex, deleteCount, ...items) {
+        const protectedWidgets = this.__cigUnifiedProtected;
+        if (protectedWidgets instanceof Set) {
+            const len = this.length;
+            let index = Number(startIndex);
+            if (!Number.isFinite(index)) index = 0;
+            index = index < 0 ? Math.max(0, len + Math.trunc(index)) : Math.min(len, Math.trunc(index));
+
+            // image_gallery.js / output_video_gallery.js repeatedly perform
+            // remove+insert moves on cold start. Once the final row is locked,
+            // suppress only moves of our two protected widgets. All other array
+            // operations keep native behaviour.
+            if (Number(deleteCount) === 1 && items.length === 0) {
+                const target = this[index];
+                if (protectedWidgets.has(target)) return [target];
+            }
+            if (Number(deleteCount) === 0 && items.length === 1) {
+                const target = items[0];
+                if (protectedWidgets.has(target) && this.includes(target)) return [];
+            }
+        }
+        return Array.prototype.splice.call(this, startIndex, deleteCount, ...items);
+    };
+
+    try {
+        Object.defineProperty(widgets, "splice", {
+            configurable:true,
+            enumerable:false,
+            writable:true,
+            value:guardedSplice,
+        });
+        Object.defineProperty(widgets, "__cigUnifiedSpliceGuard", {
+            configurable:true,
+            enumerable:false,
+            writable:true,
+            value:true,
+        });
+    } catch (_) {
+        widgets.splice = guardedSplice;
+        widgets.__cigUnifiedSpliceGuard = true;
+    }
+}
+
 function stabilize(node) {
     if (!node?.widgets || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return false;
     let changed = false;
 
     for (let i = node.widgets.length - 1; i >= 0; i--) {
         if (node.widgets[i]?.name === LEGACY_BUTTON) {
-            node.widgets.splice(i, 1);
+            rawSplice(node.widgets, i, 1);
             changed = true;
         }
     }
 
-    // IMPORTANT: only the real ComfyUI preview widget is accepted here. Previous
-    // versions used a broad canvasOnly test and could mistake another custom widget
-    // for the preview, causing the real preview to flash and then disappear.
     const preview = exactPreview(node);
     if (!preview) return false;
 
     const output = node.widgets.find(w => w?.name === OUTPUT_BUTTON) || null;
     const start = node.widgets.find(w => w?.name === START_BUTTON) || null;
 
-    // Never replace preview drawWidget, computeSize or onPointerDown. image_gallery.js
-    // owns those methods and draws the image plus the previous/next arrows there.
     if (preview.hidden !== false) {
         preview.hidden = false;
         changed = true;
@@ -213,12 +321,17 @@ function stabilize(node) {
     if (start) ordered.push(start);
     ordered.push(...hidden);
 
-    // The old stabilizer spliced the whole widget array every 120 ms for 13 s.
-    // That invalidated LiteGraph layout even when nothing had changed and caused
-    // the visible button row to blink during workflow cold start.
     if (!sameOrder(node.widgets, ordered)) {
-        node.widgets.splice(0, node.widgets.length, ...ordered);
+        rawSplice(node.widgets, 0, node.widgets.length, ...ordered);
         changed = true;
+    }
+
+    // The row is complete. Freeze only the properties/order that old delayed
+    // installers used to fight over; the rest of the node remains untouched.
+    if (output && start) {
+        lockUnifiedButtonState(output, start);
+        installMoveGuard(node, output, start);
+        node.__cigUnifiedLayoutLocked = true;
     }
 
     if (changed) {
@@ -233,23 +346,34 @@ app.registerExtension({
     async nodeCreated(node) {
         if (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) return;
 
-        const run = () => stabilize(node);
+        let timer = null;
+        let finishTimer = null;
+        const run = () => {
+            stabilize(node);
+            if (node.__cigUnifiedLayoutLocked && timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+        };
+
         queueMicrotask(run);
         requestAnimationFrame(run);
 
-        // Delayed installers still exist for cold-start compatibility. Polling is
-        // retained as a guard, but stabilize() is now a true no-op while the final
-        // layout is already correct, so it cannot repeatedly invalidate painting.
-        const timer = setInterval(run, 120);
-        const finishTimer = setTimeout(() => {
-            clearInterval(timer);
+        // Poll only until preview + output + START have appeared. As soon as the
+        // final unified row is locked, polling stops permanently.
+        timer = setInterval(run, 120);
+        finishTimer = setTimeout(() => {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
             run();
         }, 13000);
 
         const oldRemoved = node.onRemoved;
         node.onRemoved = function() {
-            clearInterval(timer);
-            clearTimeout(finishTimer);
+            if (timer) clearInterval(timer);
+            if (finishTimer) clearTimeout(finishTimer);
             return oldRemoved?.apply(this, arguments);
         };
     },
