@@ -14,35 +14,92 @@ function exactPreview(node) {
 }
 
 function hideAux(w) {
-    if (!w) return;
-    w.hidden = true;
-    w.computeSize = () => [0, -4];
-    w.computeLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
+    if (!w) return false;
+    let changed = false;
+    if (w.hidden !== true) {
+        w.hidden = true;
+        changed = true;
+    }
+    if (!w.__cigHiddenSize) {
+        w.__cigHiddenSize = () => [0, -4];
+        w.__cigHiddenLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
+    }
+    if (w.computeSize !== w.__cigHiddenSize) {
+        w.computeSize = w.__cigHiddenSize;
+        changed = true;
+    }
+    if (w.computeLayoutSize !== w.__cigHiddenLayoutSize) {
+        w.computeLayoutSize = w.__cigHiddenLayoutSize;
+        changed = true;
+    }
     // Do not overwrite drawWidget/onPointerDown here. Some stock widgets are used
     // internally by ComfyUI even while hidden.
+    return changed;
 }
 
 function hideStartInRow(start) {
-    if (!start) return;
-    start.hidden = true;
-    start.computeSize = () => [0, 0];
-    start.computeLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
+    if (!start) return false;
+    let changed = false;
+    if (start.hidden !== true) {
+        start.hidden = true;
+        changed = true;
+    }
+    if (!start.__cigRowHiddenSize) {
+        start.__cigRowHiddenSize = () => [0, 0];
+        start.__cigRowHiddenLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
+    }
+    if (start.computeSize !== start.__cigRowHiddenSize) {
+        start.computeSize = start.__cigRowHiddenSize;
+        changed = true;
+    }
+    if (start.computeLayoutSize !== start.__cigRowHiddenLayoutSize) {
+        start.computeLayoutSize = start.__cigRowHiddenLayoutSize;
+        changed = true;
+    }
+    return changed;
 }
 
 function restoreOutputButton(node, button, start) {
-    if (!button) return;
+    if (!button) return false;
+    let changed = false;
 
-    button.hidden = false;
-    button.serialize = false;
-    button.computeSize = width => [width ?? node.size?.[0] ?? 320, 64];
-    button.computeLayoutSize = () => ({ minHeight:64, maxHeight:64, minWidth:0 });
+    if (button.hidden !== false) {
+        button.hidden = false;
+        changed = true;
+    }
+    if (button.serialize !== false) {
+        button.serialize = false;
+        changed = true;
+    }
+    if (!button.__cigRowComputeSize) {
+        button.__cigRowComputeSize = width => [width ?? node.size?.[0] ?? 320, 64];
+        button.__cigRowComputeLayoutSize = () => ({ minHeight:64, maxHeight:64, minWidth:0 });
+    }
+    if (button.computeSize !== button.__cigRowComputeSize) {
+        button.computeSize = button.__cigRowComputeSize;
+        changed = true;
+    }
+    if (button.computeLayoutSize !== button.__cigRowComputeLayoutSize) {
+        button.computeLayoutSize = button.__cigRowComputeLayoutSize;
+        changed = true;
+    }
 
     // Keep the original callbacks intact and use the output widget as a single
     // 64 px row containing two equal visual buttons. This avoids changing the
     // proven preview widget or creating another layout widget.
-    if (!button.__cigRowOutputCallback) button.__cigRowOutputCallback = button.callback;
-    if (start && !button.__cigRowStartCallback) button.__cigRowStartCallback = start.callback;
-    button.__cigRowStartWidget = start || button.__cigRowStartWidget || null;
+    if (!button.__cigRowOutputCallback) {
+        button.__cigRowOutputCallback = button.callback;
+        changed = true;
+    }
+    if (start && !button.__cigRowStartCallback) {
+        button.__cigRowStartCallback = start.callback;
+        changed = true;
+    }
+    const rowStart = start || button.__cigRowStartWidget || null;
+    if (button.__cigRowStartWidget !== rowStart) {
+        button.__cigRowStartWidget = rowStart;
+        changed = true;
+    }
 
     if (!button.__cigRowDraw) {
         button.__cigRowDraw = function(ctx, options) {
@@ -76,8 +133,12 @@ function restoreOutputButton(node, button, start) {
             drawHalf(outer, half, OUTPUT_BUTTON_LABEL, this);
             drawHalf(outer + half + gap, half, START_BUTTON_LABEL, startWidget);
         };
+        changed = true;
     }
-    button.drawWidget = button.__cigRowDraw;
+    if (button.drawWidget !== button.__cigRowDraw) {
+        button.drawWidget = button.__cigRowDraw;
+        changed = true;
+    }
 
     if (!button.__cigRowPointerDown) {
         button.__cigRowPointerDown = function(pointer, nodeArg, canvas) {
@@ -99,15 +160,28 @@ function restoreOutputButton(node, button, start) {
             };
             return true;
         };
+        changed = true;
     }
-    button.onPointerDown = button.__cigRowPointerDown;
+    if (button.onPointerDown !== button.__cigRowPointerDown) {
+        button.onPointerDown = button.__cigRowPointerDown;
+        changed = true;
+    }
+    return changed;
+}
+
+function sameOrder(a, b) {
+    return a.length === b.length && a.every((item, index) => item === b[index]);
 }
 
 function stabilize(node) {
     if (!node?.widgets || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return false;
+    let changed = false;
 
     for (let i = node.widgets.length - 1; i >= 0; i--) {
-        if (node.widgets[i]?.name === LEGACY_BUTTON) node.widgets.splice(i, 1);
+        if (node.widgets[i]?.name === LEGACY_BUTTON) {
+            node.widgets.splice(i, 1);
+            changed = true;
+        }
     }
 
     // IMPORTANT: only the real ComfyUI preview widget is accepted here. Previous
@@ -121,25 +195,36 @@ function stabilize(node) {
 
     // Never replace preview drawWidget, computeSize or onPointerDown. image_gallery.js
     // owns those methods and draws the image plus the previous/next arrows there.
-    preview.hidden = false;
-    restoreOutputButton(node, output, start);
-    hideStartInRow(start);
+    if (preview.hidden !== false) {
+        preview.hidden = false;
+        changed = true;
+    }
+    changed = restoreOutputButton(node, output, start) || changed;
+    changed = hideStartInRow(start) || changed;
 
     for (const w of node.widgets) {
         if (!w || w === preview || w === output || w === start) continue;
-        hideAux(w);
+        changed = hideAux(w) || changed;
     }
 
     const hidden = node.widgets.filter(w => w !== output && w !== preview && w !== start);
-    const ordered = [];
-    ordered.push(preview);
+    const ordered = [preview];
     if (output) ordered.push(output);
     if (start) ordered.push(start);
     ordered.push(...hidden);
-    node.widgets.splice(0, node.widgets.length, ...ordered);
 
-    node.graph?.setDirtyCanvas?.(true, true);
-    node.setDirtyCanvas?.(true, true);
+    // The old stabilizer spliced the whole widget array every 120 ms for 13 s.
+    // That invalidated LiteGraph layout even when nothing had changed and caused
+    // the visible button row to blink during workflow cold start.
+    if (!sameOrder(node.widgets, ordered)) {
+        node.widgets.splice(0, node.widgets.length, ...ordered);
+        changed = true;
+    }
+
+    if (changed) {
+        node.graph?.setDirtyCanvas?.(true, true);
+        node.setDirtyCanvas?.(true, true);
+    }
     return true;
 }
 
@@ -152,11 +237,11 @@ app.registerExtension({
         queueMicrotask(run);
         requestAnimationFrame(run);
 
-        // image_gallery.js and output_video_gallery.js install their widgets with
-        // delayed callbacks during cold start. Keep the final layout stable while
-        // those installers finish, then stop polling completely.
+        // Delayed installers still exist for cold-start compatibility. Polling is
+        // retained as a guard, but stabilize() is now a true no-op while the final
+        // layout is already correct, so it cannot repeatedly invalidate painting.
         const timer = setInterval(run, 120);
-        setTimeout(() => {
+        const finishTimer = setTimeout(() => {
             clearInterval(timer);
             run();
         }, 13000);
@@ -164,6 +249,7 @@ app.registerExtension({
         const oldRemoved = node.onRemoved;
         node.onRemoved = function() {
             clearInterval(timer);
+            clearTimeout(finishTimer);
             return oldRemoved?.apply(this, arguments);
         };
     },
