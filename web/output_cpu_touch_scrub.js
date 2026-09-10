@@ -2,9 +2,14 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputPlayerTouchScrub";
 const STYLE_ID = "cig-output-player-touch-scrub-style";
+const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const LOCK_PX = 12;
 const DIRECTION_RATIO = 1.15;
 const CLICK_SUPPRESS_MS = 550;
+
+const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
+    .toLowerCase().startsWith("ru");
+const SECOND_UNIT = RU ? "с" : "s";
 
 const attached = new WeakSet();
 const modalObservers = new WeakMap();
@@ -145,7 +150,7 @@ function attach(target) {
         g.targetTime = targetForSwipe(g.startTime, g.duration, dx, width, elapsed);
         const signed = g.targetTime - g.startTime;
         const sign = signed > .05 ? "+" : signed < -.05 ? "−" : "";
-        showHud(target, `${sign}${Math.abs(signed).toFixed(Math.abs(signed) < 10 ? 1 : 0)} с   ${fmtTime(g.targetTime)} / ${fmtTime(g.duration)}`);
+        showHud(target, `${sign}${Math.abs(signed).toFixed(Math.abs(signed) < 10 ? 1 : 0)} ${SECOND_UNIT}   ${fmtTime(g.targetTime)} / ${fmtTime(g.duration)}`);
     }, { passive:false });
 
     const finish = (event, cancelled = false) => {
