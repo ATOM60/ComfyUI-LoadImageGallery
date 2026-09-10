@@ -8,6 +8,7 @@ const TOUCH_LOCK_PX = 14;
 const TOUCH_DIRECTION_RATIO = 1.2;
 const clickState = new WeakMap();
 const touchGestures = new Map();
+let activePseudoVideo = null;
 
 function ensureTouchStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -18,6 +19,45 @@ video.ovg-inline-video{
     touch-action:pan-y pinch-zoom!important;
     -webkit-user-select:none!important;
     user-select:none!important;
+}
+.ovg-thumb.cig-pseudo-fullscreen{
+    position:fixed!important;
+    top:var(--cig-pseudo-top,0px)!important;
+    right:0!important;
+    bottom:0!important;
+    left:0!important;
+    width:100vw!important;
+    height:calc(100vh - var(--cig-pseudo-top,0px))!important;
+    min-width:0!important;
+    min-height:0!important;
+    max-width:none!important;
+    max-height:none!important;
+    margin:0!important;
+    padding:0!important;
+    border:0!important;
+    border-radius:0!important;
+    box-sizing:border-box!important;
+    background:#000!important;
+    overflow:hidden!important;
+    z-index:2147483000!important;
+}
+.ovg-thumb.cig-pseudo-fullscreen video.ovg-inline-video{
+    position:absolute!important;
+    inset:0!important;
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    max-width:none!important;
+    max-height:none!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+    object-fit:contain!important;
+    background:#000!important;
+}
+body.cig-output-pseudo-fullscreen-open{
+    overflow:hidden!important;
 }
 `;
     document.head.appendChild(style);
@@ -51,7 +91,13 @@ function fullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
+function isPseudoFullscreenVideo(video) {
+    const thumb = video?.closest?.(".ovg-thumb") || null;
+    return !!video && (video.dataset.cigPseudoFullscreen === "1" || thumb?.classList.contains("cig-pseudo-fullscreen"));
+}
+
 function isFullscreenVideo(video) {
+    if (isPseudoFullscreenVideo(video)) return true;
     const fs = fullscreenElement();
     const thumb = video?.closest?.(".ovg-thumb") || null;
     return !!video && (fs === video || fs === thumb || video.webkitDisplayingFullscreen === true);
@@ -117,34 +163,108 @@ function togglePlayback(thumb) {
     else video.pause();
 }
 
-function enterFullscreen(video) {
+function detectTopInset() {
+    const width = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    let best = 0;
+    const candidates = document.querySelectorAll("body *");
+
+    for (const el of candidates) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (el.closest(".ovg-modal") || el.closest(".ovg-speed-control")) continue;
+
+        const rect = el.getBoundingClientRect();
+        if (rect.bottom <= 0 || rect.top > 2) continue;
+        if (rect.height < 20 || rect.height > 96) continue;
+
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden") continue;
+
+        const appRegion = style.webkitAppRegion || style.getPropertyValue("-webkit-app-region");
+        const className = typeof el.className === "string" ? el.className : "";
+        const id = el.id || "";
+        const namedTopBar = /title[-_ ]?bar|top[-_ ]?bar|window[-_ ]?controls|app[-_ ]?header/i.test(`${className} ${id}`);
+        const fixedWide = (style.position === "fixed" || style.position === "sticky") && rect.width >= width * 0.6;
+        const draggable = appRegion === "drag" && rect.width >= Math.min(width * 0.3, 320);
+
+        if (namedTopBar || fixedWide || draggable) {
+            best = Math.max(best, rect.bottom);
+        }
+    }
+
+    return Math.round(clamp(best, 0, 96));
+}
+
+function setPseudoControls(video, visible) {
+    const apply = () => {
+        const control = video?.__cigSpeedControl;
+        if (!control?.isConnected) return;
+        if (visible) {
+            try {
+                if (typeof control.showPopover === "function" && !control.matches(":popover-open")) control.showPopover();
+            } catch (_) {}
+        } else {
+            control.classList.remove("open");
+            try {
+                if (typeof control.hidePopover === "function" && control.matches(":popover-open")) control.hidePopover();
+            } catch (_) {}
+        }
+    };
+    apply();
+    if (visible) {
+        queueMicrotask(apply);
+        setTimeout(apply, 0);
+    }
+}
+
+function enterPseudoFullscreen(video) {
     if (!video) return;
+    const thumb = video.closest(".ovg-thumb");
+    if (!(thumb instanceof HTMLElement)) return;
+
+    if (activePseudoVideo && activePseudoVideo !== video) {
+        exitPseudoFullscreen(activePseudoVideo, false);
+    }
+
+    const topInset = detectTopInset();
+    thumb.style.setProperty("--cig-pseudo-top", `${topInset}px`);
+    thumb.classList.add("cig-pseudo-fullscreen");
+    video.dataset.cigPseudoFullscreen = "1";
+    document.body.classList.add("cig-output-pseudo-fullscreen-open");
+    activePseudoVideo = video;
+    setPseudoControls(video, true);
     try { video.play().catch(() => {}); } catch (_) {}
+}
 
-    try {
-        if (video.requestFullscreen) {
-            const result = video.requestFullscreen();
-            result?.catch?.(() => {});
-            return;
-        }
-    } catch (_) {}
+function exitPseudoFullscreen(video, pause = true) {
+    if (!video) return;
+    const thumb = video.closest(".ovg-thumb");
+    if (pause) {
+        try { video.pause(); } catch (_) {}
+    }
+    if (thumb instanceof HTMLElement) {
+        thumb.classList.remove("cig-pseudo-fullscreen");
+        thumb.style.removeProperty("--cig-pseudo-top");
+    }
+    delete video.dataset.cigPseudoFullscreen;
+    setPseudoControls(video, false);
+    if (activePseudoVideo === video) activePseudoVideo = null;
+    if (!document.querySelector(".ovg-thumb.cig-pseudo-fullscreen")) {
+        document.body.classList.remove("cig-output-pseudo-fullscreen-open");
+    }
+}
 
-    try {
-        if (video.webkitRequestFullscreen) {
-            video.webkitRequestFullscreen();
-            return;
-        }
-    } catch (_) {}
-
-    try {
-        if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-    } catch (_) {}
+function enterFullscreen(video) {
+    enterPseudoFullscreen(video);
 }
 
 function exitFullscreenAndPause(video) {
     if (!video) return;
-    try { video.pause(); } catch (_) {}
+    if (isPseudoFullscreenVideo(video)) {
+        exitPseudoFullscreen(video, true);
+        return;
+    }
 
+    try { video.pause(); } catch (_) {}
     const fs = fullscreenElement();
     if (fs) {
         try {
@@ -161,7 +281,6 @@ function exitFullscreenAndPause(video) {
             }
         } catch (_) {}
     }
-
     try {
         if (video.webkitDisplayingFullscreen && video.webkitExitFullscreen) video.webkitExitFullscreen();
     } catch (_) {}
@@ -347,6 +466,22 @@ function protectContextMenu(menu) {
     menu.addEventListener("pointerdown", event => event.stopPropagation());
 }
 
+function onKeyDown(event) {
+    if (event.key !== "Escape" || !activePseudoVideo) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    exitPseudoFullscreen(activePseudoVideo, true);
+}
+
+function onResize() {
+    const video = activePseudoVideo;
+    if (!video?.isConnected) return;
+    const thumb = video.closest(".ovg-thumb");
+    if (thumb instanceof HTMLElement) {
+        thumb.style.setProperty("--cig-pseudo-top", `${detectTopInset()}px`);
+    }
+}
+
 app.registerExtension({
     name: EXT_NAME,
     setup() {
@@ -357,6 +492,8 @@ app.registerExtension({
         document.addEventListener("pointercancel", onPointerCancel, { capture:true, passive:false });
         document.addEventListener("click", suppressGeneratedClick, true);
         document.addEventListener("dblclick", suppressGeneratedClick, true);
+        document.addEventListener("keydown", onKeyDown, true);
+        window.addEventListener("resize", onResize);
         document.querySelectorAll(".ovg-menu").forEach(protectContextMenu);
 
         const observer = new MutationObserver(records => {
@@ -365,6 +502,12 @@ app.registerExtension({
                     if (!(node instanceof Element)) continue;
                     if (node.classList.contains("ovg-menu")) protectContextMenu(node);
                     node.querySelectorAll?.(".ovg-menu").forEach(protectContextMenu);
+                }
+                for (const node of record.removedNodes) {
+                    if (!(node instanceof Element) || !activePseudoVideo) continue;
+                    if (node === activePseudoVideo || node.contains(activePseudoVideo)) {
+                        exitPseudoFullscreen(activePseudoVideo, false);
+                    }
                 }
             }
         });
