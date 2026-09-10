@@ -13,6 +13,7 @@ from . import output_video_gallery_backend as base
 
 
 _STREAM_LIMIT = asyncio.Semaphore(2)
+_AUDIO_STREAM_LIMIT = asyncio.Semaphore(2)
 _META_CACHE = {}
 
 
@@ -56,6 +57,7 @@ def _probe_video(path: Path):
         duration = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
 
     video_line = next((line for line in text.splitlines() if " Video: " in line), "")
+    audio_line = next((line for line in text.splitlines() if " Audio: " in line), "")
     width = height = 0
     m = re.search(r"(?<!\d)(\d{2,5})x(\d{2,5})(?!\d)", video_line)
     if m:
@@ -72,7 +74,13 @@ def _probe_video(path: Path):
         fps = 30.0
     fps = min(240.0, max(1.0, fps))
 
-    meta = {"duration": duration, "fps": fps, "width": width, "height": height}
+    meta = {
+        "duration": duration,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "has_audio": bool(audio_line),
+    }
     if len(_META_CACHE) > 128:
         _META_CACHE.clear()
     _META_CACHE[key] = meta
@@ -96,6 +104,29 @@ def _ffmpeg_command(path: Path, start: float):
         "-c:v", "mjpeg",
         "-q:v", "5",
         "-f", "image2pipe",
+        "pipe:1",
+    ]
+    return cmd
+
+
+def _ffmpeg_audio_command(path: Path, start: float):
+    ffmpeg = base._find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg is not available")
+
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
+    if start > 0:
+        cmd += ["-ss", f"{start:.4f}"]
+    cmd += [
+        "-i", str(path),
+        "-map", "0:a:0",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-c:a", "libmp3lame",
+        "-b:a", "160k",
+        "-ar", "48000",
+        "-f", "mp3",
         "pipe:1",
     ]
     return cmd
@@ -264,3 +295,63 @@ async def cpu_video_stream(request):
                 await ws.close()
 
     return ws
+
+
+@PromptServer.instance.routes.get("/image-gallery/output/cpu-audio")
+async def cpu_audio_stream(request):
+    try:
+        raw_path = request.query.get("path", "")
+        try:
+            start = max(0.0, float(request.query.get("start", "0") or 0))
+        except Exception:
+            start = 0.0
+        path = base._resolve(raw_path)
+        meta = await asyncio.to_thread(_probe_video, path)
+    except PermissionError as exc:
+        return web.Response(status=403, text=str(exc))
+    except FileNotFoundError:
+        return web.Response(status=404, text="Video not found")
+    except Exception as exc:
+        return web.Response(status=400, text=str(exc))
+
+    if not meta.get("has_audio"):
+        return web.Response(status=204)
+
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "audio/mpeg",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+    await response.prepare(request)
+    proc = None
+
+    try:
+        async with _AUDIO_STREAM_LIMIT:
+            proc = subprocess.Popen(
+                _ffmpeg_audio_command(path, start),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+                creationflags=_creationflags(),
+            )
+            if proc.stdout is None:
+                return response
+
+            while True:
+                chunk = await asyncio.to_thread(proc.stdout.read, 65536)
+                if not chunk:
+                    break
+                await response.write(chunk)
+
+    except (ConnectionResetError, asyncio.CancelledError, RuntimeError):
+        pass
+    finally:
+        await _terminate_process(proc)
+        with contextlib.suppress(Exception):
+            await response.write_eof()
+
+    return response
