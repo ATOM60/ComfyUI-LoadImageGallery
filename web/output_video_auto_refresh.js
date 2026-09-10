@@ -12,9 +12,9 @@ const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
     .toLowerCase().startsWith("ru");
 
 const TEXT = RU ? {
-    help: "Список видео обновляется автоматически: после событий выполнения ComfyUI и дополнительно примерно раз в 10 секунд, пока галерея открыта. Если открыт видеоплеер или есть выделенные видео, обновление откладывается, чтобы не прерывать работу.",
+    help: "Список видео обновляется автоматически: после событий выполнения ComfyUI и дополнительно примерно раз в 10 секунд, пока галерея открыта. Если идёт воспроизведение или есть выделенные видео, обновление откладывается, чтобы не прерывать работу.",
 } : {
-    help: "The video list refreshes automatically after ComfyUI execution events and also about every 10 seconds while the gallery is open. Refresh is deferred while a video player is open or videos are selected, so playback and selection are not interrupted.",
+    help: "The video list refreshes automatically after ComfyUI execution events and also about every 10 seconds while the gallery is open. Refresh is deferred while a video is playing or videos are selected, so playback and selection are not interrupted.",
 };
 
 const modalState = new WeakMap();
@@ -83,11 +83,12 @@ function safeToRefresh(modal) {
     if (modal.querySelector(".ovg-busy")) return false;
     if (modal.querySelector(".ovg-card.marked")) return false;
 
-    // renderGrid() releases every inline player. Never auto-refresh while a GPU
-    // player element exists, even if it is still loading or currently paused.
-    // This prevents a just-created external player from disappearing before its
-    // first play() promise/metadata load settles.
-    if (modal.querySelector("video.ovg-inline-video")) return false;
+    // A paused/idle GPU player must not block live gallery updates. renderGrid()
+    // can safely rebuild the gallery while idle; only active playback is deferred
+    // so a refresh cannot interrupt a video that the user is currently watching.
+    for (const video of modal.querySelectorAll("video.ovg-inline-video")) {
+        if (video instanceof HTMLVideoElement && !video.paused && !video.ended) return false;
+    }
 
     const cpu = modal.querySelector(".ovg-cpu-player");
     if (cpu instanceof HTMLElement && !cpu.classList.contains("paused")) return false;
