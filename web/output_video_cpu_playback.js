@@ -39,7 +39,7 @@ function wsUrl(path,start,rate) {
     u.protocol=u.protocol==="https:"?"wss:":"ws:";
     return u.toString();
 }
-function videoUrl(path) { return apiUrl(`/image-gallery/output/video?path=${encodeURIComponent(path)}&v=${Date.now()}`); }
+function audioUrl(path,start) { return apiUrl(`/image-gallery/output/cpu-audio?path=${encodeURIComponent(path)}&start=${encodeURIComponent(start)}&v=${Date.now()}`); }
 
 function injectStyles() {
     ensureOutputVideoPlayerStyles();
@@ -63,7 +63,7 @@ function visibleCards(state) { return [...state.modal.querySelectorAll(".ovg-gri
 
 function currentTime(state) {
     const a=state.audio;
-    if (a && !a.error && Number.isFinite(a.currentTime) && a.currentTime>=0) return a.currentTime;
+    if (a && state.audioReady && !a.error && Number.isFinite(a.currentTime) && a.currentTime>=0) return (state.audioOffset||0)+a.currentTime;
     if (!state.paused && state.clockStartedAt) return state.clockBase+((performance.now()-state.clockStartedAt)/1000)*state.rate;
     return state.currentTime||0;
 }
@@ -100,6 +100,8 @@ function closeSocket(state) {
 function stopAudio(state) {
     const a=state.audio;
     state.audio=null;
+    state.audioReady=false;
+    state.audioOffset=0;
     if(!a)return;
     try{a.pause();}catch(_){}
     try{a.removeAttribute("src");a.load();}catch(_){}
@@ -146,23 +148,38 @@ function makeAudio(state,start) {
     stopAudio(state);
     const a=new Audio();
     state.audio=a;
-    a.preload="metadata";
+    state.audioReady=false;
+    state.audioOffset=Math.max(0,Number(start)||0);
+    a.preload="auto";
     a.volume=state.volume;
     a.playbackRate=state.rate;
-    a.src=videoUrl(state.currentPath);
+    a.src=audioUrl(state.currentPath,state.audioOffset);
+    let playRequested=false;
     const go=()=>{
-        if(state.audio!==a||state.paused)return;
+        if(state.audio!==a||state.paused||playRequested)return;
+        playRequested=true;
         try{
-            a.currentTime=Math.max(0,start);
             a.playbackRate=state.rate;
             a.volume=state.volume;
         }catch(_){}
-        a.play()?.catch?.(()=>{});
+        const result=a.play();
+        result?.catch?.(()=>{playRequested=false;});
     };
-    a.addEventListener("loadedmetadata",go,{once:true});
+    a.addEventListener("playing",()=>{
+        if(state.audio===a){
+            state.audioReady=true;
+            updateUi(state);
+        }
+    });
     a.addEventListener("canplay",go,{once:true});
-    a.addEventListener("error",()=>{if(state.audio===a)state.audio=null;},{once:true});
-    if(a.readyState>=1)go();
+    a.addEventListener("loadeddata",go,{once:true});
+    a.addEventListener("error",()=>{
+        if(state.audio===a){
+            state.audio=null;
+            state.audioReady=false;
+        }
+    },{once:true});
+    if(a.readyState>=2)go();
 }
 
 function openStream(state,start,{previewPause=false}={}) {
@@ -388,7 +405,7 @@ function installModal(modal) {
     modal.dataset.ovgCpuPlaybackInstalled="1";
     const state={
         modal,grid,toggle:null,cpuOn:loadMode(),
-        shell:null,player:null,canvas:null,hit:null,ws:null,audio:null,
+        shell:null,player:null,canvas:null,hit:null,ws:null,audio:null,audioReady:false,audioOffset:0,
         currentCard:null,mountCard:null,currentPath:"",currentTime:0,duration:0,fps:30,
         rate:loadSharedRate(),volume:loadSharedVolume(),paused:true,clockBase:0,clockStartedAt:0,
         streamGeneration:0,speedRange:null,speedValue:null,lastContextPath:"",
