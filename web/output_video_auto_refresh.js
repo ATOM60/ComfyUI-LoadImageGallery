@@ -5,20 +5,20 @@ const EXT_NAME = "Comfy.ImageGallery.OutputVideoAutoRefresh";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const FALLBACK_CHECK_MS = 10000;
 const TICK_MS = 2000;
-const EVENT_DELAY_MS = 900;
-const MIN_EVENT_CHECK_GAP_MS = 1800;
+const MIN_EVENT_CHECK_GAP_MS = 700;
+const EVENT_RETRY_DELAYS = [500, 1500, 3500, 7000];
 
 const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
     .toLowerCase().startsWith("ru");
 
 const TEXT = RU ? {
-    help: "Список видео обновляется автоматически: после событий выполнения ComfyUI и дополнительно примерно раз в 10 секунд, пока галерея открыта. Если идёт воспроизведение или есть выделенные видео, обновление откладывается, чтобы не прерывать работу.",
+    help: "Список видео обновляется автоматически: состояние фиксируется сразу при открытии галереи, после событий выполнения ComfyUI выполняется несколько повторных проверок и дополнительно примерно раз в 10 секунд, пока галерея открыта. Если идёт воспроизведение или есть выделенные видео, обновление откладывается, чтобы не прерывать работу.",
 } : {
-    help: "The video list refreshes automatically after ComfyUI execution events and also about every 10 seconds while the gallery is open. Refresh is deferred while a video is playing or videos are selected, so playback and selection are not interrupted.",
+    help: "The video list refreshes automatically: the initial state is captured as soon as the gallery opens, several retry checks run after ComfyUI execution events, and a fallback check runs about every 10 seconds while the gallery is open. Refresh is deferred while a video is playing or videos are selected, so playback and selection are not interrupted.",
 };
 
 const modalState = new WeakMap();
-let eventTimer = 0;
+const eventTimers = new Set();
 let tickTimer = 0;
 
 function activeModal() {
@@ -51,6 +51,7 @@ function getState(modal) {
         state.folder = folder;
         state.signature = null;
         state.pendingRefresh = false;
+        state.lastCheck = 0;
     }
     return state;
 }
@@ -83,9 +84,8 @@ function safeToRefresh(modal) {
     if (modal.querySelector(".ovg-busy")) return false;
     if (modal.querySelector(".ovg-card.marked")) return false;
 
-    // A paused/idle GPU player must not block live gallery updates. renderGrid()
-    // can safely rebuild the gallery while idle; only active playback is deferred
-    // so a refresh cannot interrupt a video that the user is currently watching.
+    // A paused/idle GPU player must not block live gallery updates. Only active
+    // playback is deferred so a refresh cannot interrupt the video being watched.
     for (const video of modal.querySelectorAll("video.ovg-inline-video")) {
         if (video instanceof HTMLVideoElement && !video.paused && !video.ended) return false;
     }
@@ -110,13 +110,13 @@ function performRefresh(modal, state) {
     return true;
 }
 
-async function checkActiveModal({ force = false } = {}) {
+async function checkActiveModal({ force = false, baselineOnly = false } = {}) {
     if (document.hidden) return;
     const modal = activeModal();
     if (!modal) return;
     const state = getState(modal);
 
-    if (state.pendingRefresh) {
+    if (!baselineOnly && state.pendingRefresh) {
         if (performRefresh(modal, state)) return;
         return;
     }
@@ -124,7 +124,7 @@ async function checkActiveModal({ force = false } = {}) {
     const now = Date.now();
     if (state.inFlight) return;
     if (!force && now - state.lastCheck < FALLBACK_CHECK_MS) return;
-    if (force && now - state.lastCheck < MIN_EVENT_CHECK_GAP_MS) return;
+    if (force && !baselineOnly && now - state.lastCheck < MIN_EVENT_CHECK_GAP_MS) return;
 
     state.inFlight = true;
     state.lastCheck = now;
@@ -137,7 +137,10 @@ async function checkActiveModal({ force = false } = {}) {
         if (!modal.isConnected || activeModal() !== modal) return;
 
         const signature = listSignature(data?.videos || []);
-        if (state.signature === null) {
+
+        // When a gallery has just opened, capture the current disk state immediately.
+        // This prevents a fast generator from being swallowed as the first baseline.
+        if (baselineOnly || state.signature === null) {
             state.signature = signature;
             return;
         }
@@ -153,6 +156,14 @@ async function checkActiveModal({ force = false } = {}) {
     }
 }
 
+function captureInitialBaseline() {
+    const modal = activeModal();
+    if (!modal || document.hidden) return;
+    const state = getState(modal);
+    if (state.signature !== null || state.inFlight) return;
+    checkActiveModal({ force:true, baselineOnly:true });
+}
+
 function stopTicker() {
     if (!tickTimer) return;
     clearInterval(tickTimer);
@@ -164,17 +175,28 @@ function syncTicker() {
         stopTicker();
         return;
     }
-    if (tickTimer) return;
-    tickTimer = setInterval(() => checkActiveModal(), TICK_MS);
+    if (!tickTimer) tickTimer = setInterval(() => checkActiveModal(), TICK_MS);
 }
 
-function scheduleEventCheck() {
+function clearEventChecks() {
+    for (const timer of eventTimers) clearTimeout(timer);
+    eventTimers.clear();
+}
+
+function scheduleEventChecks() {
     if (!activeModal() || document.hidden) return;
-    clearTimeout(eventTimer);
-    eventTimer = setTimeout(() => {
-        eventTimer = 0;
-        checkActiveModal({ force: true });
-    }, EVENT_DELAY_MS);
+
+    // A number of video nodes report execution completion before the container is
+    // fully flushed/renamed on disk. Retry for a few seconds instead of relying on
+    // one narrowly timed check.
+    clearEventChecks();
+    for (const delay of EVENT_RETRY_DELAYS) {
+        const timer = setTimeout(() => {
+            eventTimers.delete(timer);
+            checkActiveModal({ force:true });
+        }, delay);
+        eventTimers.add(timer);
+    }
 }
 
 function installHelp(root = document) {
@@ -200,30 +222,43 @@ app.registerExtension({
     name: EXT_NAME,
     setup() {
         syncTicker();
+        captureInitialBaseline();
 
         for (const eventName of ["executed", "execution_success"]) {
-            try { api.addEventListener?.(eventName, scheduleEventCheck); }
+            try { api.addEventListener?.(eventName, scheduleEventChecks); }
             catch (_) {}
         }
 
         document.addEventListener("visibilitychange", () => {
             syncTicker();
-            if (!document.hidden && activeModal()) checkActiveModal({ force:true });
+            if (!document.hidden && activeModal()) {
+                captureInitialBaseline();
+                checkActiveModal({ force:true });
+            }
         });
 
         const observer = new MutationObserver(records => {
+            let modalAdded = false;
             let modalChanged = false;
             for (const record of records) {
                 for (const node of record.addedNodes) {
                     if (!(node instanceof Element)) continue;
                     installHelp(node);
-                    if (node.classList.contains("ovg-modal")) modalChanged = true;
+                    if (node.classList.contains("ovg-modal")) {
+                        modalAdded = true;
+                        modalChanged = true;
+                    }
                 }
                 for (const node of record.removedNodes) {
                     if (node instanceof Element && node.classList.contains("ovg-modal")) modalChanged = true;
                 }
             }
             if (modalChanged) syncTicker();
+            if (modalAdded) {
+                // Run before the first 2 s ticker tick so short Fengen generations
+                // cannot become an unnoticed new baseline.
+                queueMicrotask(captureInitialBaseline);
+            }
         });
         observer.observe(document.body, { childList: true, subtree: false });
     },
