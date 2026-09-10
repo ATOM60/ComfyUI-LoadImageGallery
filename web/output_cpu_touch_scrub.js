@@ -1,7 +1,7 @@
 import { app } from "/scripts/app.js";
 
-const EXT_NAME = "Comfy.ImageGallery.OutputCpuTouchScrub";
-const STYLE_ID = "cig-output-cpu-touch-scrub-style";
+const EXT_NAME = "Comfy.ImageGallery.OutputPlayerTouchScrub";
+const STYLE_ID = "cig-output-player-touch-scrub-style";
 const LOCK_PX = 12;
 const DIRECTION_RATIO = 1.15;
 const CLICK_SUPPRESS_MS = 550;
@@ -30,7 +30,7 @@ function ensureStyles() {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-.ovg-cpu-hit{touch-action:pan-y pinch-zoom!important}
+.ovg-shared-hit{touch-action:pan-y pinch-zoom!important}
 .cig-touch-scrub-hud{
     position:absolute;left:50%;top:50%;z-index:2147483646;
     transform:translate(-50%,-50%);pointer-events:none;
@@ -43,7 +43,7 @@ function ensureStyles() {
 }
 
 function hudHost(target) {
-    return target.closest?.(".ovg-cpu-player") || target.parentElement;
+    return target.closest?.(".ovg-shared-player") || target.parentElement;
 }
 
 function showHud(target, text) {
@@ -62,9 +62,9 @@ function hideHud(target) {
     hudHost(target)?.querySelector?.(":scope > .cig-touch-scrub-hud")?.remove();
 }
 
-function cpuInfo(hit) {
-    const player = hit.closest(".ovg-cpu-player");
-    const seek = player?.querySelector?.(".ovg-cpu-seek");
+function playerInfo(hit) {
+    const player = hit.closest(".ovg-shared-player");
+    const seek = player?.querySelector?.(".ovg-shared-seek");
     if (!(seek instanceof HTMLInputElement)) return null;
     const duration = Number(seek.max);
     const current = Number(seek.value);
@@ -101,9 +101,8 @@ function attach(target) {
 
     target.addEventListener("pointerdown", event => {
         if (event.pointerType !== "touch" || !event.isPrimary) return;
-        const info = cpuInfo(target);
+        const info = playerInfo(target);
         if (!info) return;
-
         gesture = {
             id:event.pointerId,
             startX:event.clientX,
@@ -166,7 +165,7 @@ function attach(target) {
         g.targetTime = targetForSwipe(g.startTime, g.duration, dx, width, elapsed);
 
         suppressClickUntil = Date.now() + CLICK_SUPPRESS_MS;
-        cpuInfo(target)?.seek(g.targetTime);
+        playerInfo(target)?.seek(g.targetTime);
     };
 
     target.addEventListener("pointerup", event => finish(event, false), { passive:false });
@@ -181,8 +180,8 @@ function attach(target) {
 
 function scan(root) {
     if (!(root instanceof Element)) return;
-    if (root.classList.contains("ovg-cpu-hit")) attach(root);
-    root.querySelectorAll?.(".ovg-cpu-hit").forEach(attach);
+    if (root.classList.contains("ovg-shared-hit")) attach(root);
+    root.querySelectorAll?.(".ovg-shared-hit").forEach(attach);
 }
 
 function installModal(modal) {
@@ -190,9 +189,7 @@ function installModal(modal) {
     scan(modal);
     const observer = new MutationObserver(records => {
         for (const record of records) {
-            for (const node of record.addedNodes) {
-                if (node instanceof Element) scan(node);
-            }
+            for (const node of record.addedNodes) if (node instanceof Element) scan(node);
         }
     });
     observer.observe(modal, { childList:true, subtree:true });
