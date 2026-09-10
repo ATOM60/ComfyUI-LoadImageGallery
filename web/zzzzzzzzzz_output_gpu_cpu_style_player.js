@@ -6,6 +6,7 @@ const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
 const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const CLICK_DELAY = 260;
+const DOUBLE_CLICK_WINDOW_MS = 360;
 
 const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en").toLowerCase().startsWith("ru");
 const TEXT = RU ? {
@@ -20,6 +21,7 @@ const TEXT = RU ? {
 
 const attached = new Set();
 const modalObservers = new WeakMap();
+const previewTaps = new WeakMap();
 
 function clamp(value,min,max,fallback=min){const n=Number(value);return Number.isFinite(n)?Math.min(max,Math.max(min,n)):fallback;}
 function loadRate(){try{return clamp(localStorage.getItem(RATE_KEY)||1,.25,3,1);}catch(_){return 1;}}
@@ -100,10 +102,57 @@ function attachVideo(video){
     video.addEventListener("loadedmetadata",apply);apply();
 }
 
+function ensureGpuVideo(thumb){
+    if(!(thumb instanceof HTMLElement))return null;
+    let video=thumb.querySelector("video.ovg-inline-video");
+    if(!(video instanceof HTMLVideoElement)){
+        const play=thumb.querySelector(".ovg-play");
+        if(play instanceof HTMLButtonElement)play.click();
+        video=thumb.querySelector("video.ovg-inline-video");
+    }
+    if(video instanceof HTMLVideoElement&&!attached.has(video))attachVideo(video);
+    return video instanceof HTMLVideoElement?video:null;
+}
+
+function isBareGpuPreviewEvent(event){
+    if(event.button!==0)return null;
+    const target=event.target instanceof Element?event.target:null;
+    if(!target||target.closest("button,input,select,.ovg-cpu-player,.ovg-gpu-player"))return null;
+    const thumb=target.closest(".ovg-thumb");
+    if(!(thumb instanceof HTMLElement)||!thumb.closest(".ovg-card"))return null;
+    const modal=thumb.closest(".ovg-modal");
+    if(!(modal instanceof HTMLElement)||modal.dataset.ovgCpuMode==="1")return null;
+    return thumb;
+}
+
+function onPreviewPointerUp(event){
+    const thumb=isBareGpuPreviewEvent(event);if(!thumb)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const now=performance.now();const pending=previewTaps.get(thumb);
+    if(pending&&now-pending.time<=DOUBLE_CLICK_WINDOW_MS){
+        clearTimeout(pending.timer);previewTaps.delete(thumb);
+        const video=ensureGpuVideo(thumb);if(video)enterFullscreen(video);
+        return;
+    }
+    if(pending)clearTimeout(pending.timer);
+    const timer=setTimeout(()=>{
+        previewTaps.delete(thumb);if(!thumb.isConnected)return;
+        const existing=thumb.querySelector("video.ovg-inline-video");
+        if(existing instanceof HTMLVideoElement){if(!attached.has(existing))attachVideo(existing);existing.paused?existing.play().catch(()=>{}):existing.pause();return;}
+        ensureGpuVideo(thumb);
+    },CLICK_DELAY);
+    previewTaps.set(thumb,{time:now,timer});
+}
+
+function blockPreviewGeneratedClicks(event){
+    const thumb=isBareGpuPreviewEvent(event);if(!thumb)return;
+    event.preventDefault();event.stopImmediatePropagation();
+}
+
 function cleanupVideo(video){if(!(video instanceof HTMLVideoElement))return;video.__cigGpuControlsObserver?.disconnect?.();delete video.__cigGpuControlsObserver;const p=playerOf(video);if(fullscreenElement()===p){try{document.exitFullscreen?.();}catch(_){}}delete video.__cigGpuUi;delete video.__cigGpuPlayer;delete video.dataset.cigGpuCpuStyle;attached.delete(video);try{p?.remove();}catch(_){}}
 function scan(root){if(!(root instanceof Element))return;if(root instanceof HTMLVideoElement&&root.classList.contains("ovg-inline-video"))attachVideo(root);root.querySelectorAll?.("video.ovg-inline-video").forEach(attachVideo);}
 function cleanupRemoved(root){if(!(root instanceof Element)||root.isConnected)return;if(root instanceof HTMLVideoElement&&root.classList.contains("ovg-inline-video"))cleanupVideo(root);root.querySelectorAll?.("video.ovg-inline-video").forEach(cleanupVideo);}
 function installModal(modal){if(!(modal instanceof HTMLElement)||modalObservers.has(modal))return;scan(modal);const observer=new MutationObserver(records=>{for(const r of records){for(const n of r.addedNodes)if(n instanceof Element)scan(n);for(const n of r.removedNodes)if(n instanceof Element)cleanupRemoved(n);}});observer.observe(modal,{childList:true,subtree:true});modalObservers.set(modal,observer);}
 function uninstallModal(modal){cleanupRemoved(modal);modalObservers.get(modal)?.disconnect();modalObservers.delete(modal);}
 
-app.registerExtension({name:EXT_NAME,setup(){ensureStyles();document.querySelectorAll(".ovg-modal").forEach(installModal);const observer=new MutationObserver(records=>{for(const r of records){for(const n of r.addedNodes){if(n instanceof HTMLElement&&n.classList.contains("ovg-modal"))installModal(n);}for(const n of r.removedNodes){if(n instanceof HTMLElement&&n.classList.contains("ovg-modal"))uninstallModal(n);}}});observer.observe(document.body,{childList:true,subtree:false});const fs=()=>{for(const video of attached)if(video.isConnected)updateUi(video);};document.addEventListener("fullscreenchange",fs,true);document.addEventListener("webkitfullscreenchange",fs,true);}});
+app.registerExtension({name:EXT_NAME,setup(){ensureStyles();document.querySelectorAll(".ovg-modal").forEach(installModal);const observer=new MutationObserver(records=>{for(const r of records){for(const n of r.addedNodes){if(n instanceof HTMLElement&&n.classList.contains("ovg-modal"))installModal(n);}for(const n of r.removedNodes){if(n instanceof HTMLElement&&n.classList.contains("ovg-modal"))uninstallModal(n);}}});observer.observe(document.body,{childList:true,subtree:false});window.addEventListener("pointerup",onPreviewPointerUp,true);window.addEventListener("click",blockPreviewGeneratedClicks,true);window.addEventListener("dblclick",blockPreviewGeneratedClicks,true);const fs=()=>{for(const video of attached)if(video.isConnected)updateUi(video);};document.addEventListener("fullscreenchange",fs,true);document.addEventListener("webkitfullscreenchange",fs,true);}});
