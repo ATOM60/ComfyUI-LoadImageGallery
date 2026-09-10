@@ -1,7 +1,6 @@
 import { api } from "/scripts/api.js";
 import {
     clamp,
-    createOutputVideoPlayer,
     loadSharedRate,
     loadSharedVolume,
 } from "./output_video_player_shared.js";
@@ -192,13 +191,54 @@ function navigate(state, direction) {
     const next = paths[index];
     if (!next) return;
     state.path = next;
+    if (state.video instanceof HTMLVideoElement) state.video.dataset.cigCurrentPath = next;
     state.currentTime = 0;
     state.duration = 0;
     openStream(state, 0);
 }
 
-export function startCpuFallback({ holder, path, paths, labels, gpuShell = null }) {
-    if (!(holder instanceof HTMLElement) || !path) return null;
+function cpuAdapter(state) {
+    return {
+        getCurrentTime:()=>currentTime(state),
+        getDuration:()=>state.duration,
+        isPaused:()=>state.paused,
+        getVolume:()=>state.volume,
+        getRate:()=>state.rate,
+        play:()=>play(state),
+        pause:()=>pause(state),
+        seek:value=>seek(state,value),
+        setVolume:value=>setVolume(state,value),
+        setRate:value=>setRate(state,value),
+        navigate:direction=>navigate(state,direction),
+    };
+}
+
+function switchShellToCpu(state) {
+    const { shell, video, canvas } = state;
+    if (!shell?.player || !(video instanceof HTMLVideoElement) || !(canvas instanceof HTMLCanvasElement)) return false;
+    if (typeof video.__cigSetPlayerBackend !== "function") return false;
+
+    try { video.pause(); } catch (_) {}
+    video.classList.remove("ovg-shared-surface");
+    video.style.setProperty("display", "none", "important");
+
+    canvas.classList.add("ovg-shared-surface", "ovg-cpu-canvas");
+    shell.player.insertBefore(canvas, shell.player.firstChild);
+    shell.player.dataset.ovgDecoder = "CPU";
+    shell.player.classList.add("ovg-cpu-player", "ovg-auto-cpu-fallback");
+    shell.ui?.hit?.classList.add("ovg-cpu-hit");
+    shell.ui?.seek?.classList.add("ovg-cpu-seek");
+    const badge = shell.player.querySelector(".ovg-shared-badge");
+    if (badge) badge.textContent = "CPU";
+
+    video.__cigSetPlayerBackend(cpuAdapter(state));
+    shell.update?.();
+    return true;
+}
+
+export function startCpuFallback({ holder, path, paths, labels, gpuShell = null, video = null }) {
+    if (!(holder instanceof HTMLElement) || !path || !(video instanceof HTMLVideoElement)) return null;
+    if (!gpuShell?.player?.isConnected) return null;
 
     const previous = holder.__cigAutoCpuFallback;
     if (previous?.shell?.player?.isConnected) return previous;
@@ -208,9 +248,9 @@ export function startCpuFallback({ holder, path, paths, labels, gpuShell = null 
         path,
         paths,
         labels,
-        gpuShell,
-        shell:null,
-        canvas:null,
+        video,
+        shell:gpuShell,
+        canvas:document.createElement("canvas"),
         ws:null,
         audio:null,
         currentTime:0,
@@ -226,37 +266,7 @@ export function startCpuFallback({ holder, path, paths, labels, gpuShell = null 
         observer:null,
     };
 
-    if (gpuShell?.player instanceof HTMLElement) gpuShell.player.style.setProperty("display", "none", "important");
-
-    const canvas = document.createElement("canvas");
-    state.canvas = canvas;
-    const shell = createOutputVideoPlayer({
-        mode:"CPU",
-        surface:canvas,
-        host:holder,
-        labels,
-        aliases:{
-            player:["ovg-cpu-player","ovg-auto-cpu-fallback"],
-            surface:["ovg-cpu-canvas"],
-            hit:["ovg-cpu-hit"],
-            seek:["ovg-cpu-seek"],
-        },
-        adapter:{
-            getCurrentTime:()=>currentTime(state),
-            getDuration:()=>state.duration,
-            isPaused:()=>state.paused,
-            getVolume:()=>state.volume,
-            getRate:()=>state.rate,
-            play:()=>play(state),
-            pause:()=>pause(state),
-            seek:value=>seek(state,value),
-            setVolume:value=>setVolume(state,value),
-            setRate:value=>setRate(state,value),
-            navigate:direction=>navigate(state,direction),
-        },
-    });
-    state.shell = shell;
-    shell.player.dataset.ovgAutoCpuFallback = "1";
+    if (!switchShellToCpu(state)) return null;
     holder.__cigAutoCpuFallback = state;
 
     const grid = holder.closest(".ovg-grid");
@@ -272,9 +282,7 @@ export function startCpuFallback({ holder, path, paths, labels, gpuShell = null 
         stopAudio(state);
         state.observer?.disconnect?.();
         state.observer = null;
-        shell.destroy?.();
         if (holder.__cigAutoCpuFallback === state) delete holder.__cigAutoCpuFallback;
-        if (gpuShell?.player instanceof HTMLElement && gpuShell.player.isConnected) gpuShell.player.style.removeProperty("display");
     };
 
     openStream(state, 0);
