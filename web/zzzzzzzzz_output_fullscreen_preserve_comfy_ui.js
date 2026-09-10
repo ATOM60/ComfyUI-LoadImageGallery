@@ -16,19 +16,15 @@ function visibleRect(el) {
     return rect;
 }
 
-function computeInsets() {
-    const w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+function computeTopInset() {
     let top = 0;
-    let left = 0;
-    let right = 0;
-
-    const topSelectors = [
+    const selectors = [
         '[data-testid="topbar-workflow-tabs"]',
         '[data-testid="top-menu-actionbars"]',
         '.workflow-tabs-container',
     ];
 
-    for (const selector of topSelectors) {
+    for (const selector of selectors) {
         document.querySelectorAll(selector).forEach(el => {
             const r = visibleRect(el);
             if (!r || r.top > 4 || r.bottom <= 0) return;
@@ -36,30 +32,18 @@ function computeInsets() {
         });
     }
 
-    document.querySelectorAll('.side-tool-bar-container').forEach(el => {
-        const r = visibleRect(el);
-        if (!r) return;
-        if (r.left <= 4) left = Math.max(left, r.right);
-        if (r.right >= w - 4) right = Math.max(right, w - r.left);
-    });
-
-    return {
-        top: Math.min(120, Math.max(0, top)),
-        left: Math.min(120, Math.max(0, left)),
-        right: Math.min(120, Math.max(0, right)),
-    };
+    return Math.min(120, Math.max(0, top));
 }
 
-function applyInsets() {
+function applyLayout() {
     const thumb = document.querySelector('.ovg-thumb.cig-pseudo-fullscreen');
     if (!(thumb instanceof HTMLElement)) return;
-    const { top, left, right } = computeInsets();
-    thumb.style.setProperty('--cig-pseudo-top', px(top));
-    thumb.style.setProperty('--cig-pseudo-left', px(left));
-    thumb.style.setProperty('--cig-pseudo-right', px(right));
+    thumb.style.setProperty('--cig-pseudo-top', px(computeTopInset()));
+    thumb.style.removeProperty('--cig-pseudo-left');
+    thumb.style.removeProperty('--cig-pseudo-right');
 }
 
-function clearInsets() {
+function clearLayout() {
     document.querySelectorAll('.ovg-thumb').forEach(el => {
         if (!(el instanceof HTMLElement)) return;
         el.style.removeProperty('--cig-pseudo-left');
@@ -102,18 +86,34 @@ body.cig-output-pseudo-fullscreen-open .ovg-thumb.cig-pseudo-fullscreen button{
     visibility:visible!important;
     pointer-events:auto!important;
 }
+
+/* Video uses the entire screen width. ComfyUI controls are overlaid on top. */
 body.cig-output-pseudo-fullscreen-open .ovg-thumb.cig-pseudo-fullscreen{
-    left:var(--cig-pseudo-left,0px)!important;
-    right:var(--cig-pseudo-right,0px)!important;
-    width:auto!important;
+    left:0!important;
+    right:0!important;
+    width:100vw!important;
     height:calc(100vh - var(--cig-pseudo-top,0px))!important;
 }
+
+/* Keep current ComfyUI chrome above the fullscreen video instead of reserving
+   horizontal space for it. */
 body.cig-output-pseudo-fullscreen-open .side-tool-bar-container,
 body.cig-output-pseudo-fullscreen-open [data-testid="topbar-workflow-tabs"],
-body.cig-output-pseudo-fullscreen-open [data-testid="top-menu-actionbars"]{
+body.cig-output-pseudo-fullscreen-open [data-testid="top-menu-actionbars"],
+body.cig-output-pseudo-fullscreen-open .workflow-tabs-container{
     visibility:visible!important;
     opacity:1!important;
     pointer-events:auto!important;
+    position:relative!important;
+    z-index:2147483600!important;
+}
+body.cig-output-pseudo-fullscreen-open *:has(> .side-tool-bar-container),
+body.cig-output-pseudo-fullscreen-open *:has(> [data-testid="topbar-workflow-tabs"]),
+body.cig-output-pseudo-fullscreen-open *:has(> [data-testid="top-menu-actionbars"]),
+body.cig-output-pseudo-fullscreen-open *:has(> .workflow-tabs-container){
+    position:relative!important;
+    z-index:2147483590!important;
+    overflow:visible!important;
 }
 `;
     document.head.appendChild(style);
@@ -121,11 +121,11 @@ body.cig-output-pseudo-fullscreen-open [data-testid="top-menu-actionbars"]{
 
 function sync() {
     if (document.body.classList.contains('cig-output-pseudo-fullscreen-open')) {
-        requestAnimationFrame(applyInsets);
-        setTimeout(applyInsets, 50);
-        setTimeout(applyInsets, 180);
+        requestAnimationFrame(applyLayout);
+        setTimeout(applyLayout, 50);
+        setTimeout(applyLayout, 180);
     } else {
-        clearInsets();
+        clearLayout();
     }
 }
 
