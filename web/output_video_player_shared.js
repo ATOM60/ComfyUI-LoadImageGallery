@@ -4,6 +4,7 @@ const STYLE_ID = "cig-output-video-player-shared-style";
 export const PLAYER_CLICK_DELAY = 260;
 export const PLAYER_DOUBLE_CLICK_WINDOW_MS = 360;
 const FULLSCREEN_UI_HIDE_DELAY = 1800;
+const CPU_UI_TICK_MS = 200;
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
 const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
 
@@ -183,12 +184,19 @@ export function createOutputVideoPlayer({
     addAliases(ui.speedRange, aliases.speedRange);
 
     let uiHideTimer = 0;
+    let progressTimer = 0;
     let lastPaused = null;
 
     const clearUiHideTimer = () => {
         if (!uiHideTimer) return;
         clearTimeout(uiHideTimer);
         uiHideTimer = 0;
+    };
+
+    const clearProgressTimer = () => {
+        if (!progressTimer) return;
+        clearTimeout(progressTimer);
+        progressTimer = 0;
     };
 
     const keepFullscreenUiVisible = () => {
@@ -223,8 +231,24 @@ export function createOutputVideoPlayer({
     player.addEventListener("touchstart", onFullscreenActivity, { capture:true, passive:true });
     document.addEventListener("keydown", onFullscreenKeyActivity, true);
 
+    const syncProgressTimer = paused => {
+        const needsPolling = !paused && player.dataset.ovgDecoder === "CPU" && !document.hidden;
+        if (!needsPolling) {
+            clearProgressTimer();
+            return;
+        }
+        if (progressTimer) return;
+        progressTimer = setTimeout(() => {
+            progressTimer = 0;
+            if (player.isConnected) update();
+        }, CPU_UI_TICK_MS);
+    };
+
     const update = () => {
-        if (!player.isConnected && !player.parentNode) return;
+        if (!player.isConnected && !player.parentNode) {
+            clearProgressTimer();
+            return;
+        }
         const paused = !!call(adapter, "isPaused");
         const current = Math.max(0, Number(call(adapter, "getCurrentTime")) || 0);
         const duration = Math.max(0, Number(call(adapter, "getDuration")) || 0);
@@ -258,7 +282,14 @@ export function createOutputVideoPlayer({
         const fs = fullscreenElement() === player;
         ui.fullscreen.textContent = fs ? "⤢" : "⛶";
         ui.fullscreen.title = fs ? labels.exitFullscreen : labels.fullscreen;
+        syncProgressTimer(paused);
     };
+
+    const onVisibilityChange = () => {
+        if (document.hidden) clearProgressTimer();
+        else update();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const requestFullscreen = () => {
         if (fullscreenElement() === player) return;
@@ -414,23 +445,17 @@ export function createOutputVideoPlayer({
     document.addEventListener("fullscreenchange", onFs);
     document.addEventListener("webkitfullscreenchange", onFs);
 
-    let raf = 0;
-    const tick = () => {
-        if (player.isConnected) update();
-        raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
     update();
 
     const destroy = () => {
         if (clickTimer) clearTimeout(clickTimer);
         clearUiHideTimer();
-        if (raf) cancelAnimationFrame(raf);
+        clearProgressTimer();
         player.removeEventListener("pointermove", onFullscreenActivity, true);
         player.removeEventListener("pointerdown", onFullscreenActivity, true);
         player.removeEventListener("touchstart", onFullscreenActivity, true);
         document.removeEventListener("keydown", onFullscreenKeyActivity, true);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         document.removeEventListener("fullscreenchange", onFs);
         document.removeEventListener("webkitfullscreenchange", onFs);
         ui.speedPanel.classList.remove("open");
