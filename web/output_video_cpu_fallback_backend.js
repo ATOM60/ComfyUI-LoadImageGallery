@@ -17,8 +17,8 @@ function wsUrl(path, start, rate) {
     return url.toString();
 }
 
-function videoUrl(path) {
-    return apiUrl(`/image-gallery/output/video?path=${encodeURIComponent(path)}&v=${Date.now()}`);
+function audioUrl(path, start) {
+    return apiUrl(`/image-gallery/output/cpu-audio?path=${encodeURIComponent(path)}&start=${encodeURIComponent(start)}&v=${Date.now()}`);
 }
 
 function drawFrame(state, bitmap) {
@@ -45,7 +45,7 @@ function drawFrame(state, bitmap) {
 
 function currentTime(state) {
     const audio = state.audio;
-    if (audio && !audio.error && Number.isFinite(audio.currentTime) && audio.currentTime >= 0) return audio.currentTime;
+    if (audio && state.audioReady && !audio.error && Number.isFinite(audio.currentTime) && audio.currentTime >= 0) return (state.audioOffset || 0) + audio.currentTime;
     if (!state.paused && state.clockStartedAt) return state.clockBase + ((performance.now() - state.clockStartedAt) / 1000) * state.rate;
     return state.currentTime || 0;
 }
@@ -62,6 +62,8 @@ function closeSocket(state) {
 function stopAudio(state) {
     const audio = state.audio;
     state.audio = null;
+    state.audioReady = false;
+    state.audioOffset = 0;
     if (!audio) return;
     try { audio.pause(); } catch (_) {}
     try { audio.removeAttribute("src"); audio.load(); } catch (_) {}
@@ -71,23 +73,38 @@ function makeAudio(state, start) {
     stopAudio(state);
     const audio = new Audio();
     state.audio = audio;
-    audio.preload = "metadata";
+    state.audioReady = false;
+    state.audioOffset = Math.max(0, Number(start) || 0);
+    audio.preload = "auto";
     audio.volume = state.volume;
     audio.playbackRate = state.rate;
-    audio.src = videoUrl(state.path);
+    audio.src = audioUrl(state.path, state.audioOffset);
+    let playRequested = false;
     const play = () => {
-        if (state.audio !== audio || state.paused) return;
+        if (state.audio !== audio || state.paused || playRequested) return;
+        playRequested = true;
         try {
-            audio.currentTime = Math.max(0, start);
             audio.playbackRate = state.rate;
             audio.volume = state.volume;
         } catch (_) {}
-        audio.play()?.catch?.(() => {});
+        const result = audio.play();
+        result?.catch?.(() => { playRequested = false; });
     };
-    audio.addEventListener("loadedmetadata", play, { once:true });
+    audio.addEventListener("playing", () => {
+        if (state.audio === audio) {
+            state.audioReady = true;
+            state.shell?.update();
+        }
+    });
     audio.addEventListener("canplay", play, { once:true });
-    audio.addEventListener("error", () => { if (state.audio === audio) state.audio = null; }, { once:true });
-    if (audio.readyState >= 1) play();
+    audio.addEventListener("loadeddata", play, { once:true });
+    audio.addEventListener("error", () => {
+        if (state.audio === audio) {
+            state.audio = null;
+            state.audioReady = false;
+        }
+    }, { once:true });
+    if (audio.readyState >= 2) play();
 }
 
 function openStream(state, start, { previewPause=false } = {}) {
@@ -253,6 +270,8 @@ export function startCpuFallback({ holder, path, paths, labels, gpuShell = null,
         canvas:document.createElement("canvas"),
         ws:null,
         audio:null,
+        audioReady:false,
+        audioOffset:0,
         currentTime:0,
         duration:0,
         fps:30,
