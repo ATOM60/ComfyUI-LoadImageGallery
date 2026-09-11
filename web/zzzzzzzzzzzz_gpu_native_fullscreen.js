@@ -217,6 +217,7 @@ function installNativeFullscreenBehavior(video, shell) {
     };
 
     const isActive = () => fullscreenElement() === shell;
+    const rateEditing = () => shell.dataset.cigNativeRateEditing === "1";
 
     const showUi = () => {
         clearHideTimer();
@@ -225,10 +226,10 @@ function installNativeFullscreenBehavior(video, shell) {
 
     const scheduleHide = () => {
         showUi();
-        if (!isActive() || video.paused || interacting) return;
+        if (!isActive() || video.paused || interacting || rateEditing()) return;
         hideTimer = setTimeout(() => {
             hideTimer = 0;
-            if (!isActive() || video.paused || interacting) return;
+            if (!isActive() || video.paused || interacting || rateEditing()) return;
             setNativeControlsVisible(video, false);
         }, FULLSCREEN_UI_HIDE_DELAY);
     };
@@ -261,7 +262,7 @@ function installNativeFullscreenBehavior(video, shell) {
 
     const onDoubleClick = event => {
         if (!isActive()) return;
-        if (event.target instanceof Element && event.target.closest(".cig-native-prev")) return;
+        if (event.target instanceof Element && event.target.closest("button,input,.cig-native-speed-panel")) return;
         event.preventDefault();
         event.stopPropagation();
         clearHideTimer();
