@@ -2,8 +2,8 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.DefaultNodeColor";
 const NODE_CLASS = "LoadImageGallery";
-const TITLE_COLOR = "#1F7A7A";
-const BODY_COLOR = "#123E3E";
+const TITLE_COLOR = "#2a363b";
+const BODY_COLOR = "#3f5159";
 
 app.registerExtension({
     name: EXT_NAME,
