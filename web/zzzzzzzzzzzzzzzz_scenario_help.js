@@ -2,6 +2,7 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.ScenarioHelp";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
+const PRODUCT_NAME = "Liber Load Image from Gallery and Output Gallery";
 
 function isRu() {
     return String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
@@ -100,6 +101,8 @@ function applyScenarioHelp(root = document) {
         if (!(body instanceof HTMLElement)) continue;
         if (body.dataset.cigScenarioHelp === "1") continue;
         body.dataset.cigScenarioHelp = "1";
+        const title = overlay.querySelector(".ovg-help-head span");
+        if (title instanceof HTMLElement) title.textContent = isRu() ? `${PRODUCT_NAME} — краткая инструкция` : `${PRODUCT_NAME} — quick guide`;
         body.innerHTML = helpHtml();
     }
 }
