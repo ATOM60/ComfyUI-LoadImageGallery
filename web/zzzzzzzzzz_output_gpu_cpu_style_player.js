@@ -11,7 +11,6 @@ import {
 
 const EXT_NAME = "Comfy.ImageGallery.OutputGpuCpuStylePlayer";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
-const GPU_IDLE_RELEASE_MS = 2500;
 
 const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en").toLowerCase().startsWith("ru");
 const TEXT = RU ? {
@@ -33,7 +32,6 @@ function currentPath(video) {
 }
 function videoEndpoint(path) { return `/image-gallery/output/video?path=${encodeURIComponent(path)}`; }
 function thumbEndpoint(path) { return `/image-gallery/output/thumb?path=${encodeURIComponent(path)}`; }
-function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
 
 function galleryPaths(video) {
     const grid=video.closest?.(".ovg-card")?.closest?.(".ovg-grid");
@@ -41,141 +39,6 @@ function galleryPaths(video) {
     return [...grid.querySelectorAll(".ovg-card[data-path]")]
         .map(el=>String(el.dataset.path||""))
         .filter(Boolean);
-}
-
-function gpuBackendActive(video) {
-    if (!(video instanceof HTMLVideoElement) || !video.__cigGpuBackend) return false;
-    try {
-        return typeof video.__cigGetPlayerBackend !== "function" || video.__cigGetPlayerBackend() === video.__cigGpuBackend;
-    } catch (_) {
-        return true;
-    }
-}
-
-function clearGpuIdleRelease(video) {
-    const timer = video?.__cigGpuIdleReleaseTimer;
-    if (timer) clearTimeout(timer);
-    if (video) delete video.__cigGpuIdleReleaseTimer;
-}
-
-function savedGpuState(video) {
-    return video?.__cigGpuResumeState || null;
-}
-
-function suspendGpuVideo(video,{force=false}={}) {
-    if (!(video instanceof HTMLVideoElement) || !attached.has(video) || !gpuBackendActive(video)) return false;
-    if (video.dataset.cigGpuSuspended === "1") return true;
-    const shell = video.__cigGpuShell?.player;
-    if (!force && shell && fullscreenElement() === shell) return false;
-
-    clearGpuIdleRelease(video);
-    const src = String(video.currentSrc || video.getAttribute("src") || video.src || "").trim();
-    if (!src) return false;
-
-    const state = {
-        src,
-        time:Number.isFinite(Number(video.currentTime)) ? Math.max(0,Number(video.currentTime)) : 0,
-        duration:Number.isFinite(Number(video.duration)) ? Math.max(0,Number(video.duration)) : 0,
-        rate:clamp(video.playbackRate,.25,3,loadSharedRate()),
-        volume:clamp(video.volume,0,1,loadSharedVolume()),
-        muted:!!video.muted,
-    };
-    video.__cigGpuResumeState = state;
-    video.dataset.cigGpuSuspended = "1";
-
-    try { video.__cigNativePause?.(); } catch (_) { try { video.pause(); } catch (_) {} }
-    try {
-        video.removeAttribute("src");
-        video.load();
-    } catch (_) {}
-    video.__cigGpuShell?.update?.();
-    return true;
-}
-
-function waitForMetadata(video) {
-    if (video.readyState >= 1) return Promise.resolve();
-    return new Promise((resolve,reject) => {
-        let done = false;
-        const finish = error => {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            video.removeEventListener("loadedmetadata", onLoaded);
-            video.removeEventListener("error", onError);
-            error ? reject(error) : resolve();
-        };
-        const onLoaded = () => finish();
-        const onError = () => finish(new Error("GPU video reload failed"));
-        const timer = setTimeout(() => finish(), 4000);
-        video.addEventListener("loadedmetadata", onLoaded, { once:true });
-        video.addEventListener("error", onError, { once:true });
-    });
-}
-
-async function resumeGpuVideo(video) {
-    if (!(video instanceof HTMLVideoElement)) return;
-    clearGpuIdleRelease(video);
-    const nativePlay = video.__cigNativePlay || HTMLMediaElement.prototype.play.bind(video);
-    if (video.dataset.cigGpuSuspended !== "1") return nativePlay();
-    if (video.__cigGpuResumePromise) return video.__cigGpuResumePromise;
-
-    const state = savedGpuState(video);
-    if (!state?.src) {
-        delete video.dataset.cigGpuSuspended;
-        delete video.__cigGpuResumeState;
-        return nativePlay();
-    }
-
-    const promise = (async() => {
-        delete video.dataset.cigGpuSuspended;
-        try {
-            video.src = state.src;
-            video.defaultPlaybackRate = state.rate;
-            video.playbackRate = state.rate;
-            video.volume = state.volume;
-            video.muted = state.muted;
-            video.load();
-            await waitForMetadata(video);
-            try {
-                const duration = Number(video.duration);
-                const target = Number.isFinite(duration) && duration > 0
-                    ? clamp(state.time,0,Math.max(0,duration-.01),0)
-                    : Math.max(0,state.time||0);
-                if (target > 0) video.currentTime = target;
-            } catch (_) {}
-            delete video.__cigGpuResumeState;
-            return await nativePlay();
-        } catch (error) {
-            video.__cigGpuResumeState = state;
-            video.dataset.cigGpuSuspended = "1";
-            throw error;
-        } finally {
-            delete video.__cigGpuResumePromise;
-        }
-    })();
-    video.__cigGpuResumePromise = promise;
-    return promise;
-}
-
-function scheduleGpuIdleRelease(video,delay=GPU_IDLE_RELEASE_MS) {
-    if (!(video instanceof HTMLVideoElement)) return;
-    clearGpuIdleRelease(video);
-    if (!gpuBackendActive(video) || video.dataset.cigGpuSuspended === "1") return;
-    video.__cigGpuIdleReleaseTimer = setTimeout(() => {
-        delete video.__cigGpuIdleReleaseTimer;
-        if (!attached.has(video) || !gpuBackendActive(video) || !video.paused) return;
-        const shell = video.__cigGpuShell?.player;
-        if (shell && fullscreenElement() === shell) return;
-        suspendGpuVideo(video,{force:true});
-    },Math.max(0,delay));
-}
-
-function releaseOtherGpuDecoders(activeVideo) {
-    for (const other of [...attached]) {
-        if (!(other instanceof HTMLVideoElement) || other === activeVideo || !other.isConnected) continue;
-        if (!gpuBackendActive(other)) continue;
-        suspendGpuVideo(other,{force:true});
-    }
 }
 
 async function navigateGpu(video,dir) {
@@ -187,17 +50,8 @@ async function navigateGpu(video,dir) {
     const path=paths[index];
     if(!path)return;
 
-    clearGpuIdleRelease(video);
-    delete video.__cigGpuResumeState;
-    delete video.dataset.cigGpuSuspended;
     video.dataset.cigCurrentPath=path;
     video.poster=thumbEndpoint(path);
-
-    // Explicitly tear down the previous decoder pipeline before loading the next
-    // file. Directly replacing src can leave Chromium/NVIDIA surfaces alive for
-    // a while when navigating several videos in fullscreen.
-    try { video.__cigNativePause?.(); } catch (_) { try { video.pause(); } catch (_) {} }
-    try { video.removeAttribute("src"); video.load(); } catch (_) {}
     video.src=videoEndpoint(path);
     video.load();
     video.defaultPlaybackRate=loadSharedRate();
@@ -209,42 +63,23 @@ async function navigateGpu(video,dir) {
 
 function createGpuBackend(video) {
     return {
-        getCurrentTime:()=>{
-            const saved=savedGpuState(video);
-            return video.dataset.cigGpuSuspended==="1" ? Number(saved?.time)||0 : Number(video.currentTime)||0;
-        },
-        getDuration:()=>{
-            const saved=savedGpuState(video);
-            return video.dataset.cigGpuSuspended==="1" ? Number(saved?.duration)||0 : Number(video.duration)||0;
-        },
-        isPaused:()=>video.dataset.cigGpuSuspended==="1" || video.paused,
-        getVolume:()=>video.dataset.cigGpuSuspended==="1" ? clamp(savedGpuState(video)?.volume,0,1,loadSharedVolume()) : video.volume,
-        getRate:()=>video.dataset.cigGpuSuspended==="1" ? clamp(savedGpuState(video)?.rate,.25,3,loadSharedRate()) : video.playbackRate,
+        getCurrentTime:()=>Number(video.currentTime)||0,
+        getDuration:()=>Number(video.duration)||0,
+        isPaused:()=>video.paused,
+        getVolume:()=>video.volume,
+        getRate:()=>video.playbackRate,
         play:()=>video.play().catch(()=>{}),
         pause:()=>video.pause(),
-        seek:value=>{
-            if(video.dataset.cigGpuSuspended==="1"){
-                const state=savedGpuState(video);
-                if(state){state.time=clamp(value,0,Math.max(0,Number(state.duration)||value),0);video.__cigGpuShell?.update?.();}
-                return;
-            }
-            try{video.currentTime=clamp(value,0,Math.max(0,Number(video.duration)||value),0);}catch(_){}
-        },
+        seek:value=>{try{video.currentTime=clamp(value,0,Math.max(0,Number(video.duration)||value),0);}catch(_){}},
         setVolume:value=>{
-            const next=clamp(value,0,1,1);
-            const state=savedGpuState(video);
-            if(state)state.volume=next;
-            video.volume=next;
+            video.volume=clamp(value,0,1,1);
             if(video.volume>0&&video.muted)video.muted=false;
         },
         setRate:value=>{
             const rate=clamp(value,.25,3,1);
-            const state=savedGpuState(video);
-            if(state)state.rate=rate;
             video.defaultPlaybackRate=rate;
             video.playbackRate=rate;
         },
-        suspend:()=>suspendGpuVideo(video,{force:true}),
         navigate:dir=>navigateGpu(video,dir),
     };
 }
@@ -266,18 +101,6 @@ function attachVideo(video) {
     video.defaultPlaybackRate=loadSharedRate();
     video.playbackRate=loadSharedRate();
     video.volume=loadSharedVolume();
-
-    // Keep direct calls from the original gallery compatible with decoder
-    // suspension. If a paused video was unloaded, video.play() transparently
-    // restores the same source and playback position first.
-    try {
-        video.__cigNativePlay = video.play.bind(video);
-        video.__cigNativePause = video.pause.bind(video);
-        Object.defineProperty(video,"play",{
-            configurable:true,
-            value:()=>resumeGpuVideo(video),
-        });
-    } catch (_) {}
 
     try{
         video.__cigSpeedControl?.remove?.();
@@ -318,7 +141,6 @@ function attachVideo(video) {
     video.__cigGpuUi=shell.ui;
     video.__cigGpuBackend=gpuBackend;
     video.__cigSetPlayerBackend=backend=>{
-        if(backend&&backend!==gpuBackend)suspendGpuVideo(video,{force:true});
         activeBackend=backend||gpuBackend;
         shell.update();
     };
@@ -338,23 +160,10 @@ function attachVideo(video) {
         video.removeAttribute("controls");
         shell.update();
     };
-    const onPlay=()=>{
-        clearGpuIdleRelease(video);
-        releaseOtherGpuDecoders(video);
-        update();
-    };
-    const onPause=()=>{
-        update();
-        scheduleGpuIdleRelease(video);
-    };
-    for(const type of ["loadedmetadata","durationchange","timeupdate","ratechange","volumechange"]){
+    for(const type of ["loadedmetadata","durationchange","timeupdate","play","pause","ratechange","volumechange"]){
         video.addEventListener(type,update);
     }
-    video.addEventListener("play",onPlay);
-    video.addEventListener("pause",onPause);
     video.__cigGpuUpdate=update;
-    video.__cigGpuOnPlay=onPlay;
-    video.__cigGpuOnPause=onPause;
     update();
 }
 
@@ -406,7 +215,7 @@ function onPreviewPointerUp(event) {
         const existing=thumb.querySelector("video.ovg-inline-video");
         if(existing instanceof HTMLVideoElement){
             if(!attached.has(existing))attachVideo(existing);
-            existing.paused||existing.dataset.cigGpuSuspended==="1"?existing.play().catch(()=>{}):existing.pause();
+            existing.paused?existing.play().catch(()=>{}):existing.pause();
             return;
         }
         ensureGpuVideo(thumb);
@@ -425,21 +234,16 @@ function blockPreviewGeneratedClicks(event) {
 function cleanupVideo(video) {
     if(!(video instanceof HTMLVideoElement))return;
 
-    clearGpuIdleRelease(video);
     video.__cigGpuControlsObserver?.disconnect?.();
     delete video.__cigGpuControlsObserver;
 
     const update=video.__cigGpuUpdate;
     if(update){
-        for(const type of ["loadedmetadata","durationchange","timeupdate","ratechange","volumechange"]){
+        for(const type of ["loadedmetadata","durationchange","timeupdate","play","pause","ratechange","volumechange"]){
             video.removeEventListener(type,update);
         }
     }
-    if(video.__cigGpuOnPlay)video.removeEventListener("play",video.__cigGpuOnPlay);
-    if(video.__cigGpuOnPause)video.removeEventListener("pause",video.__cigGpuOnPause);
     delete video.__cigGpuUpdate;
-    delete video.__cigGpuOnPlay;
-    delete video.__cigGpuOnPause;
 
     const holder=video.closest?.(".ovg-thumb");
     holder?.__cigAutoCpuFallback?.destroy?.();
@@ -451,13 +255,7 @@ function cleanupVideo(video) {
     delete video.__cigGpuBackend;
     delete video.__cigSetPlayerBackend;
     delete video.__cigGetPlayerBackend;
-    delete video.__cigGpuResumeState;
-    delete video.__cigGpuResumePromise;
-    delete video.__cigNativePlay;
-    delete video.__cigNativePause;
-    delete video.dataset.cigGpuSuspended;
     delete video.dataset.cigGpuCpuStyle;
-    try { delete video.play; } catch (_) {}
     attached.delete(video);
 }
 
@@ -492,13 +290,6 @@ function uninstallModal(modal) {
     modalObservers.delete(modal);
 }
 
-function onFullscreenChange() {
-    for(const video of [...attached]){
-        if(!(video instanceof HTMLVideoElement)||!video.isConnected)continue;
-        if(video.paused&&video.dataset.cigGpuSuspended!=="1")scheduleGpuIdleRelease(video,350);
-    }
-}
-
 app.registerExtension({
     name:EXT_NAME,
     setup(){
@@ -516,9 +307,6 @@ app.registerExtension({
             }
         });
         observer.observe(document.body,{childList:true,subtree:false});
-
-        document.addEventListener("fullscreenchange",onFullscreenChange,true);
-        document.addEventListener("webkitfullscreenchange",onFullscreenChange,true);
 
         // Bare GPU previews use the same shared fullscreen as the in-player button.
         window.addEventListener("pointerup",onPreviewPointerUp,true);
