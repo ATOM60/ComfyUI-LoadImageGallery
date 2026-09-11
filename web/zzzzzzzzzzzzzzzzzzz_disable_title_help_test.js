@@ -1,13 +1,13 @@
 import { app } from "/scripts/app.js";
 
-const EXT_NAME = "Comfy.ImageGallery.DisableTitleForegroundPermanent";
+const EXT_NAME = "Comfy.ImageGallery.DisableTitleForegroundTest";
 const NODE_CLASS = "LoadImageGallery";
 
 function suppressTitleForeground(node) {
     if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return;
     if (!node.__cigTitleHelpInstalled) return;
-    if (!node.__cigTitleForegroundPermanentOriginal) {
-        node.__cigTitleForegroundPermanentOriginal = node.onDrawForeground || null;
+    if (!node.__cigTitleForegroundTestOriginal) {
+        node.__cigTitleForegroundTestOriginal = node.onDrawForeground || null;
     }
     node.onDrawForeground = null;
     node.setDirtyCanvas?.(true, true);
