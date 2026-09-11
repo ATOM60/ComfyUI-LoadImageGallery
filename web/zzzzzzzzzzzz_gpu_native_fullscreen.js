@@ -3,6 +3,7 @@ import { app } from "/scripts/app.js";
 const EXT_NAME = "Comfy.ImageGallery.GpuNativeFullscreen";
 const STYLE_ID = "cig-gpu-native-fullscreen-style";
 const NATIVE_FS_FLAG = "cigNativeFullscreen";
+const FULLSCREEN_UI_HIDE_DELAY = 1800;
 
 function ensureStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -25,6 +26,10 @@ video.ovg-inline-video[data-cig-native-fullscreen="1"]:-webkit-full-screen {
     background:#000!important;
     pointer-events:auto!important;
 }
+video.ovg-inline-video[data-cig-native-fullscreen="1"].cig-native-ui-hidden:fullscreen,
+video.ovg-inline-video[data-cig-native-fullscreen="1"].cig-native-ui-hidden:-webkit-full-screen {
+    cursor:none!important;
+}
 `;
     document.head.appendChild(style);
 }
@@ -43,6 +48,111 @@ function gpuVideoFromWrapper(el) {
     return video instanceof HTMLVideoElement ? video : null;
 }
 
+function setNativeControlsVisible(video, visible) {
+    if (!(video instanceof HTMLVideoElement)) return;
+    video.classList.toggle("cig-native-ui-hidden", !visible);
+    try {
+        video.controls = !!visible;
+        if (visible) video.setAttribute("controls", "");
+        else video.removeAttribute("controls");
+    } catch (_) {}
+}
+
+function installNativeFullscreenBehavior(video) {
+    if (!(video instanceof HTMLVideoElement)) return;
+    try { video.__cigNativeFsCleanup?.(); } catch (_) {}
+
+    let hideTimer = 0;
+    let interacting = false;
+
+    const clearHideTimer = () => {
+        if (!hideTimer) return;
+        clearTimeout(hideTimer);
+        hideTimer = 0;
+    };
+
+    const isActive = () => fullscreenElement() === video || video.webkitDisplayingFullscreen === true;
+
+    const showUi = () => {
+        clearHideTimer();
+        setNativeControlsVisible(video, true);
+    };
+
+    const scheduleHide = () => {
+        showUi();
+        if (!isActive() || video.paused || interacting) return;
+        hideTimer = setTimeout(() => {
+            hideTimer = 0;
+            if (!isActive() || video.paused || interacting) return;
+            setNativeControlsVisible(video, false);
+        }, FULLSCREEN_UI_HIDE_DELAY);
+    };
+
+    const onActivity = () => {
+        if (isActive()) scheduleHide();
+    };
+
+    const onPointerDown = () => {
+        if (!isActive()) return;
+        interacting = true;
+        showUi();
+    };
+
+    const onPointerUp = () => {
+        if (!isActive()) return;
+        interacting = false;
+        scheduleHide();
+    };
+
+    const onPause = () => {
+        if (!isActive()) return;
+        interacting = false;
+        showUi();
+    };
+
+    const onPlay = () => {
+        if (isActive()) scheduleHide();
+    };
+
+    const onDoubleClick = event => {
+        if (!isActive()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        clearHideTimer();
+        try {
+            const result = document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+            result?.catch?.(() => {});
+        } catch (_) {}
+    };
+
+    video.addEventListener("pointermove", onActivity, true);
+    video.addEventListener("pointerdown", onPointerDown, true);
+    video.addEventListener("pointerup", onPointerUp, true);
+    video.addEventListener("pointercancel", onPointerUp, true);
+    video.addEventListener("touchstart", onActivity, { capture:true, passive:true });
+    video.addEventListener("pause", onPause, true);
+    video.addEventListener("play", onPlay, true);
+    video.addEventListener("dblclick", onDoubleClick, true);
+    document.addEventListener("keydown", onActivity, true);
+
+    video.__cigNativeFsCleanup = () => {
+        clearHideTimer();
+        video.removeEventListener("pointermove", onActivity, true);
+        video.removeEventListener("pointerdown", onPointerDown, true);
+        video.removeEventListener("pointerup", onPointerUp, true);
+        video.removeEventListener("pointercancel", onPointerUp, true);
+        video.removeEventListener("touchstart", onActivity, true);
+        video.removeEventListener("pause", onPause, true);
+        video.removeEventListener("play", onPlay, true);
+        video.removeEventListener("dblclick", onDoubleClick, true);
+        document.removeEventListener("keydown", onActivity, true);
+        delete video.__cigNativeFsCleanup;
+    };
+
+    showUi();
+    if (!video.paused) scheduleHide();
+}
+
 function prepareNativeFullscreen(video) {
     if (!(video instanceof HTMLVideoElement)) return;
     try {
@@ -50,15 +160,15 @@ function prepareNativeFullscreen(video) {
         delete video.__cigGpuControlsObserver;
     } catch (_) {}
     video.dataset[NATIVE_FS_FLAG] = "1";
-    try {
-        video.controls = true;
-        video.setAttribute("controls", "");
-    } catch (_) {}
+    setNativeControlsVisible(video, true);
+    installNativeFullscreenBehavior(video);
 }
 
 function restoreCustomPlayer(video) {
     if (!(video instanceof HTMLVideoElement)) return;
+    try { video.__cigNativeFsCleanup?.(); } catch (_) {}
     delete video.dataset[NATIVE_FS_FLAG];
+    video.classList.remove("cig-native-ui-hidden");
     try {
         video.controls = false;
         video.removeAttribute("controls");
