@@ -58,6 +58,16 @@ function ensureStyles() {
     background:#000!important;
     pointer-events:auto!important;
 }
+.cig-fresh-video-stage {
+    position:fixed!important;
+    left:-10000px!important;
+    top:-10000px!important;
+    width:2px!important;
+    height:2px!important;
+    overflow:hidden!important;
+    opacity:0!important;
+    pointer-events:none!important;
+}
 `;
     document.head.appendChild(style);
 }
@@ -99,9 +109,9 @@ async function playFresh(shell, root, path) {
         sessions.add(session);
     }
 
-    if (session.fresh) releaseFresh(session.fresh);
-    try { root.pause(); } catch (_) {}
-    root.style.setProperty("display", "none", "important");
+    const previousFresh = session.fresh;
+    const stage = document.createElement("div");
+    stage.className = "cig-fresh-video-stage";
 
     const fresh = document.createElement("video");
     fresh.className = "cig-native-fresh-video";
@@ -116,16 +126,29 @@ async function playFresh(shell, root, path) {
     fresh.volume = loadVolume();
     fresh.dataset.cigCurrentPath = path;
 
-    session.fresh = fresh;
-    session.path = path;
-    shell.insertBefore(fresh, shell.firstChild);
+    stage.appendChild(fresh);
+    document.body.appendChild(stage);
 
     try {
         await fresh.play();
-        session.wasPlaying = true;
-    } catch (_) {
-        session.wasPlaying = false;
+    } catch (error) {
+        console.warn("[ImageGallery] fresh fullscreen video failed to start", path, error);
+        releaseFresh(fresh);
+        stage.remove();
+        return;
     }
+
+    if (previousFresh) releaseFresh(previousFresh);
+    else {
+        try { root.pause(); } catch (_) {}
+        root.style.setProperty("display", "none", "important");
+    }
+
+    session.fresh = fresh;
+    session.path = path;
+    session.wasPlaying = true;
+    shell.insertBefore(fresh, shell.firstChild);
+    stage.remove();
 }
 
 async function navigate(shell, direction) {
