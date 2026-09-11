@@ -1,4 +1,4 @@
-# ComfyUI Load Image Gallery
+# Liber Load Image from Gallery and Output Gallery
 
 Image and video gallery for ComfyUI with fast browsing, selection, playback, fullscreen controls and external-folder support.
 
@@ -10,7 +10,7 @@ Image and video gallery for ComfyUI with fast browsing, selection, playback, ful
 
 ## Быстрый старт
 
-Добавьте ноду **Load Image Gallery** в workflow.
+Добавьте ноду **Liber Load Image from Gallery and Output Gallery** в workflow.
 
 В ноде доступны:
 
@@ -141,7 +141,7 @@ Image and video gallery for ComfyUI with fast browsing, selection, playback, ful
 
 ## Quick start
 
-Add the **Load Image Gallery** node to your workflow.
+Add the **Liber Load Image from Gallery and Output Gallery** node to your workflow.
 
 The node provides:
 
@@ -278,7 +278,7 @@ git clone https://github.com/ATOM60/ComfyUI-LoadImageGallery.git
 
 Restart ComfyUI / перезапустите ComfyUI.
 
-Node name / название ноды: **Load Image Gallery**.
+Node name / название ноды: **Liber Load Image from Gallery and Output Gallery**.
 
 # Updating / Обновление
 
