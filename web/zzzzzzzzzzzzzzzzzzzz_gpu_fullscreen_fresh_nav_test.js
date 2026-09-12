@@ -60,13 +60,14 @@ function ensureStyles() {
 }
 .cig-fresh-video-stage {
     position:fixed!important;
-    left:-10000px!important;
-    top:-10000px!important;
+    left:0!important;
+    bottom:0!important;
     width:2px!important;
     height:2px!important;
     overflow:hidden!important;
-    opacity:0!important;
+    opacity:.01!important;
     pointer-events:none!important;
+    z-index:-1!important;
 }
 `;
     document.head.appendChild(style);
@@ -102,6 +103,29 @@ function releaseFresh(video) {
     try { video.remove(); } catch (_) {}
 }
 
+function waitForVideoReady(video, timeoutMs = 5000) {
+    return new Promise(resolve => {
+        if (!(video instanceof HTMLVideoElement)) { resolve(false); return; }
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) { resolve(true); return; }
+        let done = false;
+        const finish = ok => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            video.removeEventListener("loadeddata", onReady);
+            video.removeEventListener("canplay", onReady);
+            video.removeEventListener("error", onError);
+            resolve(ok);
+        };
+        const onReady = () => finish(true);
+        const onError = () => finish(false);
+        const timer = setTimeout(() => finish(video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA), timeoutMs);
+        video.addEventListener("loadeddata", onReady, { once:true });
+        video.addEventListener("canplay", onReady, { once:true });
+        video.addEventListener("error", onError, { once:true });
+    });
+}
+
 async function playFresh(shell, root, path) {
     let session = currentSession(shell);
     if (!session) {
@@ -128,15 +152,9 @@ async function playFresh(shell, root, path) {
 
     stage.appendChild(fresh);
     document.body.appendChild(stage);
-
-    try {
-        await fresh.play();
-    } catch (error) {
-        console.warn("[ImageGallery] fresh fullscreen video failed to start", path, error);
-        releaseFresh(fresh);
-        stage.remove();
-        return;
-    }
+    try { fresh.load(); } catch (_) {}
+    const ready = await waitForVideoReady(fresh);
+    if (!ready) console.warn("[ImageGallery] fresh fullscreen video did not preload cleanly", path, fresh.error);
 
     if (previousFresh) releaseFresh(previousFresh);
     else {
@@ -146,9 +164,16 @@ async function playFresh(shell, root, path) {
 
     session.fresh = fresh;
     session.path = path;
-    session.wasPlaying = true;
+    session.wasPlaying = false;
     shell.insertBefore(fresh, shell.firstChild);
     stage.remove();
+
+    try {
+        await fresh.play();
+        session.wasPlaying = true;
+    } catch (error) {
+        console.warn("[ImageGallery] fresh fullscreen video failed after preload", path, error, fresh.error);
+    }
 }
 
 async function navigate(shell, direction) {
@@ -173,7 +198,7 @@ function onClick(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
     event.stopPropagation();
-    navigate(shell, button.classList.contains("cig-native-next") ? 1 : -1).catch(() => {});
+    navigate(shell, button.classList.contains("cig-native-next") ? 1 : -1).catch(error => console.warn("[ImageGallery] fullscreen navigation failed", error));
 }
 
 function onSpeedInput(event) {
