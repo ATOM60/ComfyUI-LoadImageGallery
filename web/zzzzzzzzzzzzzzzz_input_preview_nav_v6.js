@@ -245,7 +245,7 @@ function drawArrowOverlay(widget, node, ctx, options) {
             ctx.fill();
             ctx.stroke();
             ctx.fillStyle = "#fff";
-            ctx.font = `700 ${Math.max(34, Math.min(54, rect.w * 0.9))}px Arial,sans-serif`;
+            ctx.font = `700 ${Math.max(52, Math.min(72, rect.w * 1.35))}px Arial,sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 - 2);
