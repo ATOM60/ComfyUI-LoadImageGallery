@@ -313,12 +313,26 @@ function patchPreviewWidget(node) {
 
 function install(node) {
     if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return;
-    const tryPatch = () => patchPreviewWidget(node);
-    if (tryPatch()) return;
-    queueMicrotask(tryPatch);
-    requestAnimationFrame(tryPatch);
-    setTimeout(tryPatch, 80);
-    setTimeout(tryPatch, 300);
+    if (node.__cigNavV5InstallPending) return;
+
+    node.__cigNavV5InstallPending = true;
+    const started = performance.now();
+    const tryPatch = () => {
+        if (patchPreviewWidget(node)) {
+            node.__cigNavV5InstallPending = false;
+            return;
+        }
+
+        const elapsed = performance.now() - started;
+        if (elapsed >= 10000) {
+            node.__cigNavV5InstallPending = false;
+            return;
+        }
+
+        setTimeout(tryPatch, elapsed < 1000 ? 50 : 200);
+    };
+
+    tryPatch();
 }
 
 app.registerExtension({
