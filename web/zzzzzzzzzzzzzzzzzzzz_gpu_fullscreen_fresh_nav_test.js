@@ -5,6 +5,7 @@ const STYLE_ID = "cig-gpu-fullscreen-fresh-nav-test-style";
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
 const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
 const sessions = new Set();
+let switchSeq = 0;
 
 function clamp(value, min, max, fallback = min) {
     const n = Number(value);
@@ -35,6 +36,17 @@ function videoEndpoint(path) {
 
 function thumbEndpoint(path) {
     return `/image-gallery/output/thumb?path=${encodeURIComponent(path)}`;
+}
+
+function notify(message, severity = "info") {
+    try {
+        app.extensionManager?.toast?.add({
+            severity,
+            summary:"GPU video test",
+            detail:String(message),
+            life:6500,
+        });
+    } catch (_) {}
 }
 
 function ensureStyles() {
@@ -103,37 +115,22 @@ function releaseFresh(video) {
     try { video.remove(); } catch (_) {}
 }
 
-function waitForVideoReady(video, timeoutMs = 5000) {
-    return new Promise(resolve => {
-        if (!(video instanceof HTMLVideoElement)) { resolve(false); return; }
-        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) { resolve(true); return; }
-        let done = false;
-        const finish = ok => {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            video.removeEventListener("loadeddata", onReady);
-            video.removeEventListener("canplay", onReady);
-            video.removeEventListener("error", onError);
-            resolve(ok);
-        };
-        const onReady = () => finish(true);
-        const onError = () => finish(false);
-        const timer = setTimeout(() => finish(video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA), timeoutMs);
-        video.addEventListener("loadeddata", onReady, { once:true });
-        video.addEventListener("canplay", onReady, { once:true });
-        video.addEventListener("error", onError, { once:true });
-    });
+function mediaDiag(video) {
+    const err = video?.error;
+    return `ready=${video?.readyState ?? "?"}, network=${video?.networkState ?? "?"}, paused=${video?.paused ?? "?"}, time=${Number(video?.currentTime || 0).toFixed(2)}, mediaError=${err?.code || 0}${err?.message ? ` ${err.message}` : ""}`;
 }
 
-async function playFresh(shell, root, path) {
+function startFresh(shell, root, path) {
     let session = currentSession(shell);
     if (!session) {
-        session = { shell, root, fresh:null, path:"", wasPlaying:false };
+        session = { shell, root, fresh:null, path:"", pending:null };
         sessions.add(session);
     }
 
     const previousFresh = session.fresh;
+    const seq = ++switchSeq;
+    session.pending = seq;
+
     const stage = document.createElement("div");
     stage.className = "cig-fresh-video-stage";
 
@@ -152,31 +149,61 @@ async function playFresh(shell, root, path) {
 
     stage.appendChild(fresh);
     document.body.appendChild(stage);
-    try { fresh.load(); } catch (_) {}
-    const ready = await waitForVideoReady(fresh);
-    if (!ready) console.warn("[ImageGallery] fresh fullscreen video did not preload cleanly", path, fresh.error);
 
-    if (previousFresh) releaseFresh(previousFresh);
-    else {
-        try { root.pause(); } catch (_) {}
-        root.style.setProperty("display", "none", "important");
-    }
+    let settled = false;
+    const cleanupPending = () => {
+        if (settled) return false;
+        settled = true;
+        clearTimeout(timeout);
+        return true;
+    };
 
-    session.fresh = fresh;
-    session.path = path;
-    session.wasPlaying = false;
-    shell.insertBefore(fresh, shell.firstChild);
-    stage.remove();
+    const commit = () => {
+        if (!cleanupPending()) return;
+        if (session.pending !== seq || fullscreenElement() !== shell) {
+            releaseFresh(fresh);
+            stage.remove();
+            return;
+        }
+        if (previousFresh) releaseFresh(previousFresh);
+        else {
+            try { root.pause(); } catch (_) {}
+            root.style.setProperty("display", "none", "important");
+        }
+        session.fresh = fresh;
+        session.path = path;
+        session.pending = null;
+        shell.insertBefore(fresh, shell.firstChild);
+        stage.remove();
+    };
 
+    const fail = error => {
+        if (!cleanupPending()) return;
+        if (session.pending === seq) session.pending = null;
+        const name = error?.name || "play failed";
+        const message = error?.message ? `: ${error.message}` : "";
+        notify(`${name}${message} · ${mediaDiag(fresh)}`, "error");
+        console.warn("[ImageGallery] synchronous switched video play failed", path, error, fresh.error, mediaDiag(fresh));
+        releaseFresh(fresh);
+        stage.remove();
+    };
+
+    const timeout = setTimeout(() => {
+        if (!settled) fail(new Error(`play timeout · ${mediaDiag(fresh)}`));
+    }, 6000);
+
+    // Important: call play() synchronously in the trusted navigation click stack.
+    // Waiting for loadeddata/canplay first loses transient user activation in Chromium.
     try {
-        await fresh.play();
-        session.wasPlaying = true;
+        const playResult = fresh.play();
+        if (playResult && typeof playResult.then === "function") playResult.then(commit).catch(fail);
+        else commit();
     } catch (error) {
-        console.warn("[ImageGallery] fresh fullscreen video failed after preload", path, error, fresh.error);
+        fail(error);
     }
 }
 
-async function navigate(shell, direction) {
+function navigate(shell, direction) {
     const root = rootVideo(shell);
     if (!root) return;
     const paths = galleryPaths(shell);
@@ -186,7 +213,7 @@ async function navigate(shell, direction) {
     index = (index + direction + paths.length) % paths.length;
     const path = paths[index];
     if (!path) return;
-    await playFresh(shell, root, path);
+    startFresh(shell, root, path);
 }
 
 function onClick(event) {
@@ -198,7 +225,7 @@ function onClick(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
     event.stopPropagation();
-    navigate(shell, button.classList.contains("cig-native-next") ? 1 : -1).catch(error => console.warn("[ImageGallery] fullscreen navigation failed", error));
+    navigate(shell, button.classList.contains("cig-native-next") ? 1 : -1);
 }
 
 function onSpeedInput(event) {
@@ -216,9 +243,7 @@ function cleanupEndedSessions() {
     const fs = fullscreenElement();
     for (const session of [...sessions]) {
         if (fs === session.shell) continue;
-        const fresh = session.fresh;
-        const shouldResume = fresh instanceof HTMLVideoElement && !fresh.paused;
-        releaseFresh(fresh);
+        releaseFresh(session.fresh);
         session.root.style.removeProperty("display");
         if (session.path) {
             try {
@@ -226,11 +251,6 @@ function cleanupEndedSessions() {
                 session.root.poster = thumbEndpoint(session.path);
                 session.root.src = videoEndpoint(session.path);
                 session.root.load();
-                const rate = loadRate();
-                session.root.defaultPlaybackRate = rate;
-                session.root.playbackRate = rate;
-                session.root.volume = loadVolume();
-                if (shouldResume) session.root.play().catch(() => {});
             } catch (_) {}
         }
         sessions.delete(session);
