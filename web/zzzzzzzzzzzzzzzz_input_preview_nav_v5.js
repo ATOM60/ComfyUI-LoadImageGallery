@@ -229,19 +229,16 @@ function drawArrowOverlay(widget, node, ctx, options) {
 
     computeRects(widget, node, options);
     const transform = ctx.getTransform();
-    const mouse = app.canvas?.graph_mouse;
-    const point = Array.isArray(mouse) ? [mouse[0] - node.pos[0], mouse[1] - node.pos[1]] : null;
     const prevRect = { ...widget.__cigNavV5PrevRect };
     const nextRect = { ...widget.__cigNavV5NextRect };
 
     try {
         const drawButton = (rect, text) => {
             if (!rect) return;
-            const hover = inside(point, rect);
             ctx.save();
             ctx.setTransform(transform);
-            ctx.fillStyle = hover ? "rgba(12,34,58,.96)" : "rgba(20,20,20,.72)";
-            ctx.strokeStyle = hover ? "rgba(88,164,255,1)" : "rgba(255,255,255,.34)";
+            ctx.fillStyle = "rgba(20,20,20,.72)";
+            ctx.strokeStyle = "rgba(255,255,255,.34)";
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 10);
@@ -256,9 +253,6 @@ function drawArrowOverlay(widget, node, ctx, options) {
         };
         drawButton(prevRect, "‹");
         drawButton(nextRect, "›");
-        if ((inside(point, prevRect) || inside(point, nextRect)) && app.canvas?.canvas) {
-            app.canvas.canvas.style.cursor = "pointer";
-        }
     } catch (_) {}
 }
 
