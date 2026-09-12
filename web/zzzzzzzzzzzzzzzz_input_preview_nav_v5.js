@@ -191,8 +191,8 @@ function computeRects(widget, node, options) {
     const width = Math.max(1, Number(options?.width ?? node.size?.[0] ?? 320));
     const y = Number(widget.y ?? 0);
     const height = Math.max(1, Number(widget.computedHeight ?? 220));
-    const buttonW = Math.max(38, Math.min(52, width * 0.12));
-    const buttonH = Math.max(64, Math.min(116, height * 0.52));
+    const buttonW = Math.max(52, Math.min(72, width * 0.16));
+    const buttonH = Math.max(88, Math.min(150, height * 0.64));
     const buttonY = y + (height - buttonH) / 2;
     const margin = 8;
 
@@ -245,7 +245,7 @@ function drawArrowOverlay(widget, node, ctx, options) {
             ctx.fill();
             ctx.stroke();
             ctx.fillStyle = "#fff";
-            ctx.font = `700 ${Math.max(34, Math.min(54, rect.w * 0.9))}px Arial,sans-serif`;
+            ctx.font = `700 ${Math.max(46, Math.min(68, rect.w * 0.92))}px Arial,sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 - 2);
@@ -258,9 +258,11 @@ function drawArrowOverlay(widget, node, ctx, options) {
 
 function patchPreviewWidget(node) {
     if (!node?.widgets) return false;
-    const widget = node.widgets.find(w =>
-        w?.name === "$$canvas-image-preview" ||
-        (w?.options?.canvasOnly === true && typeof w?.drawWidget === "function")
+    const exactWidget = node.widgets.find(w =>
+        w?.name === "$$canvas-image-preview" || w?.type === "IMAGE_PREVIEW"
+    );
+    const widget = exactWidget || node.widgets.find(w =>
+        w?.options?.canvasOnly === true && typeof w?.drawWidget === "function"
     );
     if (!widget) return false;
 
