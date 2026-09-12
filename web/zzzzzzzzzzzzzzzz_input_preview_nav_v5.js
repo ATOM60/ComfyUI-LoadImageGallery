@@ -263,7 +263,16 @@ function patchPreviewWidget(node) {
         (w?.options?.canvasOnly === true && typeof w?.drawWidget === "function")
     );
     if (!widget) return false;
-    if (widget.__cigNavV5Patched) return true;
+
+    if (widget.__cigNavV5Patched) {
+        const drawOk = !widget.__cigNavV5Draw || widget.drawWidget === widget.__cigNavV5Draw;
+        const pointerOk = !widget.__cigNavV5PointerDown || widget.onPointerDown === widget.__cigNavV5PointerDown;
+        if (drawOk && pointerOk) return true;
+        if (widget.__cigNavV5Draw) widget.drawWidget = widget.__cigNavV5Draw;
+        if (widget.__cigNavV5PointerDown) widget.onPointerDown = widget.__cigNavV5PointerDown;
+        node.graph?.setDirtyCanvas?.(true, true);
+        return true;
+    }
 
     const prototype = Object.getPrototypeOf(widget);
     const stockDraw = typeof prototype?.drawWidget === "function"
@@ -274,18 +283,17 @@ function patchPreviewWidget(node) {
         : widget.onPointerDown;
     if (typeof stockDraw !== "function") return false;
 
-    // Stop the older V3 retry scans from installing their synchronous image renderer.
     node.__cigPreviewNavV3 = true;
     widget.__cigNavV4Patched = true;
     widget.__cigNavV5Patched = true;
 
-    widget.drawWidget = function(ctx, options) {
+    widget.__cigNavV5Draw = function(ctx, options) {
         stockDraw.call(this, ctx, options);
         computeRects(this, node, options);
         drawArrowOverlay(this, node, ctx, options);
     };
 
-    widget.onPointerDown = function(pointer, nodeArg, canvas) {
+    widget.__cigNavV5PointerDown = function(pointer, nodeArg, canvas) {
         const point = pointerLocalPoint(pointer, node);
         if (point && inside(point, this.__cigNavV5PrevRect)) {
             pointer.onClick = () => { void navigate(node, -1); };
@@ -307,6 +315,8 @@ function patchPreviewWidget(node) {
             : true;
     };
 
+    widget.drawWidget = widget.__cigNavV5Draw;
+    widget.onPointerDown = widget.__cigNavV5PointerDown;
     node.graph?.setDirtyCanvas?.(true, true);
     return true;
 }
@@ -317,22 +327,17 @@ function install(node) {
 
     node.__cigNavV5InstallPending = true;
     const started = performance.now();
-    const tryPatch = () => {
-        if (patchPreviewWidget(node)) {
-            node.__cigNavV5InstallPending = false;
-            return;
-        }
-
+    const verify = () => {
+        patchPreviewWidget(node);
         const elapsed = performance.now() - started;
-        if (elapsed >= 10000) {
+        if (elapsed >= 12000 || !node.graph) {
             node.__cigNavV5InstallPending = false;
             return;
         }
-
-        setTimeout(tryPatch, elapsed < 1000 ? 50 : 200);
+        setTimeout(verify, elapsed < 1000 ? 50 : 200);
     };
 
-    tryPatch();
+    verify();
 }
 
 app.registerExtension({
