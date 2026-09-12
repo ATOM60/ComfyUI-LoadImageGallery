@@ -58,7 +58,9 @@ function applyPlaybackState(video, state, { play = false } = {}) {
 
     const restore = () => {
         try {
-            if (Number.isFinite(state.currentTime) && state.currentTime >= 0 && Number.isFinite(video.duration) && video.duration > 0) {
+            if (state.ended) {
+                video.currentTime = 0;
+            } else if (Number.isFinite(state.currentTime) && state.currentTime >= 0 && Number.isFinite(video.duration) && video.duration > 0) {
                 video.currentTime = Math.min(state.currentTime, Math.max(0, video.duration - 0.05));
             }
             video.defaultPlaybackRate = state.rate;
@@ -128,7 +130,8 @@ function handoffToCurrentCard(state, current) {
         return;
     }
 
-    applyPlaybackState(targetVideo, current, { play: !current.paused });
+    // Natural end is not a user pause: restart that video in its own preview card.
+    applyPlaybackState(targetVideo, current, { play: current.ended || !current.paused });
 }
 
 function restoreAfterFullscreen(state) {
@@ -137,9 +140,15 @@ function restoreAfterFullscreen(state) {
     const video = state.video;
     if (!(video instanceof HTMLVideoElement)) return;
 
+    const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const ended = !!video.ended || (duration > 0 && currentTime >= Math.max(0, duration - 0.15));
+
     const current = {
         path: String(video.dataset.cigCurrentPath || state.path).trim(),
-        currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+        currentTime,
+        duration,
+        ended,
         paused: !!video.paused,
         rate: Number.isFinite(video.playbackRate) ? video.playbackRate : state.rate,
         volume: Number.isFinite(video.volume) ? video.volume : state.volume,
