@@ -43,36 +43,9 @@ function captureActiveCard() {
     };
 }
 
-function findCardForPath(originCard, path) {
-    const grid = originCard?.closest?.(".ovg-grid");
-    if (!(grid instanceof HTMLElement)) return null;
-    for (const card of grid.querySelectorAll(":scope > .ovg-card[data-path]")) {
-        if (!(card instanceof HTMLElement)) continue;
-        if (String(card.dataset.path || "").trim() === path) return card;
-    }
-    return null;
-}
+function restoreCapturedCard(state) {
+    if (!state || fullscreenElement()) return;
 
-function applyPlaybackState(video, state, { play = false } = {}) {
-    if (!(video instanceof HTMLVideoElement)) return;
-
-    const restore = () => {
-        try {
-            if (Number.isFinite(state.currentTime) && state.currentTime >= 0 && Number.isFinite(video.duration) && video.duration > 0) {
-                video.currentTime = Math.min(state.currentTime, Math.max(0, video.duration - 0.05));
-            }
-            video.defaultPlaybackRate = state.rate;
-            video.playbackRate = state.rate;
-            video.volume = state.volume;
-            if (play) video.play()?.catch?.(() => {});
-        } catch (_) {}
-    };
-
-    if (video.readyState >= 1) restore();
-    else video.addEventListener("loadedmetadata", restore, { once:true });
-}
-
-function restoreOriginCard(state, navigatedAway) {
     const { video, card, path } = state;
     if (!(video instanceof HTMLVideoElement) || !(card instanceof HTMLElement)) return;
     if (!video.isConnected || !card.isConnected || !card.contains(video)) return;
@@ -96,60 +69,20 @@ function restoreOriginCard(state, navigatedAway) {
         return;
     }
 
-    // If fullscreen navigation moved to another item, keep the origin card quiet.
-    // The currently selected item will resume in its own card below.
-    applyPlaybackState(video, state, { play: !navigatedAway && !state.paused });
-}
-
-function handoffToCurrentCard(state, current) {
-    const targetCard = findCardForPath(state.card, current.path);
-    if (!(targetCard instanceof HTMLElement) || targetCard === state.card) return;
-
-    const targetVideo = targetCard.querySelector("video.ovg-inline-video");
-    if (!(targetVideo instanceof HTMLVideoElement)) return;
-
-    try {
-        targetVideo.dataset.cigCurrentPath = current.path;
-        targetVideo.poster = thumbEndpoint(current.path);
-
-        const expectedSrc = videoEndpoint(current.path);
-        const rawSrc = targetVideo.getAttribute("src") || "";
-        if (!rawSrc || !rawSrc.includes(encodeURIComponent(current.path))) {
-            targetVideo.src = expectedSrc;
-            targetVideo.load();
-        }
-
-        targetVideo.defaultPlaybackRate = current.rate;
-        targetVideo.playbackRate = current.rate;
-        targetVideo.volume = current.volume;
-        targetVideo.controls = false;
-        targetVideo.removeAttribute("controls");
-    } catch (_) {
-        return;
-    }
-
-    applyPlaybackState(targetVideo, current, { play: !current.paused });
-}
-
-function restoreAfterFullscreen(state) {
-    if (!state || fullscreenElement()) return;
-
-    const video = state.video;
-    if (!(video instanceof HTMLVideoElement)) return;
-
-    const current = {
-        path: String(video.dataset.cigCurrentPath || state.path).trim(),
-        currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
-        paused: !!video.paused,
-        rate: Number.isFinite(video.playbackRate) ? video.playbackRate : state.rate,
-        volume: Number.isFinite(video.volume) ? video.volume : state.volume,
+    const restorePlaybackState = () => {
+        try {
+            if (Number.isFinite(state.currentTime) && state.currentTime > 0 && Number.isFinite(video.duration) && video.duration > 0) {
+                video.currentTime = Math.min(state.currentTime, Math.max(0, video.duration - 0.05));
+            }
+            video.defaultPlaybackRate = state.rate;
+            video.playbackRate = state.rate;
+            video.volume = state.volume;
+            if (!state.paused) video.play()?.catch?.(() => {});
+        } catch (_) {}
     };
 
-    const navigatedAway = !!current.path && current.path !== state.path;
-    if (!navigatedAway) return;
-
-    restoreOriginCard(state, true);
-    handoffToCurrentCard(state, current);
+    if (video.readyState >= 1) restorePlaybackState();
+    else video.addEventListener("loadedmetadata", restorePlaybackState, { once:true });
 }
 
 function onFullscreenChange() {
@@ -164,7 +97,7 @@ function onFullscreenChange() {
     active = null;
 
     requestAnimationFrame(() => {
-        if (!fullscreenElement()) restoreAfterFullscreen(state);
+        if (!fullscreenElement()) restoreCapturedCard(state);
     });
 }
 
