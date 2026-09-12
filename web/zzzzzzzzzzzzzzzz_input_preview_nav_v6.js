@@ -233,7 +233,7 @@ function drawArrowOverlay(widget, node, ctx, options) {
     const nextRect = { ...widget.__cigNavV5NextRect };
 
     try {
-        const drawButton = (rect, text) => {
+        const drawButton = (rect, direction) => {
             if (!rect) return;
             ctx.save();
             ctx.setTransform(transform);
@@ -244,15 +244,30 @@ function drawArrowOverlay(widget, node, ctx, options) {
             ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 10);
             ctx.fill();
             ctx.stroke();
-            ctx.fillStyle = "#fff";
-            ctx.font = `700 ${Math.max(34, Math.min(54, rect.w * 0.9))}px Arial,sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 - 2);
+
+            const cx = rect.x + rect.w / 2;
+            const cy = rect.y + rect.h / 2;
+            const dx = Math.max(9, rect.w * 0.24);
+            const dy = Math.max(20, Math.min(rect.h * 0.28, 34));
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = Math.max(5, Math.min(8, rect.w * 0.14));
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.beginPath();
+            if (direction < 0) {
+                ctx.moveTo(cx + dx, cy - dy);
+                ctx.lineTo(cx - dx, cy);
+                ctx.lineTo(cx + dx, cy + dy);
+            } else {
+                ctx.moveTo(cx - dx, cy - dy);
+                ctx.lineTo(cx + dx, cy);
+                ctx.lineTo(cx - dx, cy + dy);
+            }
+            ctx.stroke();
             ctx.restore();
         };
-        drawButton(prevRect, "‹");
-        drawButton(nextRect, "›");
+        drawButton(prevRect, -1);
+        drawButton(nextRect, 1);
     } catch (_) {}
 }
 
