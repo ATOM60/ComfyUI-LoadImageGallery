@@ -1,10 +1,9 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
-const EXT_NAME = "Comfy.ImageGallery.InputPreviewNavDOM";
+const EXT_NAME = "Comfy.ImageGallery.InputPreviewNavV5";
 const NODE_CLASS = "LoadImageGallery";
 const LAST_IMAGE_KEY = "ComfyUI-LoadImageGallery.lastImage";
-const NAV_WIDGET_NAME = "cig-preview-nav";
 
 function normalizePath(value) {
     return String(value ?? "")
@@ -45,12 +44,12 @@ function externalSourceUrl(path) {
 function loadExternalPreview(node, path) {
     if (!node || !isAbsolutePath(path)) return;
     const clean = normalizePath(path);
-    const token = (node.__cigNavDomExternalToken || 0) + 1;
-    node.__cigNavDomExternalToken = token;
+    const token = (node.__cigNavV5ExternalToken || 0) + 1;
+    node.__cigNavV5ExternalToken = token;
     const image = new Image();
     image.decoding = "async";
     image.onload = () => {
-        if (node.__cigNavDomExternalToken !== token) return;
+        if (node.__cigNavV5ExternalToken !== token) return;
         node.__cigExternalPreviewPath = clean;
         node.imgs = [image];
         node.imageIndex = 0;
@@ -91,15 +90,15 @@ async function hydrateFolderValues(node) {
 
     const known = folderValues(node);
     if (known.length > 1) {
-        node.__cigNavDomLoadedFolder = folder;
+        node.__cigNavV5LoadedFolder = folder;
         return known;
     }
-    if (node.__cigNavDomLoadedFolder === folder) return known;
-    if (node.__cigNavDomPendingFolder === folder && node.__cigNavDomPendingPromise) {
-        return node.__cigNavDomPendingPromise;
+    if (node.__cigNavV5LoadedFolder === folder) return known;
+    if (node.__cigNavV5PendingFolder === folder && node.__cigNavV5PendingPromise) {
+        return node.__cigNavV5PendingPromise;
     }
 
-    node.__cigNavDomPendingFolder = folder;
+    node.__cigNavV5PendingFolder = folder;
     const pending = (async () => {
         try {
             const response = await api.fetchApi(`/image-gallery/list?folder=${encodeURIComponent(folder)}`);
@@ -113,18 +112,19 @@ async function hydrateFolderValues(node) {
             node.__cigGalleryValues = images
                 .map(name => joinPath(folder, String(name || "")))
                 .filter(Boolean);
-            node.__cigNavDomLoadedFolder = folder;
+            node.__cigNavV5LoadedFolder = folder;
+            node.graph?.setDirtyCanvas?.(true, true);
             return folderValues(node);
         } catch (_) {
             return folderValues(node);
         } finally {
-            if (node.__cigNavDomPendingFolder === folder) {
-                node.__cigNavDomPendingFolder = null;
-                node.__cigNavDomPendingPromise = null;
+            if (node.__cigNavV5PendingFolder === folder) {
+                node.__cigNavV5PendingFolder = null;
+                node.__cigNavV5PendingPromise = null;
             }
         }
     })();
-    node.__cigNavDomPendingPromise = pending;
+    node.__cigNavV5PendingPromise = pending;
     return pending;
 }
 
@@ -145,7 +145,7 @@ function setCurrentImage(node, value) {
     if (isAbsolutePath(clean)) {
         loadExternalPreview(node, clean);
     } else {
-        node.__cigNavDomExternalToken = (node.__cigNavDomExternalToken || 0) + 1;
+        node.__cigNavV5ExternalToken = (node.__cigNavV5ExternalToken || 0) + 1;
         node.__cigExternalPreviewPath = null;
         widget.callback?.(clean);
     }
@@ -172,111 +172,167 @@ async function navigate(node, direction) {
     if (next) setCurrentImage(node, next);
 }
 
-function makeButton(text, title) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = text;
-    button.title = title;
-    button.style.cssText = [
-        "flex:1 1 0",
-        "height:30px",
-        "min-width:0",
-        "padding:0",
-        "margin:0",
-        "border:1px solid rgba(255,255,255,.18)",
-        "border-radius:6px",
-        "background:var(--comfy-input-bg,#222)",
-        "color:var(--input-text,#ddd)",
-        "font:700 22px/28px Arial,sans-serif",
-        "cursor:pointer",
-        "touch-action:manipulation",
-        "box-sizing:border-box",
-    ].join(";");
-    return button;
+function inside(point, rect) {
+    return !!point && !!rect &&
+        point[0] >= rect.x && point[0] <= rect.x + rect.w &&
+        point[1] >= rect.y && point[1] <= rect.y + rect.h;
 }
 
-function installDomNavigation(node) {
-    if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return false;
-    if (node.__cigNavDomInstalled) return true;
-    if (typeof node.addDOMWidget !== "function" || !getImageWidget(node)) return false;
+function pointerLocalPoint(pointer, node) {
+    const event = pointer?.eDown;
+    if (Number.isFinite(event?.canvasX) && Number.isFinite(event?.canvasY)) {
+        return [event.canvasX - node.pos[0], event.canvasY - node.pos[1]];
+    }
+    const mouse = app.canvas?.graph_mouse;
+    return Array.isArray(mouse) ? [mouse[0] - node.pos[0], mouse[1] - node.pos[1]] : null;
+}
 
-    const existing = node.widgets?.find?.(widget => widget?.name === NAV_WIDGET_NAME);
-    if (existing) {
-        node.__cigNavDomInstalled = true;
-        return true;
+function computeRects(widget, node, options) {
+    const width = Math.max(1, Number(options?.width ?? node.size?.[0] ?? 320));
+    const y = Number(widget.y ?? 0);
+    const height = Math.max(1, Number(widget.computedHeight ?? 220));
+    const buttonW = Math.max(38, Math.min(52, width * 0.12));
+    const buttonH = Math.max(64, Math.min(116, height * 0.52));
+    const buttonY = y + (height - buttonH) / 2;
+    const margin = 8;
+
+    widget.__cigNavV5PrevRect = { x: margin, y: buttonY, w: buttonW, h: buttonH };
+    widget.__cigNavV5NextRect = { x: Math.max(margin, width - margin - buttonW), y: buttonY, w: buttonW, h: buttonH };
+
+    const images = options?.previewImages ?? node.imgs ?? [];
+    const image = images[node.imageIndex ?? 0] ?? images[0];
+    const iw = Number(image?.naturalWidth || image?.width || 0);
+    const ih = Number(image?.naturalHeight || image?.height || 0);
+    if (iw > 0 && ih > 0) {
+        const scale = Math.min(width / iw, height / ih, 1);
+        const rw = iw * scale;
+        const rh = ih * scale;
+        widget.__cigNavV5ImageRect = {
+            x: (width - rw) / 2,
+            y: y + (height - rh) / 2,
+            w: rw,
+            h: rh,
+        };
+    } else {
+        widget.__cigNavV5ImageRect = null;
+    }
+}
+
+function drawArrowOverlay(widget, node, ctx, options) {
+    const values = folderValues(node);
+    if (values.length < 2) {
+        widget.__cigNavV5PrevRect = null;
+        widget.__cigNavV5NextRect = null;
+        void hydrateFolderValues(node);
+        return;
     }
 
-    const row = document.createElement("div");
-    row.className = "cig-node-preview-nav";
-    row.style.cssText = [
-        "display:flex",
-        "align-items:center",
-        "gap:6px",
-        "width:100%",
-        "height:34px",
-        "padding:2px 4px",
-        "margin:0",
-        "box-sizing:border-box",
-        "pointer-events:auto",
-        "--comfy-widget-height:34px",
-        "--comfy-widget-min-height:34px",
-        "--comfy-widget-max-height:34px",
-    ].join(";");
+    computeRects(widget, node, options);
+    const transform = ctx.getTransform();
+    const prevRect = { ...widget.__cigNavV5PrevRect };
+    const nextRect = { ...widget.__cigNavV5NextRect };
 
-    const prev = makeButton("‹", "Предыдущее изображение");
-    const next = makeButton("›", "Следующее изображение");
-    row.append(prev, next);
+    try {
+        const drawButton = (rect, text) => {
+            if (!rect) return;
+            ctx.save();
+            ctx.setTransform(transform);
+            ctx.fillStyle = "rgba(20,20,20,.72)";
+            ctx.strokeStyle = "rgba(255,255,255,.34)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 10);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "#fff";
+            ctx.font = `700 ${Math.max(34, Math.min(54, rect.w * 0.9))}px Arial,sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 - 2);
+            ctx.restore();
+        };
+        drawButton(prevRect, "‹");
+        drawButton(nextRect, "›");
+    } catch (_) {}
+}
 
-    const stop = event => event.stopPropagation();
-    row.addEventListener("pointerdown", stop);
-    row.addEventListener("mousedown", stop);
-    row.addEventListener("dblclick", stop);
+function patchPreviewWidget(node) {
+    if (!node?.widgets) return false;
+    const widget = node.widgets.find(w =>
+        w?.name === "$$canvas-image-preview" ||
+        (w?.options?.canvasOnly === true && typeof w?.drawWidget === "function")
+    );
+    if (!widget) return false;
+    if (widget.__cigNavV5Patched) return true;
 
-    prev.addEventListener("click", event => {
-        event.preventDefault();
-        event.stopPropagation();
-        void navigate(node, -1);
-    });
-    next.addEventListener("click", event => {
-        event.preventDefault();
-        event.stopPropagation();
-        void navigate(node, 1);
-    });
+    const prototype = Object.getPrototypeOf(widget);
+    const stockDraw = typeof prototype?.drawWidget === "function"
+        ? prototype.drawWidget
+        : widget.drawWidget;
+    const stockPointerDown = typeof prototype?.onPointerDown === "function"
+        ? prototype.onPointerDown
+        : widget.onPointerDown;
+    if (typeof stockDraw !== "function") return false;
 
-    const widget = node.addDOMWidget(NAV_WIDGET_NAME, NAV_WIDGET_NAME, row, {
-        hideOnZoom: false,
-        margin: 2,
-        getMinHeight: () => 34,
-        getMaxHeight: () => 34,
-        getHeight: () => 34,
-        surfaces: { canvas: "shown", vueNode: "never", panel: "never" },
-    });
-    widget.serialize = false;
-    widget.serializeValue = () => undefined;
+    // Stop the older V3 retry scans from installing their synchronous image renderer.
+    node.__cigPreviewNavV3 = true;
+    widget.__cigNavV4Patched = true;
+    widget.__cigNavV5Patched = true;
 
-    node.__cigNavDomInstalled = true;
+    widget.drawWidget = function(ctx, options) {
+        stockDraw.call(this, ctx, options);
+        computeRects(this, node, options);
+        drawArrowOverlay(this, node, ctx, options);
+    };
+
+    widget.onPointerDown = function(pointer, nodeArg, canvas) {
+        const point = pointerLocalPoint(pointer, node);
+        if (point && inside(point, this.__cigNavV5PrevRect)) {
+            pointer.onClick = () => { void navigate(node, -1); };
+            return true;
+        }
+        if (point && inside(point, this.__cigNavV5NextRect)) {
+            pointer.onClick = () => { void navigate(node, 1); };
+            return true;
+        }
+        if (point && inside(point, this.__cigNavV5ImageRect)) {
+            pointer.onClick = () => {
+                const galleryButton = node.widgets?.find?.(w => w?.name === "🖼 Превью папки");
+                galleryButton?.callback?.();
+            };
+            return true;
+        }
+        return typeof stockPointerDown === "function"
+            ? stockPointerDown.call(this, pointer, nodeArg, canvas)
+            : true;
+    };
+
     node.graph?.setDirtyCanvas?.(true, true);
     return true;
 }
 
 function install(node) {
     if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return;
-    if (installDomNavigation(node) || node.__cigNavDomInstallPending) return;
+    if (node.__cigNavV5InstallPending) return;
 
-    node.__cigNavDomInstallPending = true;
+    node.__cigNavV5InstallPending = true;
     const started = performance.now();
-    const retry = () => {
-        if (installDomNavigation(node)) {
-            node.__cigNavDomInstallPending = false;
+    const tryPatch = () => {
+        if (patchPreviewWidget(node)) {
+            node.__cigNavV5InstallPending = false;
             return;
         }
-        if (performance.now() - started >= 10000 || !node.graph) {
-            node.__cigNavDomInstallPending = false;
+
+        const elapsed = performance.now() - started;
+        if (elapsed >= 10000) {
+            node.__cigNavV5InstallPending = false;
             return;
         }
-        setTimeout(retry, 100);
+
+        setTimeout(tryPatch, elapsed < 1000 ? 50 : 200);
     };
-    setTimeout(retry, 0);
+
+    tryPatch();
 }
 
 app.registerExtension({
