@@ -1,7 +1,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
-const EXT_NAME = "Comfy.ImageGallery.InputPreviewNavV5";
+const EXT_NAME = "Comfy.ImageGallery.InputPreviewNavigation";
 const NODE_CLASS = "LoadImageGallery";
 const LAST_IMAGE_KEY = "ComfyUI-LoadImageGallery.lastImage";
 
@@ -44,12 +44,12 @@ function externalSourceUrl(path) {
 function loadExternalPreview(node, path) {
     if (!node || !isAbsolutePath(path)) return;
     const clean = normalizePath(path);
-    const token = (node.__cigNavV5ExternalToken || 0) + 1;
-    node.__cigNavV5ExternalToken = token;
+    const token = (node.__cigNavExternalToken || 0) + 1;
+    node.__cigNavExternalToken = token;
     const image = new Image();
     image.decoding = "async";
     image.onload = () => {
-        if (node.__cigNavV5ExternalToken !== token) return;
+        if (node.__cigNavExternalToken !== token) return;
         node.__cigExternalPreviewPath = clean;
         node.imgs = [image];
         node.imageIndex = 0;
@@ -90,15 +90,15 @@ async function hydrateFolderValues(node) {
 
     const known = folderValues(node);
     if (known.length > 1) {
-        node.__cigNavV5LoadedFolder = folder;
+        node.__cigNavLoadedFolder = folder;
         return known;
     }
-    if (node.__cigNavV5LoadedFolder === folder) return known;
-    if (node.__cigNavV5PendingFolder === folder && node.__cigNavV5PendingPromise) {
-        return node.__cigNavV5PendingPromise;
+    if (node.__cigNavLoadedFolder === folder) return known;
+    if (node.__cigNavPendingFolder === folder && node.__cigNavPendingPromise) {
+        return node.__cigNavPendingPromise;
     }
 
-    node.__cigNavV5PendingFolder = folder;
+    node.__cigNavPendingFolder = folder;
     const pending = (async () => {
         try {
             const response = await api.fetchApi(`/image-gallery/list?folder=${encodeURIComponent(folder)}`);
@@ -112,19 +112,18 @@ async function hydrateFolderValues(node) {
             node.__cigGalleryValues = images
                 .map(name => joinPath(folder, String(name || "")))
                 .filter(Boolean);
-            node.__cigNavV5LoadedFolder = folder;
-            node.graph?.setDirtyCanvas?.(true, true);
+            node.__cigNavLoadedFolder = folder;
             return folderValues(node);
         } catch (_) {
             return folderValues(node);
         } finally {
-            if (node.__cigNavV5PendingFolder === folder) {
-                node.__cigNavV5PendingFolder = null;
-                node.__cigNavV5PendingPromise = null;
+            if (node.__cigNavPendingFolder === folder) {
+                node.__cigNavPendingFolder = null;
+                node.__cigNavPendingPromise = null;
             }
         }
     })();
-    node.__cigNavV5PendingPromise = pending;
+    node.__cigNavPendingPromise = pending;
     return pending;
 }
 
@@ -145,7 +144,7 @@ function setCurrentImage(node, value) {
     if (isAbsolutePath(clean)) {
         loadExternalPreview(node, clean);
     } else {
-        node.__cigNavV5ExternalToken = (node.__cigNavV5ExternalToken || 0) + 1;
+        node.__cigNavExternalToken = (node.__cigNavExternalToken || 0) + 1;
         node.__cigExternalPreviewPath = null;
         widget.callback?.(clean);
     }
@@ -168,171 +167,14 @@ async function navigate(node, direction) {
     const current = normalizePath(widget.value);
     let index = values.indexOf(current);
     if (index < 0) index = 0;
-    const next = values[(index + direction + values.length) % values.length];
+    const step = Number(direction) < 0 ? -1 : 1;
+    const next = values[(index + step + values.length) % values.length];
     if (next) setCurrentImage(node, next);
-}
-
-function inside(point, rect) {
-    return !!point && !!rect &&
-        point[0] >= rect.x && point[0] <= rect.x + rect.w &&
-        point[1] >= rect.y && point[1] <= rect.y + rect.h;
-}
-
-function pointerLocalPoint(pointer, node) {
-    const event = pointer?.eDown;
-    if (Number.isFinite(event?.canvasX) && Number.isFinite(event?.canvasY)) {
-        return [event.canvasX - node.pos[0], event.canvasY - node.pos[1]];
-    }
-    const mouse = app.canvas?.graph_mouse;
-    return Array.isArray(mouse) ? [mouse[0] - node.pos[0], mouse[1] - node.pos[1]] : null;
-}
-
-function computeRects(widget, node, options) {
-    const width = Math.max(1, Number(options?.width ?? node.size?.[0] ?? 320));
-    const y = Number(widget.y ?? 0);
-    const height = Math.max(1, Number(widget.computedHeight ?? 220));
-    const buttonW = Math.max(38, Math.min(52, width * 0.12));
-    const buttonH = Math.max(64, Math.min(116, height * 0.52));
-    const buttonY = y + (height - buttonH) / 2;
-    const margin = 8;
-
-    widget.__cigNavV5PrevRect = { x: margin, y: buttonY, w: buttonW, h: buttonH };
-    widget.__cigNavV5NextRect = { x: Math.max(margin, width - margin - buttonW), y: buttonY, w: buttonW, h: buttonH };
-
-    const images = options?.previewImages ?? node.imgs ?? [];
-    const image = images[node.imageIndex ?? 0] ?? images[0];
-    const iw = Number(image?.naturalWidth || image?.width || 0);
-    const ih = Number(image?.naturalHeight || image?.height || 0);
-    if (iw > 0 && ih > 0) {
-        const scale = Math.min(width / iw, height / ih, 1);
-        const rw = iw * scale;
-        const rh = ih * scale;
-        widget.__cigNavV5ImageRect = {
-            x: (width - rw) / 2,
-            y: y + (height - rh) / 2,
-            w: rw,
-            h: rh,
-        };
-    } else {
-        widget.__cigNavV5ImageRect = null;
-    }
-}
-
-function drawArrowOverlay(widget, node, ctx, options) {
-    const values = folderValues(node);
-    if (values.length < 2) {
-        widget.__cigNavV5PrevRect = null;
-        widget.__cigNavV5NextRect = null;
-        void hydrateFolderValues(node);
-        return;
-    }
-
-    computeRects(widget, node, options);
-    const transform = ctx.getTransform();
-    const prevRect = { ...widget.__cigNavV5PrevRect };
-    const nextRect = { ...widget.__cigNavV5NextRect };
-
-    try {
-        const drawButton = (rect, text) => {
-            if (!rect) return;
-            ctx.save();
-            ctx.setTransform(transform);
-            ctx.fillStyle = "rgba(20,20,20,.72)";
-            ctx.strokeStyle = "rgba(255,255,255,.34)";
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 10);
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = "#fff";
-            ctx.font = `700 ${Math.max(34, Math.min(54, rect.w * 0.9))}px Arial,sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 - 2);
-            ctx.restore();
-        };
-        drawButton(prevRect, "‹");
-        drawButton(nextRect, "›");
-    } catch (_) {}
-}
-
-function patchPreviewWidget(node) {
-    if (!node?.widgets) return false;
-    const widget = node.widgets.find(w =>
-        w?.name === "$$canvas-image-preview" ||
-        (w?.options?.canvasOnly === true && typeof w?.drawWidget === "function")
-    );
-    if (!widget) return false;
-    if (widget.__cigNavV5Patched) return true;
-
-    const prototype = Object.getPrototypeOf(widget);
-    const stockDraw = typeof prototype?.drawWidget === "function"
-        ? prototype.drawWidget
-        : widget.drawWidget;
-    const stockPointerDown = typeof prototype?.onPointerDown === "function"
-        ? prototype.onPointerDown
-        : widget.onPointerDown;
-    if (typeof stockDraw !== "function") return false;
-
-    // Stop the older V3 retry scans from installing their synchronous image renderer.
-    node.__cigPreviewNavV3 = true;
-    widget.__cigNavV4Patched = true;
-    widget.__cigNavV5Patched = true;
-
-    widget.drawWidget = function(ctx, options) {
-        stockDraw.call(this, ctx, options);
-        computeRects(this, node, options);
-        drawArrowOverlay(this, node, ctx, options);
-    };
-
-    widget.onPointerDown = function(pointer, nodeArg, canvas) {
-        const point = pointerLocalPoint(pointer, node);
-        if (point && inside(point, this.__cigNavV5PrevRect)) {
-            pointer.onClick = () => { void navigate(node, -1); };
-            return true;
-        }
-        if (point && inside(point, this.__cigNavV5NextRect)) {
-            pointer.onClick = () => { void navigate(node, 1); };
-            return true;
-        }
-        if (point && inside(point, this.__cigNavV5ImageRect)) {
-            pointer.onClick = () => {
-                const galleryButton = node.widgets?.find?.(w => w?.name === "🖼 Превью папки");
-                galleryButton?.callback?.();
-            };
-            return true;
-        }
-        return typeof stockPointerDown === "function"
-            ? stockPointerDown.call(this, pointer, nodeArg, canvas)
-            : true;
-    };
-
-    node.graph?.setDirtyCanvas?.(true, true);
-    return true;
 }
 
 function install(node) {
     if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return;
-    if (node.__cigNavV5InstallPending) return;
-
-    node.__cigNavV5InstallPending = true;
-    const started = performance.now();
-    const tryPatch = () => {
-        if (patchPreviewWidget(node)) {
-            node.__cigNavV5InstallPending = false;
-            return;
-        }
-
-        const elapsed = performance.now() - started;
-        if (elapsed >= 10000) {
-            node.__cigNavV5InstallPending = false;
-            return;
-        }
-
-        setTimeout(tryPatch, elapsed < 1000 ? 50 : 200);
-    };
-
-    tryPatch();
+    node.__cigPreviewNavigate = direction => navigate(node, direction);
 }
 
 app.registerExtension({
