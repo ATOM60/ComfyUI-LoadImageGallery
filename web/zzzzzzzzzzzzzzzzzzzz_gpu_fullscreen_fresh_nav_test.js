@@ -1,10 +1,8 @@
 import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.GpuFullscreenGalleryRetryTest";
-const STYLE_ID = "cig-gpu-fullscreen-gallery-retry-test-style";
 const RATE_KEY = "ComfyUI-LoadImageGallery.outputVideoPlaybackRate";
 const VOLUME_KEY = "ComfyUI-LoadImageGallery.outputVideoVolume";
-const sessions = new Map();
 
 function clamp(value, min, max, fallback = min) {
     const n = Number(value);
@@ -35,31 +33,6 @@ function thumbEndpoint(path) {
     return `/image-gallery/output/thumb?path=${encodeURIComponent(path)}`;
 }
 
-function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
-.cig-native-fs-shell[data-cig-native-shell="1"] > video.cig-gallery-retry-video {
-    position:absolute!important;
-    inset:0!important;
-    z-index:5!important;
-    width:100%!important;
-    height:100%!important;
-    max-width:none!important;
-    max-height:none!important;
-    margin:0!important;
-    padding:0!important;
-    border:0!important;
-    border-radius:0!important;
-    object-fit:contain!important;
-    background:#000!important;
-    pointer-events:auto!important;
-}
-`;
-    document.head.appendChild(style);
-}
-
 function activeRoot(shell) {
     const video = shell?.querySelector?.('video.ovg-inline-video[data-cig-native-fullscreen="1"]');
     return video instanceof HTMLVideoElement ? video : null;
@@ -69,26 +42,20 @@ function currentPath(video) {
     return String(video?.dataset?.cigCurrentPath || video?.closest?.(".ovg-card")?.dataset?.path || "");
 }
 
-function gridFor(shell) {
-    return shell?.closest?.(".ovg-card")?.closest?.(".ovg-grid") || null;
-}
-
 function cardsFor(shell) {
-    const grid = gridFor(shell);
+    const grid = shell?.closest?.(".ovg-card")?.closest?.(".ovg-grid");
     return grid ? [...grid.querySelectorAll(".ovg-card[data-path]")] : [];
 }
 
-function nextPath(shell, path) {
+function nextTarget(shell, path) {
     const cards = cardsFor(shell);
-    if (cards.length < 2) return "";
+    if (cards.length < 2) return null;
     let index = cards.findIndex(card => String(card.dataset.path || "") === String(path || ""));
     if (index < 0) index = 0;
     index = (index + 1) % cards.length;
-    return String(cards[index]?.dataset?.path || "");
-}
-
-function cardForPath(shell, path) {
-    return cardsFor(shell).find(card => String(card.dataset.path || "") === String(path || "")) || null;
+    const card = cards[index];
+    const targetPath = String(card?.dataset?.path || "");
+    return card instanceof HTMLElement && targetPath ? { card, path:targetPath } : null;
 }
 
 function isDemuxError(video, error = null) {
@@ -112,6 +79,20 @@ function restoreOriginalVideo(video, snapshot) {
     } catch (_) {}
 }
 
+function waitFor(predicate, timeoutMs = 1500) {
+    return new Promise(resolve => {
+        const started = performance.now();
+        const tick = () => {
+            let value = null;
+            try { value = predicate(); } catch (_) {}
+            if (value) { resolve(value); return; }
+            if (performance.now() - started >= timeoutMs) { resolve(null); return; }
+            requestAnimationFrame(tick);
+        };
+        tick();
+    });
+}
+
 function waitForPlaying(video, timeoutMs = 5000) {
     return new Promise(resolve => {
         if (!(video instanceof HTMLVideoElement)) { resolve(false); return; }
@@ -133,93 +114,71 @@ function waitForPlaying(video, timeoutMs = 5000) {
     });
 }
 
-function returnOverlayVideo(session) {
-    const video = session?.overlay;
-    if (!(video instanceof HTMLVideoElement)) return;
-    const parent = session.overlayParent;
-    const next = session.overlayNext;
+async function exitCurrentFullscreen(shell) {
+    if (fullscreenElement() !== shell) return true;
     try {
-        video.classList.remove("cig-gallery-retry-video");
-        video.controls = false;
-        video.removeAttribute("controls");
-        if (parent instanceof Node) {
-            if (next instanceof Node && next.parentNode === parent) parent.insertBefore(video, next);
-            else parent.appendChild(video);
-        }
+        const result = document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+        await result?.catch?.(() => {});
     } catch (_) {}
-    session.overlay = null;
-    session.overlayParent = null;
-    session.overlayNext = null;
+    await waitFor(() => fullscreenElement() !== shell, 1500);
+    return fullscreenElement() !== shell;
 }
 
-function mountOverlay(shell, root, target, path) {
-    let session = sessions.get(shell);
-    if (!session) {
-        session = { shell, root, overlay:null, overlayParent:null, overlayNext:null, currentPath:"" };
-        sessions.set(shell, session);
-    }
-
-    if (session.overlay && session.overlay !== target) returnOverlayVideo(session);
-
-    const parent = target.parentNode;
-    const next = target.nextSibling;
-    if (!(parent instanceof Node)) return false;
-
-    try {
-        target.__cigGpuControlsObserver?.disconnect?.();
-        delete target.__cigGpuControlsObserver;
-    } catch (_) {}
-
-    session.root = root;
-    session.overlay = target;
-    session.overlayParent = parent;
-    session.overlayNext = next;
-    session.currentPath = path;
-
-    root.style.setProperty("display", "none", "important");
-    target.dataset.cigCurrentPath = path;
-    target.classList.add("cig-gallery-retry-video");
-    try {
-        target.controls = true;
-        target.setAttribute("controls", "");
-    } catch (_) {}
-    shell.insertBefore(target, shell.firstChild);
-    try { target.play().catch(() => {}); } catch (_) {}
-    return true;
-}
-
-async function startViaGallery(shell, root, path) {
-    const card = cardForPath(shell, path);
-    const play = card?.querySelector?.(".ovg-play");
-    if (!(card instanceof HTMLElement) || !(play instanceof HTMLButtonElement)) return false;
-
+async function startCardNormally(card, path) {
+    if (!(card instanceof HTMLElement) || !card.isConnected) return null;
     let target = card.querySelector("video.ovg-inline-video");
-    if (!(target instanceof HTMLVideoElement)) {
-        play.click();
-        target = card.querySelector("video.ovg-inline-video");
-    } else if (target.paused) {
-        play.click();
-    }
-    if (!(target instanceof HTMLVideoElement)) return false;
+    const play = card.querySelector(".ovg-play");
 
+    if (!(target instanceof HTMLVideoElement)) {
+        if (!(play instanceof HTMLButtonElement)) return null;
+        play.click();
+        target = await waitFor(() => card.querySelector("video.ovg-inline-video"), 1000);
+    } else if (target.paused) {
+        if (play instanceof HTMLButtonElement) play.click();
+        else { try { target.play().catch(() => {}); } catch (_) {} }
+    }
+
+    if (!(target instanceof HTMLVideoElement)) return null;
     target.dataset.cigCurrentPath = path;
-    const playing = await waitForPlaying(target);
-    if (!playing || fullscreenElement() !== shell) return false;
-    return mountOverlay(shell, root, target, path);
+    const playing = await waitForPlaying(target, 5000);
+    return playing ? target : null;
 }
 
-function navigateOverlayNext(shell, session) {
-    const path = nextPath(shell, session.currentPath);
-    if (!path) return;
-    startViaGallery(shell, session.root, path).catch(error => {
-        console.warn("[ImageGallery] gallery retry navigation failed", path, error);
-    });
+async function tryFullscreenAgain(target) {
+    if (!(target instanceof HTMLVideoElement)) return false;
+    const wrapper = await waitFor(() => target.closest(".ovg-gpu-player"), 1200);
+    if (!(wrapper instanceof HTMLElement)) return false;
+    try {
+        const result = wrapper.requestFullscreen?.() || wrapper.webkitRequestFullscreen?.();
+        await result?.catch?.(() => {});
+    } catch (_) {}
+    return !!fullscreenElement();
+}
+
+async function retryOutsideFullscreen(shell, video, snapshot, target) {
+    restoreOriginalVideo(video, snapshot);
+    const exited = await exitCurrentFullscreen(shell);
+    if (!exited) {
+        console.warn("[ImageGallery] demux retry could not exit fullscreen", target.path);
+        return;
+    }
+
+    const normalVideo = await startCardNormally(target.card, target.path);
+    if (!(normalVideo instanceof HTMLVideoElement)) {
+        console.warn("[ImageGallery] demux retry failed through normal gallery player", target.path);
+        return;
+    }
+
+    const returned = await tryFullscreenAgain(normalVideo);
+    if (!returned) {
+        console.warn("[ImageGallery] target plays normally, but automatic fullscreen re-entry was blocked", target.path);
+    }
 }
 
 async function navigateNormalNext(shell, video) {
     const fromPath = currentPath(video);
-    const path = nextPath(shell, fromPath);
-    if (!path) return;
+    const target = nextTarget(shell, fromPath);
+    if (!target) return;
 
     const snapshot = {
         path: fromPath,
@@ -238,9 +197,8 @@ async function navigateNormalNext(shell, video) {
         if (handled) return;
         handled = true;
         cleanup();
-        restoreOriginalVideo(video, snapshot);
-        startViaGallery(shell, video, path).catch(retryError => {
-            console.warn("[ImageGallery] normal gallery retry failed", path, retryError || error);
+        retryOutsideFullscreen(shell, video, snapshot, target).catch(retryError => {
+            console.warn("[ImageGallery] outside-fullscreen gallery retry failed", target.path, retryError || error);
         });
     };
     const onError = event => {
@@ -254,9 +212,9 @@ async function navigateNormalNext(shell, video) {
     video.addEventListener("error", onError, true);
     video.addEventListener("playing", onPlaying, { capture:true, once:true });
 
-    video.dataset.cigCurrentPath = path;
-    video.poster = thumbEndpoint(path);
-    video.src = videoEndpoint(path);
+    video.dataset.cigCurrentPath = target.path;
+    video.poster = thumbEndpoint(target.path);
+    video.src = videoEndpoint(target.path);
     video.load();
     video.defaultPlaybackRate = loadRate();
     video.playbackRate = loadRate();
@@ -279,32 +237,13 @@ function onNextClick(event) {
     event.stopImmediatePropagation();
     event.stopPropagation();
 
-    const session = sessions.get(shell);
-    if (session?.overlay instanceof HTMLVideoElement) {
-        navigateOverlayNext(shell, session);
-        return;
-    }
-
     const root = activeRoot(shell);
     if (root) navigateNormalNext(shell, root).catch(error => console.warn("[ImageGallery] next navigation failed", error));
-}
-
-function cleanupSessions() {
-    const fs = fullscreenElement();
-    for (const [shell, session] of [...sessions.entries()]) {
-        if (fs === shell) continue;
-        returnOverlayVideo(session);
-        try { session.root?.style?.removeProperty?.("display"); } catch (_) {}
-        sessions.delete(shell);
-    }
 }
 
 app.registerExtension({
     name: EXT_NAME,
     setup() {
-        ensureStyles();
         document.addEventListener("click", onNextClick, true);
-        document.addEventListener("fullscreenchange", cleanupSessions, true);
-        document.addEventListener("webkitfullscreenchange", cleanupSessions, true);
     },
 });
