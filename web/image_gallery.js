@@ -1,5 +1,6 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { installGalleryPreviewNavigation } from "./preview_navigation.js";
 
 const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
@@ -96,6 +97,7 @@ function setWidgetValue(node,relativePath,captureState=true){
         w.options.values.sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"}));
     }
     w.value=value;
+    node.__cigPreviewNavigation?.refresh();
     if(value){node.properties=node.properties||{};node.properties.__cigLastImage=value;try{localStorage.setItem(CIG_LAST_IMAGE_KEY,value);}catch(_){}}
     if(isAbsoluteGalleryPath(value)){
         loadExternalPreview(node,value);
@@ -632,6 +634,7 @@ async function openGallery(node){
         if(token !== loadToken || !overlay.isConnected) return;
 
         images = Array.isArray(data.images) ? data.images : [];imageMeta=new Map((Array.isArray(data.items)?data.items:[]).map(x=>[String(x?.name??""),x]));subfolders=Array.isArray(data.folders)?data.folders:[];node.__cigGalleryValues=images.map(name=>joinPath(activeFolder,name));
+        node.__cigPreviewNavigation?.setFolderValues(activeFolder, node.__cigGalleryValues);
         render({scrollToCurrent});renderBreadcrumbs();
 
         if(preserveScroll) body.scrollTop = oldScroll;
@@ -1067,133 +1070,6 @@ function installGalleryPreviewWidgetHook(node){
 }
 
 
-function installGalleryPreviewNavigation(node){
-    if(node.__cigPreviewNavWatcher)return;
-    node.__cigPreviewNavWatcher=true;
-
-    const inside=(p,r)=>!!r&&p[0]>=r.x&&p[0]<=r.x+r.w&&p[1]>=r.y&&p[1]<=r.y+r.h;
-
-    const folderValues=()=>{
-        const w=getImageWidget(node);
-        if(!w)return [];
-        const current=normalizePath(String(w.value??""));
-        const folder=splitPath(current).folder;
-        const raw=[...(Array.isArray(w.options?.values)?w.options.values:[]),...(Array.isArray(node.__cigGalleryValues)?node.__cigGalleryValues:[])];
-        const seen=new Set(), out=[];
-        for(const v of raw){
-            const n=normalizePath(String(v??""));
-            if(!n||splitPath(n).folder!==folder||seen.has(n))continue;
-            seen.add(n); out.push(n);
-        }
-        return out;
-    };
-
-    const navigate=(dir)=>{
-        const w=getImageWidget(node);
-        if(!w)return;
-        const current=normalizePath(String(w.value??""));
-        const values=folderValues();
-        if(values.length<2)return;
-        let i=values.indexOf(current);
-        if(i<0)i=0;
-        i=(i+dir+values.length)%values.length;
-        const next=values[i];
-        node.__cigFolder=splitPath(next).folder;
-        setWidgetValue(node,next);
-    };
-
-    const patch=(w)=>{
-        if(!w||w.__cigPrecisePreviewPatched)return w;
-        const isPreview=w.name==="$$canvas-image-preview"||(w.options?.canvasOnly===true&&typeof w.drawWidget==="function"&&typeof w.onPointerDown==="function");
-        if(!isPreview)return w;
-        w.__cigPrecisePreviewPatched=true;
-
-        const originalDraw=typeof w.drawWidget==="function"?w.drawWidget.bind(w):null;
-        const originalPointerDown=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
-
-        w.drawWidget=function(ctx,options){
-            originalDraw?.(ctx,options);
-            try{
-                const imgs=options?.previewImages??node.imgs??[];
-                if(!imgs.length){this.__cigImageRect=null;this.__cigPrevRect=null;this.__cigNextRect=null;return;}
-                const index=node.imageIndex??0;
-                const img=imgs[index]??imgs[0];
-                const iw=Number(img?.naturalWidth||img?.width||0), ih=Number(img?.naturalHeight||img?.height||0);
-                if(!(iw>0&&ih>0)){this.__cigImageRect=null;return;}
-                const dw=Number(options?.width??node.size?.[0]??0);
-                const dh=Math.max(1,Number(this.computedHeight??220));
-                const sideReserve=Math.min(110,Math.max(72,dw*0.18)),previewWidth=Math.max(80,dw-sideReserve*2-16);const scale=Math.min(previewWidth/iw,dh/ih,1);
-                const rw=iw*scale, rh=ih*scale;
-                const rx=(dw-rw)/2, ry=Number(this.y??0)+(dh-rh)/2;
-                this.__cigImageRect={x:rx,y:ry,w:rw,h:rh};
-
-                const values=folderValues();
-                if(values.length<2){this.__cigPrevRect=null;this.__cigNextRect=null;return;}
-
-                const margin=6,gap=8,buttonY=Number(this.y??0)+margin,buttonH=Math.max(20,dh-margin*2);
-                const leftX=margin,leftW=Math.max(0,rx-gap-leftX);
-                const rightX=rx+rw+gap,rightW=Math.max(0,dw-margin-rightX);
-                this.__cigPrevRect=leftW>=18?{x:leftX,y:buttonY,w:leftW,h:buttonH}:null;
-                this.__cigNextRect=rightW>=18?{x:rightX,y:buttonY,w:rightW,h:buttonH}:null;
-
-                const mouse=app.canvas?.graph_mouse;
-                const local=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:[-9999,-9999];
-                const drawBtn=(r,text)=>{
-                    if(!r)return;
-                    const hover=inside(local,r);
-                    ctx.save();
-                    ctx.fillStyle=hover?"rgba(9,25,42,.98)":"rgba(28,28,28,.76)";
-                    ctx.strokeStyle=hover?"rgba(120,180,255,1)":"rgba(255,255,255,.35)";
-                    ctx.lineWidth=1.5;
-                    ctx.beginPath();
-                    ctx.roundRect(r.x,r.y,r.w,r.h,9);
-                    ctx.fill(); ctx.stroke();
-                    ctx.fillStyle="#fff";
-                    ctx.font=`700 ${Math.max(30,Math.min(72,r.h*0.34,r.w*0.62))}px Arial,sans-serif`;
-                    ctx.textAlign="center"; ctx.textBaseline="middle";
-                    ctx.fillText(text,r.x+r.w/2,r.y+r.h/2-1);
-                    ctx.restore();
-                    if(hover&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
-                };
-                drawBtn(this.__cigPrevRect,"‹");
-                drawBtn(this.__cigNextRect,"›");
-                if(inside(local,this.__cigImageRect)&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
-            }catch(err){console.warn("[ImageGallery] preview draw:",err);}
-        };
-
-        w.onPointerDown=function(pointer,nodeArg,canvas){
-            try{
-                const mouse=app.canvas?.graph_mouse;
-                const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:null;
-                const button=pointer?.eDown?.button;
-                if(p&&(button==null||button===0)){
-                    if(inside(p,this.__cigPrevRect)){navigate(-1);return true;}
-                    if(inside(p,this.__cigNextRect)){navigate(1);return true;}
-                    if(inside(p,this.__cigImageRect)){queueMicrotask(()=>openGallery(node));return true;}
-                }
-            }catch(err){console.warn("[ImageGallery] preview pointer:",err);}
-            return originalPointerDown?.(pointer,nodeArg,canvas)??true;
-        };
-        return w;
-    };
-
-    const scan=()=>node.widgets?.forEach(patch);
-    scan();
-
-    const originalAddCustomWidget=typeof node.addCustomWidget==="function"?node.addCustomWidget.bind(node):null;
-    if(originalAddCustomWidget&&!node.__cigAddWidgetWrapped){
-        node.__cigAddWidgetWrapped=true;
-        node.addCustomWidget=function(widget){
-            const result=originalAddCustomWidget(widget);
-            patch(result??widget);
-            return result;
-        };
-    }
-    requestAnimationFrame(scan);
-    setTimeout(scan,50);
-    setTimeout(scan,250);
-    setTimeout(scan,1000);
-}
 function installGalleryStartButton(node){
     if(node.__cigStartButtonSetup)return;
     node.__cigStartButtonSetup=true;
@@ -1281,233 +1157,11 @@ function installGalleryDomFixV2(){
     fix();
 }
 
-function installGalleryPreviewNavigationV2(node){
-    if(node.__cigPreviewNavV2)return;
-    node.__cigPreviewNavV2=true;
-    const inside=(p,r)=>!!p&&!!r&&p[0]>=r.x&&p[0]<=r.x+r.w&&p[1]>=r.y&&p[1]<=r.y+r.h;
-    const values=()=>{
-        const w=getImageWidget(node); if(!w)return [];
-        const cur=normalizePath(String(w.value??"")),folder=splitPath(cur).folder,raw=Array.isArray(w.options?.values)?w.options.values:[];
-        const seen=new Set(),out=[];
-        for(const v of raw){const n=normalizePath(String(v??""));if(n&&splitPath(n).folder===folder&&!seen.has(n)){seen.add(n);out.push(n);}}
-        return out;
-    };
-    const nav=dir=>{
-        const w=getImageWidget(node),a=values(); if(!w||a.length<2)return;
-        const cur=normalizePath(String(w.value??"")); let i=a.indexOf(cur); if(i<0)i=0;
-        const n=a[(i+dir+a.length)%a.length]; node.__cigFolder=splitPath(n).folder; setWidgetValue(node,n);
-    };
-    const patch=()=>{
-        const w=node.widgets?.find(x=>x?.name==="$$canvas-image-preview"||(x?.options?.canvasOnly===true&&typeof x?.drawWidget==="function"&&typeof x?.onPointerDown==="function"));
-        if(!w||w.__cigPreviewNavV2Patched)return !!w;
-        w.__cigPreviewNavV2Patched=true;
-        const draw=typeof w.drawWidget==="function"?w.drawWidget.bind(w):null;
-        const down=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
-        w.drawWidget=function(ctx,o){
-            draw?.(ctx,o);
-            try{
-                const imgs=o?.previewImages??node.imgs??[],img=imgs[node.imageIndex??0]??imgs[0];
-                const iw=Number(img?.naturalWidth||img?.width||0),ih=Number(img?.naturalHeight||img?.height||0);
-                if(!(iw>0&&ih>0))return;
-                const dw=Number(o?.width??node.size?.[0]??320),y=Number(this.y??0),h=Math.max(1,Number(this.computedHeight??220));
-                const side=Math.min(120,Math.max(72,dw*.18)),cw=Math.max(80,dw-side*2);
-                const sc=Math.min(cw/iw,h/ih,1),rw=iw*sc,rh=ih*sc,rx=side+(cw-rw)/2,ry=y+(h-rh)/2;
-                this.__cigImageRect={x:rx,y:ry,w:rw,h:rh};
-                this.__cigPrevRect={x:0,y:y,w:side,h:h};
-                this.__cigNextRect={x:dw-side,y:y,w:side,h:h};
-                ctx.save();
-                ctx.fillStyle="#111";ctx.fillRect(0,y,dw,h);
-                ctx.drawImage(img,rx,ry,rw,rh);
-                const m=app.canvas?.graph_mouse,p=m?[m[0]-node.pos[0],m[1]-node.pos[1]]:[-9999,-9999];
-                const btn=(r,t)=>{
-                    const hov=inside(p,r);
-                    ctx.fillStyle=hov?"rgba(5,16,28,.98)":"rgba(24,24,24,.9)";
-                    ctx.strokeStyle=hov?"rgba(80,150,255,1)":"rgba(255,255,255,.28)";
-                    ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(r.x+4,r.y+4,r.w-8,r.h-8,12);ctx.fill();ctx.stroke();
-                    ctx.fillStyle="#fff";ctx.font=`700 ${Math.max(34,Math.min(64,r.w*.55,r.h*.38))}px Arial,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t,r.x+r.w/2,r.y+r.h/2-1);
-                    if(hov&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
-                };
-                if(values().length>1){btn(this.__cigPrevRect,"‹");btn(this.__cigNextRect,"›");}
-                if(inside(p,this.__cigImageRect)&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
-                ctx.restore();
-            }catch(e){console.warn("[ImageGallery] V2 draw",e);}
-        };
-        w.onPointerDown=function(pointer,nodeArg,canvas){
-            try{
-                const m=app.canvas?.graph_mouse,p=m?[m[0]-node.pos[0],m[1]-node.pos[1]]:null,b=pointer?.eDown?.button;
-                if(p&&(b==null||b===0)){
-                    if(inside(p,this.__cigPrevRect)){nav(-1);return true;}
-                    if(inside(p,this.__cigNextRect)){nav(1);return true;}
-                    if(inside(p,this.__cigImageRect)){queueMicrotask(()=>openGallery(node));return true;}
-                }
-            }catch(e){console.warn("[ImageGallery] V2 pointer",e);}
-            return down?.(pointer,nodeArg,canvas)??true;
-        };
-        return true;
-    };
-    if(!patch()){requestAnimationFrame(patch);setTimeout(patch,50);setTimeout(patch,250);setTimeout(patch,1000);}
-}
-
-
-
-
-function installGalleryPreviewNavigationV3(node){
-    if(node.__cigPreviewNavV3)return;
-    node.__cigPreviewNavV3=true;
-
-    const inside=(p,r)=>!!p&&!!r&&p[0]>=r.x&&p[0]<=r.x+r.w&&p[1]>=r.y&&p[1]<=r.y+r.h;
-
-    const folderValues=()=>{
-        const w=getImageWidget(node);
-        if(!w)return [];
-        const current=normalizePath(String(w.value??""));
-        const folder=splitPath(current).folder;
-        const raw=[...(Array.isArray(w.options?.values)?w.options.values:[]),...(Array.isArray(node.__cigGalleryValues)?node.__cigGalleryValues:[])];
-        const seen=new Set(),out=[];
-        for(const v of raw){
-            const n=normalizePath(String(v??""));
-            if(!n||splitPath(n).folder!==folder||seen.has(n))continue;
-            seen.add(n);out.push(n);
-        }
-        return out;
-    };
-
-    const navigate=(dir)=>{
-        const w=getImageWidget(node);
-        const values=folderValues();
-        if(!w||values.length<2)return;
-        const current=normalizePath(String(w.value??""));
-        let i=values.indexOf(current);
-        if(i<0)i=0;
-        const next=values[(i+dir+values.length)%values.length];
-        node.__cigFolder=splitPath(next).folder;
-        setWidgetValue(node,next);
-    };
-
-    const patch=(w)=>{
-        if(!w||w.__cigNavV4Patched)return w;
-        const isPreview=w.name==="$$canvas-image-preview"||(w.options?.canvasOnly===true&&typeof w.drawWidget==="function"&&typeof w.onPointerDown==="function");
-        if(!isPreview)return w;
-        w.__cigNavV4Patched=true;
-
-        const stockPointer=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
-
-        w.drawWidget=function(ctx,options){
-            try{
-                const imgs=options?.previewImages??node.imgs??[];
-                const img=imgs[node.imageIndex??0]??imgs[0];
-                const dw=Number(options?.width??node.size?.[0]??0);
-                const y=Number(this.y??0);
-                const dh=Math.max(1,Number(this.computedHeight??220));
-
-                ctx.save();
-                ctx.fillStyle="#111";
-                ctx.fillRect(0,y,dw,dh);
-
-                if(!img){
-                    this.__cigImageRect=null;
-                    this.__cigPrevRect=null;
-                    this.__cigNextRect=null;
-                    ctx.restore();
-                    return;
-                }
-
-                const iw=Number(img?.naturalWidth||img?.width||0);
-                const ih=Number(img?.naturalHeight||img?.height||0);
-                if(!(iw>0&&ih>0)){
-                    this.__cigImageRect=null;
-                    this.__cigPrevRect=null;
-                    this.__cigNextRect=null;
-                    ctx.restore();
-                    return;
-                }
-
-                const outer=6;
-                const gap=8;
-                const landscape=(iw/ih)>=1.0;
-                const minSide=landscape?Math.min(90,Math.max(58,dw*0.12)):0;
-                const maxW=Math.max(40,dw-(outer*2)-(gap*2)-(minSide*2));
-                const maxH=Math.max(40,dh-8);
-                const scale=Math.min(maxW/iw,maxH/ih);
-                const rw=iw*scale;
-                const rh=ih*scale;
-                const rx=(dw-rw)/2;
-                const ry=y+(dh-rh)/2;
-
-                this.__cigImageRect={x:rx,y:ry,w:rw,h:rh};
-
-                ctx.drawImage(img,rx,ry,rw,rh);
-
-                const values=folderValues();
-                if(values.length>1){
-                    const leftW=Math.max(0,rx-gap-outer);
-                    const rightX=rx+rw+gap;
-                    const rightW=Math.max(0,dw-outer-rightX);
-                    this.__cigPrevRect=leftW>=30?{x:outer,y:y,w:leftW,h:dh}:null;
-                    this.__cigNextRect=rightW>=30?{x:rightX,y:y,w:rightW,h:dh}:null;
-
-                    const mouse=app.canvas?.graph_mouse;
-                    const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:[-9999,-9999];
-
-                    const drawBtn=(r,text)=>{
-                        if(!r)return;
-                        const hover=inside(p,r);
-                        ctx.fillStyle=hover?"rgba(6,18,32,.98)":"rgba(24,24,24,.88)";
-                        ctx.strokeStyle=hover?"rgba(70,145,255,1)":"rgba(255,255,255,.28)";
-                        ctx.lineWidth=1.5;
-                        ctx.beginPath();
-                        ctx.roundRect(r.x+3,r.y+3,Math.max(1,r.w-6),Math.max(1,r.h-6),12);
-                        ctx.fill();
-                        ctx.stroke();
-                        ctx.fillStyle="#fff";
-                        ctx.font=`700 ${Math.max(34,Math.min(72,r.w*.48,r.h*.28))}px Arial,sans-serif`;
-                        ctx.textAlign="center";
-                        ctx.textBaseline="middle";
-                        ctx.fillText(text,r.x+r.w/2,r.y+r.h/2-1);
-                        if(hover&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
-                    };
-
-                    drawBtn(this.__cigPrevRect,"‹");
-                    drawBtn(this.__cigNextRect,"›");
-                }else{
-                    this.__cigPrevRect=null;
-                    this.__cigNextRect=null;
-                }
-
-                const mouse=app.canvas?.graph_mouse;
-                const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:null;
-                if(inside(p,this.__cigImageRect)&&app.canvas?.canvas)app.canvas.canvas.style.cursor="pointer";
-                ctx.restore();
-            }catch(e){
-                console.warn("[ImageGallery] V4 draw",e);
-                try{ctx.restore();}catch(_){}
-            }
-        };
-
-        w.onPointerDown=function(pointer,nodeArg,canvas){
-            try{
-                const mouse=app.canvas?.graph_mouse;
-                const p=mouse?[mouse[0]-node.pos[0],mouse[1]-node.pos[1]]:null;
-                const button=pointer?.eDown?.button;
-                if(p&&(button==null||button===0)){
-                    if(inside(p,this.__cigPrevRect)){navigate(-1);return true;}
-                    if(inside(p,this.__cigNextRect)){navigate(1);return true;}
-                    if(inside(p,this.__cigImageRect)){setTimeout(()=>openGallery(node),0);return true;}
-                }
-            }catch(e){
-                console.warn("[ImageGallery] V4 pointer",e);
-            }
-            return stockPointer?.(pointer,nodeArg,canvas)??true;
-        };
-        return w;
-    };
-
-    const scan=()=>node.widgets?.forEach(patch);
-    scan();
-    requestAnimationFrame(scan);
-    setTimeout(scan,50);
-    setTimeout(scan,250);
-    setTimeout(scan,1000);
+function installGalleryPreviewNavigationV3(node) {
+    return installGalleryPreviewNavigation(node, {
+        app, api, getImageWidget, setWidgetValue, openGallery,
+        normalizePath, splitPath, joinPath,
+    });
 }
 
 function installGalleryFooterFixV3(){
@@ -1565,6 +1219,6 @@ function installGalleryFooterFixV3(){
 app.registerExtension({
 name:EXTENSION_NAME,
 beforeConfigureGraph(graphData){captureSerializedGalleryImage(graphData);},
-loadedGraphNode(node){restoreSerializedGalleryImage(node);},
+loadedGraphNode(node){restoreSerializedGalleryImage(node);if(node.comfyClass===NODE_CLASS||node.type===NODE_CLASS)installGalleryPreviewNavigationV3(node).refresh();},
 async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);hideGalleryTopWidgets(node);// CIG_STABLE_NODE_HEIGHT_V1
 const computed=node.computeSize?.();if(computed){const currentW=node.size?.[0]??computed[0];const currentH=node.size?.[1]??computed[1];const wantedW=Math.max(currentW,computed[0]);if(wantedW>currentW)node.setSize?.([wantedW,currentH]);}}});

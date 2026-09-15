@@ -30,12 +30,12 @@ Image and video gallery for ComfyUI with fast browsing, selection, playback, ful
 
 ## Сценарий 2. Быстро листать изображения прямо в ноде
 
-Если в текущей папке несколько изображений, по бокам предпросмотра появляются стрелки.
+По бокам предпросмотра расположены стрелки. Они активны, если в текущей папке несколько изображений.
 
 - **‹** — предыдущее изображение;
 - **›** — следующее изображение.
 
-Стрелки доступны сразу после загрузки workflow — предварительно открывать галерею не нужно.
+Список файлов загружается автоматически при открытии workflow и смене папки — предварительно открывать галерею не нужно. Пока список загружается или в папке меньше двух изображений, стрелки приглушены. Их расположение не зависит от пропорций изображения.
 
 ## Сценарий 3. Запустить несколько изображений по очереди
 
@@ -161,12 +161,12 @@ When the workflow is opened again, the last selected image is restored automatic
 
 ## Scenario 2. Browse images directly in the node
 
-When the current folder contains several images, navigation arrows appear beside the preview.
+Navigation arrows sit beside the preview. They are active when the current folder contains several images.
 
 - **‹** — previous image;
 - **›** — next image.
 
-The arrows are available immediately after the workflow loads; you do not need to open the gallery first.
+The file list loads automatically when the workflow opens or the selected folder changes; you do not need to open the gallery first. Arrows are dimmed while the list loads or when the folder contains fewer than two images. Their position does not depend on the image aspect ratio.
 
 ## Scenario 3. Queue several images
 
