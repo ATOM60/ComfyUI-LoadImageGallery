@@ -101,11 +101,29 @@ function restoreOriginCard(state, navigatedAway) {
     applyPlaybackState(video, state, { play: !navigatedAway && !state.paused });
 }
 
+function ensureTargetVideo(targetCard) {
+    if (!(targetCard instanceof HTMLElement)) return null;
+
+    let targetVideo = targetCard.querySelector("video.ovg-inline-video");
+    if (targetVideo instanceof HTMLVideoElement) return targetVideo;
+
+    // Output Gallery creates its <video> lazily only after the card is played.
+    // Use its own play button so state.players, player eviction and GPU wrapping
+    // remain consistent with the gallery's normal behavior.
+    const playButton = targetCard.querySelector("button.ovg-play");
+    if (playButton instanceof HTMLButtonElement) {
+        try { playButton.click(); } catch (_) {}
+        targetVideo = targetCard.querySelector("video.ovg-inline-video");
+    }
+
+    return targetVideo instanceof HTMLVideoElement ? targetVideo : null;
+}
+
 function handoffToCurrentCard(state, current) {
     const targetCard = findCardForPath(state.card, current.path);
     if (!(targetCard instanceof HTMLElement) || targetCard === state.card) return;
 
-    const targetVideo = targetCard.querySelector("video.ovg-inline-video");
+    const targetVideo = ensureTargetVideo(targetCard);
     if (!(targetVideo instanceof HTMLVideoElement)) return;
 
     try {
@@ -129,8 +147,6 @@ function handoffToCurrentCard(state, current) {
     }
 
     // Leaving fullscreen must continue the video that was current at exit.
-    // Do not trust video.paused here: browsers can pause the element as part
-    // of the fullscreen transition itself.
     applyPlaybackState(targetVideo, current, { play: true });
 }
 
@@ -150,8 +166,6 @@ function restoreAfterFullscreen(state) {
 
     const navigatedAway = !!current.path && current.path !== state.path;
     if (!navigatedAway) {
-        // Same item: fullscreen exit itself can pause the browser video.
-        // Resume that same item in the gallery as well.
         try {
             video.controls = false;
             video.removeAttribute("controls");
