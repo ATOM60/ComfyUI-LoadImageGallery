@@ -128,7 +128,10 @@ function handoffToCurrentCard(state, current) {
         return;
     }
 
-    applyPlaybackState(targetVideo, current, { play: !current.paused });
+    // Leaving fullscreen must continue the video that was current at exit.
+    // Do not trust video.paused here: browsers can pause the element as part
+    // of the fullscreen transition itself.
+    applyPlaybackState(targetVideo, current, { play: true });
 }
 
 function restoreAfterFullscreen(state) {
@@ -146,7 +149,16 @@ function restoreAfterFullscreen(state) {
     };
 
     const navigatedAway = !!current.path && current.path !== state.path;
-    if (!navigatedAway) return;
+    if (!navigatedAway) {
+        // Same item: fullscreen exit itself can pause the browser video.
+        // Resume that same item in the gallery as well.
+        try {
+            video.controls = false;
+            video.removeAttribute("controls");
+            video.play()?.catch?.(() => {});
+        } catch (_) {}
+        return;
+    }
 
     restoreOriginCard(state, true);
     handoffToCurrentCard(state, current);
