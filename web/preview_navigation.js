@@ -5,13 +5,18 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         normalizePath, splitPath, joinPath } = dependencies;
     const empty = [];
     const patched = new Map();
+    const SORT_KEY = "ComfyUI-LoadImageGallery.sortMode";
+    const FAVORITES_KEY = "ComfyUI-LoadImageGallery.favorites";
     let disposed = false;
     let folder = null;
     let values = empty;
     let cachedWidget, cachedValue, cachedOptions, cachedGallery;
     let optionsLength = -1, galleryLength = -1;
+    let cachedSortMode = "", cachedFavoritesRaw = "";
     let listedFolder = null;
     let listedValues = empty;
+    let listedMetaFolder = null;
+    let listedMeta = new Map();
     let request = null;
     let retryTimer = null;
     let attempts = 0;
@@ -22,18 +27,66 @@ export function installGalleryPreviewNavigation(node, dependencies) {
     const isPreview = w => w && (w.name === "$$canvas-image-preview" || w.type === "IMAGE_PREVIEW" ||
         (w.options?.canvasOnly === true && typeof w.drawWidget === "function" && typeof w.onPointerDown === "function"));
 
+    function sortMode() {
+        try { return localStorage.getItem(SORT_KEY) || "name-asc"; }
+        catch (_) { return "name-asc"; }
+    }
+
+    function favoritesRaw() {
+        try { return localStorage.getItem(FAVORITES_KEY) || "[]"; }
+        catch (_) { return "[]"; }
+    }
+
+    function favoritesFrom(raw) {
+        try {
+            const data = JSON.parse(raw || "[]");
+            return new Set(Array.isArray(data) ? data.map(v => normalizePath(String(v ?? ""))).filter(Boolean) : []);
+        } catch (_) {
+            return new Set();
+        }
+    }
+
+    function compareNames(a, b) {
+        return String(a).localeCompare(String(b), undefined, { numeric:true, sensitivity:"base" });
+    }
+
+    function orderValues(source) {
+        const mode = sortMode();
+        const favorites = favoritesFrom(favoritesRaw());
+        const meta = listedMetaFolder === folder ? listedMeta : new Map();
+        const sorted = [...source].sort((pathA, pathB) => {
+            const nameA = splitPath(pathA).filename;
+            const nameB = splitPath(pathB).filename;
+            const metaA = meta.get(nameA) || {};
+            const metaB = meta.get(nameB) || {};
+            switch (mode) {
+                case "name-desc": return -compareNames(nameA, nameB);
+                case "date-desc": return (Number(metaB.mtime) || 0) - (Number(metaA.mtime) || 0) || compareNames(nameA, nameB);
+                case "date-asc": return (Number(metaA.mtime) || 0) - (Number(metaB.mtime) || 0) || compareNames(nameA, nameB);
+                case "size-desc": return (Number(metaB.size) || 0) - (Number(metaA.size) || 0) || compareNames(nameA, nameB);
+                case "size-asc": return (Number(metaA.size) || 0) - (Number(metaB.size) || 0) || compareNames(nameA, nameB);
+                default: return compareNames(nameA, nameB);
+            }
+        });
+        return [
+            ...sorted.filter(path => favorites.has(path)),
+            ...sorted.filter(path => !favorites.has(path)),
+        ];
+    }
+
     function rebuild() {
         const seen = new Set();
-        values = [];
+        const collected = [];
         // A successful directory listing is authoritative (including deletions).
         const sources = listedFolder === folder ? [listedValues] : [cachedOptions, cachedGallery];
         for (const source of sources) for (const item of source || empty) {
             const path = normalizePath(String(item ?? ""));
             if (path && splitPath(path).folder === folder && !seen.has(path)) {
                 seen.add(path);
-                values.push(path);
+                collected.push(path);
             }
         }
+        values = orderValues(collected);
     }
 
     function cancelRequest() {
@@ -44,7 +97,8 @@ export function installGalleryPreviewNavigation(node, dependencies) {
     }
 
     async function loadFolder() {
-        if (disposed || folder === null || listedFolder === folder || request || retryTimer !== null || attempts >= 3) return;
+        const complete = listedFolder === folder && listedMetaFolder === folder;
+        if (disposed || folder === null || complete || request || retryTimer !== null || attempts >= 3) return;
         const pending = { folder, controller: new AbortController() };
         request = pending;
         attempts++;
@@ -55,6 +109,8 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             if (disposed || request !== pending || folder !== pending.folder) return;
             listedFolder = folder;
             listedValues = (Array.isArray(data.images) ? data.images : []).map(name => joinPath(folder, String(name)));
+            listedMetaFolder = folder;
+            listedMeta = new Map((Array.isArray(data.items) ? data.items : []).map(item => [String(item?.name ?? ""), item || {}]));
             rebuild();
             dirty();
         } catch (error) {
@@ -70,19 +126,23 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         }
     }
 
-    // The fast path only compares scalar values and array identities/lengths.
-    // Directory filtering is never repeated for unchanged render frames.
+    // The fast path compares scalar values, array identities/lengths and the two
+    // gallery-order settings. It does not rescan the directory on render frames.
     function syncValues() {
         const widget = getImageWidget(node);
         const raw = widget?.value ?? node.properties?.__cigLastImage ?? "";
         const options = Array.isArray(widget?.options?.values) ? widget.options.values : empty;
         const gallery = Array.isArray(node.__cigGalleryValues) ? node.__cigGalleryValues : empty;
+        const mode = sortMode();
+        const favoriteState = favoritesRaw();
         if (observed && widget === cachedWidget && raw === cachedValue && options === cachedOptions &&
-            gallery === cachedGallery && options.length === optionsLength && gallery.length === galleryLength) return;
+            gallery === cachedGallery && options.length === optionsLength && gallery.length === galleryLength &&
+            mode === cachedSortMode && favoriteState === cachedFavoritesRaw) return;
         observed = true;
         cachedWidget = widget; cachedValue = raw;
         cachedOptions = options; cachedGallery = gallery;
         optionsLength = options.length; galleryLength = gallery.length;
+        cachedSortMode = mode; cachedFavoritesRaw = favoriteState;
         const current = normalizePath(String(raw));
         const nextFolder = current ? splitPath(current).folder : null;
         if (nextFolder !== folder) {
@@ -90,6 +150,8 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             folder = nextFolder;
             listedFolder = null;
             listedValues = empty;
+            listedMetaFolder = null;
+            listedMeta = new Map();
             attempts = 0;
         }
         rebuild();
@@ -214,12 +276,14 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         if (disposed) return;
         syncValues();
         if (sourceFolder !== folder) return;
-        cancelRequest();
         listedFolder = sourceFolder;
         listedValues = sourceValues;
         attempts = 0;
         rebuild();
         dirty();
+        // The gallery can provide filenames before this controller has fetched
+        // metadata. Keep one bounded listing request so date/size sorting is exact.
+        void loadFolder();
     }
 
     const hooks = [];
