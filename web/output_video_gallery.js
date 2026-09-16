@@ -704,31 +704,10 @@ app.registerExtension({
                 try { await fetchVideos(); renderGrid(); } catch(e) { toast(e.message||String(e),"error"); renderGrid(); }
             }
 
-            const installButton = () => {
-                if (!node?.widgets) return;
-                let button = node.widgets.find(w => w?.name === "Галерея output");
-                if (!button) {
-                    button = node.addWidget("button","Галерея output",null,()=>openModal(),{serialize:false});
-                    button.serialize=false;
-                }
-                button.hidden=false;
-                button.computeSize=(width)=>[width??node.size?.[0]??320,64];
-                button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});
-                button.drawWidget=function(ctx,options){
-                    const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;
-                    ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t.outputButton,width/2,y+h/2);ctx.restore();
-                };
-                const pi=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview"||(w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"&&w!==button));
-                const bi=node.widgets.indexOf(button);
-                if (pi>=0&&bi>=0&&bi!==pi-1) {
-                    node.widgets.splice(bi,1);
-                    const pi2=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview"||(w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"&&w!==button));
-                    node.widgets.splice(Math.max(0,pi2),0,button);
-                }
-                node.graph?.setDirtyCanvas?.(true,true);
-            };
-            installButton(); requestAnimationFrame(installButton);
-            for (const ms of [50,250,1000,2000,5000,10000]) setTimeout(installButton,ms);
+            if (!node.widgets?.some(w => w?.name === "Галерея output")) {
+                const button = node.addWidget("button", "Галерея output", null, () => openModal(), { serialize: false });
+                button.serialize = false;
+            }
 
             const oldRemoved=node.onRemoved;
             node.onRemoved=function(){closeModal();oldRemoved?.apply(this,arguments);};

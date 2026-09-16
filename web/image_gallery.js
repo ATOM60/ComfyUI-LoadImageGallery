@@ -1070,60 +1070,10 @@ function installGalleryPreviewWidgetHook(node){
 }
 
 
-function installGalleryStartButton(node){
-    if(node.__cigStartButtonSetup)return;
-    node.__cigStartButtonSetup=true;
-    const ensure=()=>{
-        if(!node?.widgets)return;
-        const previewIndex=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
-        if(previewIndex<0)return;
-        let button=node.widgets.find(w=>w?.name==="▶ СТАРТ");
-        if(!button){
-            button=node.addWidget("button","▶ СТАРТ",null,()=>{app.queuePrompt(0,1);},{serialize:false});
-            button.serialize=false;
-            button.computeSize=(width)=>[width??node.size?.[0]??320,64];
-            button.computeLayoutSize=()=>({minHeight:64,maxHeight:64,minWidth:0});button.__cigTallDraw=true;button.drawWidget=function(ctx,options){const h=this.computedHeight??64,y=this.y??0,width=options?.width??node.size?.[0]??320,m=8;ctx.save();ctx.globalAlpha=this.computedDisabled?.45:1;ctx.fillStyle=this.clicked?this.outline_color:this.background_color;ctx.strokeStyle=this.outline_color;ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(m,y,width-m*2,h,12);ctx.fill();ctx.stroke();ctx.fillStyle=this.text_color;ctx.font="700 20px Arial,sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`▶  ${cigT.start}`,width/2,y+h/2);ctx.restore();};
-            // CIG_REMOVE_START_HEIGHT_GROWTH_V1
-        }
-        const pi=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
-        const bi=node.widgets.indexOf(button);
-        if(pi>=0&&bi>=0&&bi!==pi+1){
-            node.widgets.splice(bi,1);
-            const pi2=node.widgets.findIndex(w=>w?.name==="$$canvas-image-preview");
-            node.widgets.splice(pi2+1,0,button);
-        }
-        node.graph?.setDirtyCanvas?.(true,true);
-    };
-    ensure();
-    requestAnimationFrame(ensure);
-    setTimeout(ensure,50);
-    setTimeout(ensure,250);
-    setTimeout(ensure,1000);
-    setTimeout(ensure,2000);
-    setTimeout(ensure,5000);
-    setTimeout(ensure,10000);
-}
-
-// CIG_COLD_START_FIX_V1
-function hideGalleryTopWidgets(node){
-    let tries=0;
-    const apply=()=>{
-        if(!node?.widgets)return;
-        const preview=node.widgets.find(w=>w?.name==="$$canvas-image-preview"||(w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"));
-        if(!preview){
-            if(++tries<=40)setTimeout(apply,250);
-            return;
-        }
-        for(const w of node.widgets){
-            if(!w||w===preview||w.name==="▶ СТАРТ")continue;
-            w.hidden=true;
-            w.computeSize=()=>[0,-4];
-            w.computeLayoutSize=()=>({minHeight:0,maxHeight:0,minWidth:0,maxWidth:0});
-            w.drawWidget=()=>{};
-        }
-        node.graph?.setDirtyCanvas?.(true,true);
-    };
-    apply();
+function installGalleryStartButton(node) {
+    if (node.widgets?.some(w => w?.name === "▶ СТАРТ")) return;
+    const button = node.addWidget("button", "▶ СТАРТ", null, () => app.queuePrompt(0, 1), { serialize: false });
+    button.serialize = false;
 }
 
 function installGalleryDomFixV2(){
@@ -1220,5 +1170,5 @@ app.registerExtension({
 name:EXTENSION_NAME,
 beforeConfigureGraph(graphData){captureSerializedGalleryImage(graphData);},
 loadedGraphNode(node){restoreSerializedGalleryImage(node);if(node.comfyClass===NODE_CLASS||node.type===NODE_CLASS)installGalleryPreviewNavigationV3(node).refresh();},
-async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);hideGalleryTopWidgets(node);// CIG_STABLE_NODE_HEIGHT_V1
+async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);// CIG_STABLE_NODE_HEIGHT_V1
 const computed=node.computeSize?.();if(computed){const currentW=node.size?.[0]??computed[0];const currentH=node.size?.[1]??computed[1];const wantedW=Math.max(currentW,computed[0]);if(wantedW>currentW)node.setSize?.([wantedW,currentH]);}}});

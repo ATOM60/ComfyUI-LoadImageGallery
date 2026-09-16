@@ -123,12 +123,12 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         }
         const originalDraw = widget.drawWidget;
         const originalPointer = widget.onPointerDown;
-        const paint = function(ctx, options, geometry) {
+        const draw = function(ctx, options) {
             if (disposed) return originalDraw?.call(this, ctx, options);
             syncValues();
             const width = Math.max(0, Number(options?.width ?? node.size?.[0] ?? 320));
-            const y = geometry.y;
-            const height = geometry.height;
+            const y = Number(this.y ?? 0);
+            const height = Math.max(1, Number(this.computedHeight ?? 220));
             const outer = Math.min(6, width / 20), gap = Math.min(8, width / 30);
             // Reserve both lanes for every aspect ratio, even while decoding.
             const side = Math.min(90, Math.max(32, width * .12), width * .22);
@@ -139,25 +139,35 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             const iw = Number(img?.naturalWidth || img?.width || 0), ih = Number(img?.naturalHeight || img?.height || 0);
             const enabled = values.length > 1;
             const showControls = folder !== null;
-            this.__cigPrevRect = showControls ? { x: outer, y, w: side, h: height } : null;
-            this.__cigNextRect = showControls ? { x: width - outer - side, y, w: side, h: height } : null;
             this.__cigImageRect = null;
+            if (iw > 0 && ih > 0) {
+                const scale = Math.min(imageWidth / iw, imageHeight / ih);
+                const w = iw * scale, h = ih * scale;
+                this.__cigImageRect = { x: (width - w) / 2, y: y + (height - h) / 2, w, h };
+            }
+            // Expand the click targets across ALL space beside the fitted image.
+            // The minimum reserved lanes only prevent narrow portraits losing arrows.
+            const imageRect = this.__cigImageRect;
+            const leftWidth = imageRect ? Math.max(0, imageRect.x - gap - outer) : side;
+            const rightX = imageRect ? imageRect.x + imageRect.w + gap : width - outer - side;
+            this.__cigPrevRect = showControls ? { x: outer, y, w: leftWidth, h: height } : null;
+            this.__cigNextRect = showControls ? { x: rightX, y, w: Math.max(0, width - outer - rightX), h: height } : null;
             ctx.save();
             try {
+                // Paint inside the widget's current clip and z-order. Deferring a
+                // full-widget background until a microtask can erase later widgets.
+                ctx.beginPath();
+                ctx.rect(0, y, width, height);
+                ctx.clip();
+                const alpha = ctx.globalAlpha;
                 ctx.fillStyle = "#111";
                 ctx.fillRect(0, y, width, height);
-                if (iw > 0 && ih > 0) {
-                    const scale = Math.min(imageWidth / iw, imageHeight / ih);
-                    const w = iw * scale, h = ih * scale;
-                    const rect = { x: (width - w) / 2, y: y + (height - h) / 2, w, h };
-                    this.__cigImageRect = rect;
-                    ctx.drawImage(img, rect.x, rect.y, w, h);
-                }
+                if (imageRect) ctx.drawImage(img, imageRect.x, imageRect.y, imageRect.w, imageRect.h);
                 const mouse = point(null, app.canvas);
                 for (const [rect, label] of [[this.__cigPrevRect, "‹"], [this.__cigNextRect, "›"]]) {
                     if (!rect) continue;
                     const hover = enabled && inside(mouse, rect);
-                    ctx.globalAlpha = enabled ? 1 : .35;
+                    ctx.globalAlpha = alpha * (enabled ? 1 : .35);
                     ctx.fillStyle = hover ? "rgba(6,18,32,.98)" : "rgba(24,24,24,.88)";
                     ctx.strokeStyle = hover ? "rgba(70,145,255,1)" : "rgba(255,255,255,.28)";
                     ctx.lineWidth = 1.5;
@@ -174,28 +184,6 @@ export function installGalleryPreviewNavigation(node, dependencies) {
                 }
                 if (inside(mouse, this.__cigImageRect) && app.canvas?.canvas) app.canvas.canvas.style.cursor = "pointer";
             } finally { ctx.restore(); }
-        };
-        let pendingFrame = null;
-        const draw = function(ctx, options) {
-            // Match ComfyUI's deferred image drawing to avoid Chrome's canvas
-            // GPU upload regression. Coalesce repeated draws; never dirty here.
-            const queued = pendingFrame !== null;
-            pendingFrame = {
-                ctx, options: { ...options }, transform: ctx.getTransform(), alpha: ctx.globalAlpha,
-                y: Number(this.y ?? 0), height: Math.max(1, Number(this.computedHeight ?? 220)),
-            };
-            if (queued) return;
-            queueMicrotask(() => {
-                const frame = pendingFrame;
-                pendingFrame = null;
-                if (disposed || !patched.has(widget)) return;
-                frame.ctx.save();
-                try {
-                    frame.ctx.setTransform(frame.transform);
-                    frame.ctx.globalAlpha = frame.alpha;
-                    paint.call(widget, frame.ctx, frame.options, frame);
-                } finally { frame.ctx.restore(); }
-            });
         };
         const down = function(pointer, nodeArg, canvas) {
             if (pointer?.eDown?.button != null && pointer.eDown.button !== 0) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;

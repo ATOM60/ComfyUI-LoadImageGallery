@@ -86,17 +86,8 @@ function restoreOutputButton(node, button, start) {
         changed = true;
     }
 
-    if (!button.__cigRowOutputCallback) {
-        button.__cigRowOutputCallback = button.callback;
-        changed = true;
-    }
-    if (start && !button.__cigRowStartCallback) {
-        button.__cigRowStartCallback = start.callback;
-        changed = true;
-    }
-    const rowStart = start || button.__cigRowStartWidget || null;
-    if (button.__cigRowStartWidget !== rowStart) {
-        button.__cigRowStartWidget = rowStart;
+    if (button.__cigRowStartWidget !== start) {
+        button.__cigRowStartWidget = start;
         changed = true;
     }
 
@@ -129,8 +120,8 @@ function restoreOutputButton(node, button, start) {
                 ctx.restore();
             };
 
-            drawHalf(outer, half, OUTPUT_BUTTON_LABEL, this);
-            drawHalf(outer + half + gap, half, START_BUTTON_LABEL, startWidget);
+            drawHalf(outer, startWidget ? half : width - outer * 2, OUTPUT_BUTTON_LABEL, this);
+            if (startWidget) drawHalf(outer + half + gap, half, START_BUTTON_LABEL, startWidget);
         };
         changed = true;
     }
@@ -146,11 +137,12 @@ function restoreOutputButton(node, button, start) {
 
             const localX = Number(down?.canvasX) - Number(node.pos?.[0] ?? 0);
             const width = Number(node.size?.[0] ?? 320);
-            const leftHalf = !Number.isFinite(localX) || localX < width / 2;
+            const leftHalf = !this.__cigRowStartWidget || !Number.isFinite(localX) || localX < width / 2;
 
             pointer.onClick = upEvent => {
-                const cb = leftHalf ? this.__cigRowOutputCallback : this.__cigRowStartCallback;
                 const source = leftHalf ? this : this.__cigRowStartWidget;
+                if (source?.computedDisabled) return;
+                const cb = source?.callback;
                 try {
                     cb?.(source?.value, canvas, nodeArg ?? node, [localX, Number(down?.canvasY) - Number(node.pos?.[1] ?? 0)], upEvent ?? down);
                 } catch (error) {
@@ -172,120 +164,6 @@ function sameOrder(a, b) {
     return a.length === b.length && a.every((item, index) => item === b[index]);
 }
 
-function lockFixedProperty(object, key, value) {
-    if (!object) return;
-    if (!object.__cigUnifiedLocks) {
-        try {
-            Object.defineProperty(object, "__cigUnifiedLocks", {
-                configurable:true,
-                enumerable:false,
-                writable:false,
-                value:Object.create(null),
-            });
-        } catch (_) {
-            object.__cigUnifiedLocks = Object.create(null);
-        }
-    }
-    const locks = object.__cigUnifiedLocks;
-    if (locks[key]) {
-        locks[key].value = value;
-        return;
-    }
-    const slot = { value };
-    locks[key] = slot;
-    try {
-        Object.defineProperty(object, key, {
-            configurable:true,
-            enumerable:true,
-            get() { return slot.value; },
-            // Old cold-start installers are still allowed to run, but once the
-            // unified row exists they may no longer hide or redraw these widgets.
-            set(_) {},
-        });
-    } catch (_) {
-        try { object[key] = value; } catch (_) {}
-    }
-}
-
-function lockUnifiedButtonState(button, start) {
-    if (!button || !start) return;
-
-    lockFixedProperty(button, "hidden", false);
-    lockFixedProperty(button, "serialize", false);
-    lockFixedProperty(button, "computeSize", button.__cigRowComputeSize);
-    lockFixedProperty(button, "computeLayoutSize", button.__cigRowComputeLayoutSize);
-    lockFixedProperty(button, "drawWidget", button.__cigRowDraw);
-    lockFixedProperty(button, "onPointerDown", button.__cigRowPointerDown);
-
-    lockFixedProperty(start, "hidden", true);
-    lockFixedProperty(start, "computeSize", start.__cigRowHiddenSize);
-    lockFixedProperty(start, "computeLayoutSize", start.__cigRowHiddenLayoutSize);
-}
-
-function installMoveGuard(node, output, start) {
-    const widgets = node?.widgets;
-    if (!widgets || !output || !start) return;
-
-    if (!widgets.__cigUnifiedProtected) {
-        try {
-            Object.defineProperty(widgets, "__cigUnifiedProtected", {
-                configurable:true,
-                enumerable:false,
-                writable:true,
-                value:new Set(),
-            });
-        } catch (_) {
-            widgets.__cigUnifiedProtected = new Set();
-        }
-    }
-    widgets.__cigUnifiedProtected.clear();
-    widgets.__cigUnifiedProtected.add(output);
-    widgets.__cigUnifiedProtected.add(start);
-
-    if (widgets.__cigUnifiedSpliceGuard) return;
-    const guardedSplice = function(startIndex, deleteCount, ...items) {
-        const protectedWidgets = this.__cigUnifiedProtected;
-        if (protectedWidgets instanceof Set) {
-            const len = this.length;
-            let index = Number(startIndex);
-            if (!Number.isFinite(index)) index = 0;
-            index = index < 0 ? Math.max(0, len + Math.trunc(index)) : Math.min(len, Math.trunc(index));
-
-            // image_gallery.js / output_video_gallery.js repeatedly perform
-            // remove+insert moves on cold start. Once the final row is locked,
-            // suppress only moves of our two protected widgets. All other array
-            // operations keep native behaviour.
-            if (Number(deleteCount) === 1 && items.length === 0) {
-                const target = this[index];
-                if (protectedWidgets.has(target)) return [target];
-            }
-            if (Number(deleteCount) === 0 && items.length === 1) {
-                const target = items[0];
-                if (protectedWidgets.has(target) && this.includes(target)) return [];
-            }
-        }
-        return Array.prototype.splice.call(this, startIndex, deleteCount, ...items);
-    };
-
-    try {
-        Object.defineProperty(widgets, "splice", {
-            configurable:true,
-            enumerable:false,
-            writable:true,
-            value:guardedSplice,
-        });
-        Object.defineProperty(widgets, "__cigUnifiedSpliceGuard", {
-            configurable:true,
-            enumerable:false,
-            writable:true,
-            value:true,
-        });
-    } catch (_) {
-        widgets.splice = guardedSplice;
-        widgets.__cigUnifiedSpliceGuard = true;
-    }
-}
-
 function stabilize(node) {
     if (!node?.widgets || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return false;
     let changed = false;
@@ -298,17 +176,16 @@ function stabilize(node) {
     }
 
     const preview = exactPreview(node);
-    if (!preview) return false;
 
     const output = node.widgets.find(w => w?.name === OUTPUT_BUTTON) || null;
     const start = node.widgets.find(w => w?.name === START_BUTTON) || null;
 
-    if (preview.hidden !== false) {
+    if (preview && preview.hidden !== false) {
         preview.hidden = false;
         changed = true;
     }
     changed = restoreOutputButton(node, output, start) || changed;
-    changed = hideStartInRow(start) || changed;
+    if (output) changed = hideStartInRow(start) || changed;
 
     for (const w of node.widgets) {
         if (!w || w === preview || w === output || w === start) continue;
@@ -316,7 +193,7 @@ function stabilize(node) {
     }
 
     const hidden = node.widgets.filter(w => w !== output && w !== preview && w !== start);
-    const ordered = [preview];
+    const ordered = preview ? [preview] : [];
     if (output) ordered.push(output);
     if (start) ordered.push(start);
     ordered.push(...hidden);
@@ -326,14 +203,6 @@ function stabilize(node) {
         changed = true;
     }
 
-    // The row is complete. Freeze only the properties/order that old delayed
-    // installers used to fight over; the rest of the node remains untouched.
-    if (output && start) {
-        lockUnifiedButtonState(output, start);
-        installMoveGuard(node, output, start);
-        node.__cigUnifiedLayoutLocked = true;
-    }
-
     if (changed) {
         node.graph?.setDirtyCanvas?.(true, true);
         node.setDirtyCanvas?.(true, true);
@@ -341,40 +210,54 @@ function stabilize(node) {
     return true;
 }
 
+function installLayout(node) {
+    if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return null;
+    if (node.__cigNodeLayout) return node.__cigNodeLayout;
+    let disposed = false;
+    let running = false;
+    const hooks = [];
+    const refresh = () => {
+        if (disposed || running) return;
+        running = true;
+        try { stabilize(node); } finally { running = false; }
+    };
+    for (const name of ["addWidget", "addCustomWidget", "onConfigure", "onExecuted"]) {
+        const own = Object.hasOwn(node, name);
+        const original = node[name];
+        const wrapped = function(...args) {
+            const result = original?.apply(this, args);
+            refresh();
+            return result;
+        };
+        node[name] = wrapped;
+        hooks.push([name, original, wrapped, own]);
+    }
+    const oldRemoved = node.onRemoved;
+    const ownRemoved = Object.hasOwn(node, "onRemoved");
+    const removed = function(...args) {
+        disposed = true;
+        for (const [name, original, wrapped, own] of hooks) if (node[name] === wrapped) {
+            if (own) node[name] = original;
+            else delete node[name];
+        }
+        if (node.onRemoved === removed) {
+            if (ownRemoved) node.onRemoved = oldRemoved;
+            else delete node.onRemoved;
+        }
+        delete node.__cigNodeLayout;
+        return oldRemoved?.apply(this, args);
+    };
+    node.onRemoved = removed;
+    const controller = { refresh };
+    node.__cigNodeLayout = controller;
+    // A single owner sets the row layout whenever widgets are added/restored.
+    // No polling, delayed hiding, property locks or patched array methods.
+    refresh();
+    return controller;
+}
+
 app.registerExtension({
     name: EXT_NAME,
-    async nodeCreated(node) {
-        if (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) return;
-
-        let timer = null;
-        let finishTimer = null;
-        const run = () => {
-            stabilize(node);
-            if (node.__cigUnifiedLayoutLocked && timer) {
-                clearInterval(timer);
-                timer = null;
-            }
-        };
-
-        queueMicrotask(run);
-        requestAnimationFrame(run);
-
-        // Poll only until preview + output + START have appeared. As soon as the
-        // final unified row is locked, polling stops permanently.
-        timer = setInterval(run, 120);
-        finishTimer = setTimeout(() => {
-            if (timer) {
-                clearInterval(timer);
-                timer = null;
-            }
-            run();
-        }, 13000);
-
-        const oldRemoved = node.onRemoved;
-        node.onRemoved = function() {
-            if (timer) clearInterval(timer);
-            if (finishTimer) clearTimeout(finishTimer);
-            return oldRemoved?.apply(this, arguments);
-        };
-    },
+    nodeCreated(node) { installLayout(node)?.refresh(); },
+    loadedGraphNode(node) { installLayout(node)?.refresh(); },
 });

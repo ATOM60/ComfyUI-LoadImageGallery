@@ -226,29 +226,32 @@ test('opening the image keeps the gallery gesture and disposal cancels deferred 
     assert.equal(f.opens, 1, 'removed previews cannot open a delayed gallery');
 });
 
-test('queued drawing coalesces duplicate frames and ignores removed or replaced previews', async (t) => {
+test('preview paints before later widgets and never paints again after the frame', async (t) => {
     const f = fixture(t);
-    const contexts = Array.from({ length: 20 }, canvasContext);
-    for (const ctx of contexts) f.preview.drawWidget(ctx, { width: 420, previewImages: f.node.imgs });
-    assert.ok(contexts.every((ctx) => ctx.calls.length === 0), 'painting is deferred until native node drawing completes');
+    const ctx = canvasContext();
+    f.preview.drawWidget(ctx, { width: 420, previewImages: f.node.imgs });
+    assert.equal(ctx.calls.filter(([method]) => method === 'drawImage').length, 1);
+    ctx.fillText('BOTTOM ROW', 100, 330);
+    const afterRow = ctx.calls.length;
     await flush();
-    assert.ok(contexts.slice(0, -1).every((ctx) => ctx.calls.length === 0), 'superseded frames are not painted');
-    assert.equal(contexts.at(-1).calls.filter(([method]) => method === 'drawImage').length, 1);
-    assert.equal(contexts.at(-1).depth, 0);
+    assert.equal(ctx.calls.length, afterRow, 'no delayed preview can cover the bottom buttons');
+    assert.equal(ctx.calls.at(-1)[1], 'BOTTOM ROW');
+    assert.ok(ctx.calls.some(([method]) => method === 'clip'), 'preview keeps painting inside its widget');
+    assert.equal(ctx.depth, 0);
+});
 
-    const obsoleteContext = canvasContext();
-    f.preview.drawWidget(obsoleteContext, { width: 420, previewImages: f.node.imgs });
-    const replacement = previewWidget();
-    f.node.widgets = [f.image, replacement];
-    f.node.onExecuted({});
-    await flush();
-    assert.equal(obsoleteContext.calls.length, 0, 'queued old widget cannot paint over its replacement');
-
-    const removedContext = canvasContext();
-    replacement.drawWidget(removedContext, { width: 420, previewImages: f.node.imgs });
-    f.node.onRemoved();
-    await flush();
-    assert.equal(removedContext.calls.length, 0, 'queued removed widget cannot paint after disposal');
+test('arrow targets fill all spare space beside a narrow portrait', async (t) => {
+    const f = fixture(t);
+    await f.draw(f.preview, 600, [{ naturalWidth: 200, naturalHeight: 1600 }]);
+    const image = f.preview.__cigImageRect;
+    const left = f.preview.__cigPrevRect;
+    const right = f.preview.__cigNextRect;
+    assert.ok(left.w > 200 && right.w > 200, 'the entire wide side margin is clickable');
+    assert.equal(left.x + left.w, image.x - 8);
+    assert.equal(right.x, image.x + image.w + 8);
+    assert.equal(right.x + right.w, 594);
+    f.click({ x: image.x - 18, y: left.y, w: 1, h: left.h });
+    assert.equal(f.image.value, 'photos/b.png', 'the inner end of the wide left button responds');
 });
 
 test('unchanged redraws do not scan a large filename list or schedule more redraws', async (t) => {
