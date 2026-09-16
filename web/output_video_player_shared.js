@@ -89,7 +89,7 @@ export function ensureOutputVideoPlayerStyles() {
 .ovg-shared-player:fullscreen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-badge,.ovg-shared-player:-webkit-full-screen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-badge{opacity:0!important}
 .ovg-shared-player:fullscreen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-hit,.ovg-shared-player:-webkit-full-screen.ovg-shared-ui-hidden:not(.paused) .ovg-shared-hit{cursor:none!important}
 body:has(.ovg-shared-player[data-ovg-decoder="GPU"])>.ovg-speed-control[popover]{display:none!important}
-@container (max-width:360px){.ovg-shared-time,.ovg-shared-volume{display:none!important}.ovg-shared-native-row{gap:2px}.ovg-shared-native{padding-left:5px;padding-right:5px}}
+@container (max-width:360px){.ovg-shared-time,.ovg-shared-spacer{display:none!important}.ovg-shared-native-row{gap:2px}.ovg-shared-native{padding-left:4px;padding-right:4px}.ovg-shared-native button{width:24px;min-width:24px;font-size:14px}.ovg-shared-volume{display:block!important;width:46px!important;min-width:24px!important;max-width:none!important;flex:1 1 46px}}
 `;
     document.head.appendChild(style);
 }
@@ -143,7 +143,7 @@ export function createOutputVideoPlayer({
                 <button class="ovg-shared-ui-play" type="button">▶</button>
                 <span class="ovg-shared-time">0:00 / 0:00</span>
                 <span class="ovg-shared-spacer"></span>
-                <span>🔊</span>
+                <button class="ovg-shared-ui-mute" type="button" title="${labels.volume}" aria-label="${labels.volume}">🔊</button>
                 <input class="ovg-shared-volume" type="range" min="0" max="1" step="0.05" title="${labels.volume}">
                 <button class="ovg-shared-ui-fullscreen" type="button" title="${labels.fullscreen}">⛶</button>
             </div>
@@ -167,6 +167,7 @@ export function createOutputVideoPlayer({
         seek: player.querySelector(".ovg-shared-seek"),
         time: player.querySelector(".ovg-shared-time"),
         volume: player.querySelector(".ovg-shared-volume"),
+        mute: player.querySelector(".ovg-shared-ui-mute"),
         fullscreen: player.querySelector(".ovg-shared-ui-fullscreen"),
         prev: player.querySelector(".ovg-shared-prev"),
         next: player.querySelector(".ovg-shared-next"),
@@ -273,6 +274,8 @@ export function createOutputVideoPlayer({
         }
         ui.time.textContent = `${formatPlayerTime(current)} / ${formatPlayerTime(duration)}`;
         ui.volume.value = String(volume);
+        ui.mute.textContent = volume === 0 ? "🔇" : "🔊";
+        ui.mute.setAttribute("aria-pressed", String(volume === 0));
 
         if (!ui.rateEditing) {
             ui.speedRange.value = String(rate);
@@ -327,7 +330,7 @@ export function createOutputVideoPlayer({
         if (event.detail >= 2) {
             if (clickTimer) clearTimeout(clickTimer);
             clickTimer = 0;
-            if (fullscreenElement() === player) exitFullscreen({ pause: true });
+            if (fullscreenElement() === player) exitFullscreen();
             else requestFullscreen();
             return;
         }
@@ -368,12 +371,22 @@ export function createOutputVideoPlayer({
         scheduleFullscreenUiHide();
     });
 
-    ui.volume.addEventListener("input", () => {
-        const value = clamp(ui.volume.value, 0, 1, 1);
-        saveSharedVolume(value);
-        call(adapter, "setVolume", value);
+    let audibleVolume = loadSharedVolume() || 1;
+    const setVolume = value => {
+        const next = clamp(value, 0, 1, 1);
+        if (next > 0) audibleVolume = next;
+        saveSharedVolume(next);
+        call(adapter, "setVolume", next);
         update();
         scheduleFullscreenUiHide();
+    };
+    ui.volume.addEventListener("input", () => setVolume(ui.volume.value));
+    ui.volume.addEventListener("change", () => setVolume(ui.volume.value));
+    ui.mute.addEventListener("click", event => {
+        event.preventDefault(); event.stopPropagation();
+        const current = clamp(call(adapter, "getVolume"), 0, 1, 1);
+        if (current > 0) audibleVolume = current;
+        setVolume(current > 0 ? 0 : audibleVolume);
     });
 
     ui.fullscreen.addEventListener("click", event => {
@@ -424,15 +437,13 @@ export function createOutputVideoPlayer({
     });
 
     player.addEventListener("wheel", event => {
-        if (event.target instanceof Element && event.target.closest("input")) return;
+        if (event.target instanceof Element && event.target.closest("input:not(.ovg-shared-volume)")) return;
         event.preventDefault();
         event.stopPropagation();
         scheduleFullscreenUiHide();
         const current = clamp(call(adapter, "getVolume"), 0, 1, loadSharedVolume());
         const next = clamp(current + (event.deltaY < 0 ? .05 : -.05), 0, 1, 1);
-        saveSharedVolume(next);
-        call(adapter, "setVolume", next);
-        update();
+        setVolume(next);
     }, { passive: false });
 
     const onFs = () => {
@@ -444,6 +455,7 @@ export function createOutputVideoPlayer({
     };
     document.addEventListener("fullscreenchange", onFs);
     document.addEventListener("webkitfullscreenchange", onFs);
+    player.addEventListener("cigcpufullscreenchange", onFs);
 
     update();
 
@@ -458,6 +470,7 @@ export function createOutputVideoPlayer({
         document.removeEventListener("visibilitychange", onVisibilityChange);
         document.removeEventListener("fullscreenchange", onFs);
         document.removeEventListener("webkitfullscreenchange", onFs);
+        player.removeEventListener("cigcpufullscreenchange", onFs);
         ui.speedPanel.classList.remove("open");
         try { player.remove(); } catch (_) {}
     };

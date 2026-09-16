@@ -56,7 +56,7 @@ const I18N = {
             <ul>
                 <li>Single click on a video preview starts or pauses playback.</li>
                 <li>Double click opens the video in fullscreen.</li>
-                <li>Double click in fullscreen pauses the video and exits fullscreen.</li>
+                <li>Exiting fullscreen plays the last viewed video in its own card, including favorites.</li>
                 <li>The controls on the right open the previous video, change playback speed and open the next video.</li>
                 <li>The mouse wheel over the video changes volume.</li>
                 <li>Playback speed and volume are remembered.</li>
@@ -129,7 +129,7 @@ const I18N = {
             <ul>
                 <li>Один клик по предпросмотру запускает видео или ставит его на паузу.</li>
                 <li>Двойной клик открывает видео на весь экран.</li>
-                <li>Двойной клик в полноэкранном режиме ставит видео на паузу и выходит из полноэкранного режима.</li>
+                <li>После выхода из полноэкранного режима последнее видео воспроизводится в своей карточке, в том числе в избранном.</li>
                 <li>Кнопки справа открывают предыдущее видео, меняют скорость воспроизведения и открывают следующее видео.</li>
                 <li>Колесо мыши над видео меняет громкость.</li>
                 <li>Скорость и громкость запоминаются.</li>
@@ -404,6 +404,47 @@ app.registerExtension({
                 for (const path of [...state.players.keys()]) releaseInlinePlayer(path);
             }
 
+            function restoreFullscreenPlayer(entry, playback) {
+                if (!state.modal?.isConnected || !entry.video.isConnected || !playback) return;
+                const path = String(playback.path || entry.path);
+                const card = [...state.modal.querySelectorAll('.ovg-card[data-path]')].find(card => card.dataset.path === path);
+                const item = state.videos.find(item => item.path === path);
+                if (!card || !item) return;
+
+                if (path !== entry.path) {
+                    // Keep the live media element, decoder and controls. The target
+                    // may never have been played, or may already have a cached player.
+                    releaseInlinePlayer(path);
+                    entry.playBtn?.style.removeProperty('display');
+                    entry.img?.style.removeProperty('display');
+                    if (!entry.img) entry.fallback?.style.setProperty('display', 'flex');
+                    state.players.delete(entry.path);
+                    const holder = card.querySelector('.ovg-thumb');
+                    Object.assign(entry, { path, item, card, holder,
+                        img: holder.querySelector('img'), fallback: holder.querySelector('.ovg-thumb-fallback'),
+                        playBtn: holder.querySelector('.ovg-play'), lastUsed: performance.now() });
+                    entry.img?.style.setProperty('display', 'none');
+                    entry.fallback?.style.setProperty('display', 'none');
+                    entry.playBtn?.style.setProperty('display', 'none');
+                    state.players.set(path, entry);
+                    holder.appendChild(entry.video.__cigGpuPlayer || entry.video);
+                }
+                const video = entry.video;
+                video.dataset.cigCurrentPath = path;
+                video.defaultPlaybackRate = playback.rate;
+                video.playbackRate = playback.rate;
+                video.volume = playback.volume;
+                video.muted = playback.muted;
+                if (video.readyState >= 1 && Number.isFinite(playback.currentTime) && Math.abs(video.currentTime - playback.currentTime) > .1) {
+                    try { video.currentTime = playback.currentTime; } catch (_) {}
+                }
+                // Exiting fullscreen resumes the current video, including when
+                // DOM reparenting or fullscreen controls left the element paused.
+                pauseOtherPlayers(path);
+                video.play()?.catch?.(() => {});
+                card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+
             function pauseOtherPlayers(currentPath) {
                 for (const [path, entry] of state.players) if (path !== currentPath && !entry.video.paused) entry.video.pause();
             }
@@ -438,14 +479,15 @@ app.registerExtension({
                 fallback?.style.setProperty("display", "none");
                 playBtn.style.display = "none";
                 holder.prepend(video);
-                const entry = { card, holder, img, fallback, playBtn, video, lastUsed:performance.now() };
+                const entry = { path:item.path, item, card, holder, img, fallback, playBtn, video, lastUsed:performance.now() };
                 state.players.set(item.path, entry);
-                video.addEventListener("play", () => { entry.lastUsed = performance.now(); pauseOtherPlayers(item.path); });
-                video.addEventListener("contextmenu", e => openContextMenu(e, item));
+                video.addEventListener("play", () => { entry.lastUsed = performance.now(); pauseOtherPlayers(entry.path); });
+                video.addEventListener("contextmenu", e => openContextMenu(e, entry.item));
+                video.addEventListener("cig-output-fullscreen-exit", e => restoreFullscreenPlayer(entry, e.detail));
                 video.addEventListener("pointerdown", e => e.stopPropagation());
                 video.addEventListener("click", e => e.stopPropagation());
                 video.addEventListener("dblclick", e => e.stopPropagation());
-                video.addEventListener("error", () => { releaseInlinePlayer(item.path); toast(t.videoError(item.name), "error"); }, {once:true});
+                video.addEventListener("error", () => { releaseInlinePlayer(entry.path); toast(t.videoError(entry.item.name), "error"); }, {once:true});
                 try { await video.play(); } catch (_) {}
             }
 
@@ -651,6 +693,7 @@ app.registerExtension({
                         const wr=wrap.getBoundingClientRect(),pad=Math.max(900,wr.height*1.5);
                         for (const [path,entry] of [...state.players.entries()]) {
                             if (!entry.card.isConnected) { releaseInlinePlayer(path); continue; }
+                            if (!entry.video.paused || entry.video.dataset.cigNativeFullscreen === '1') continue;
                             const r=entry.card.getBoundingClientRect();
                             if (r.bottom < wr.top-pad || r.top > wr.bottom+pad) releaseInlinePlayer(path);
                         }

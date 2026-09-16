@@ -251,7 +251,7 @@ function seekCpu(state,value) {
 
 function setVolume(state,value) {
     state.volume=clamp(value,0,1,1);
-    if(state.audio)state.audio.volume=state.volume;
+    if(state.audio){state.audio.volume=state.volume;if(state.volume>0)state.audio.muted=false;}
     updateUi(state);
 }
 
@@ -269,7 +269,7 @@ function setRate(state,value) {
 function switchCpuPath(state,card) {
     const path=cardPath(card);
     if(!path)return;
-    const fs=document.fullscreenElement===state.player;
+    const fs=document.fullscreenElement===state.player||state.player?.dataset.cigCpuFsSource==='1';
     state.currentCard=card;
     state.currentPath=path;
     state.currentTime=0;
@@ -288,8 +288,18 @@ function navigateCpu(state,dir) {
 }
 
 function remountAfterFullscreen(state) {
-    if(!state.player||document.fullscreenElement===state.player)return;
-    if(state.currentCard&&state.currentCard!==state.mountCard)mountPlayer(state,state.currentCard);
+    if(!state.player)return;
+    if(document.fullscreenElement===state.player||state.player.dataset.cigCpuFsSource==='1'){
+        state.wasFullscreen=true;
+        return;
+    }
+    if(!state.wasFullscreen)return;
+    state.wasFullscreen=false;
+    if(state.currentCard&&state.currentCard!==state.mountCard){
+        mountPlayer(state,state.currentCard);
+        state.currentCard.scrollIntoView({block:'nearest',inline:'nearest'});
+    }
+    resumeCpu(state);
     updateUi(state);
 }
 
@@ -337,6 +347,7 @@ function buildPlayer(state) {
 
 function stopCpu(state,{restore=true}={}) {
     if(!state)return;
+    state.wasFullscreen=false;
     state.currentTime=currentTime(state);
     state.paused=true;
     closeSocket(state);

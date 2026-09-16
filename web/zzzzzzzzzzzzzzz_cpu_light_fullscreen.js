@@ -290,7 +290,7 @@ function bindShell(session) {
         if (event.detail >= 2) {
             if (session.clickTimer) clearTimeout(session.clickTimer);
             session.clickTimer = 0;
-            exitSession(session, { pause:true });
+            exitSession(session);
             return;
         }
         if (session.clickTimer) clearTimeout(session.clickTimer);

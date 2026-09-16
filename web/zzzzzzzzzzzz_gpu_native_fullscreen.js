@@ -314,6 +314,7 @@ function installNativeFullscreenBehavior(video, shell) {
 
 function prepareNativeFullscreen(video) {
     if (!(video instanceof HTMLVideoElement)) return null;
+    const wasPlaying = !video.paused;
     try {
         video.__cigGpuControlsObserver?.disconnect?.();
         delete video.__cigGpuControlsObserver;
@@ -324,11 +325,16 @@ function prepareNativeFullscreen(video) {
     if (!(shell instanceof HTMLElement)) return null;
     setNativeControlsVisible(video, true);
     installNativeFullscreenBehavior(video, shell);
+    if (wasPlaying) video.play()?.catch?.(() => {});
     return shell;
 }
 
 function restoreCustomPlayer(video) {
     if (!(video instanceof HTMLVideoElement)) return;
+    const playback = {
+        path: currentPath(video), currentTime: video.currentTime,
+        rate: video.playbackRate, volume: video.volume, muted: video.muted,
+    };
     try { video.__cigNativeFsCleanup?.(); } catch (_) {}
     delete video.dataset[NATIVE_FS_FLAG];
     try {
@@ -336,6 +342,7 @@ function restoreCustomPlayer(video) {
         video.removeAttribute("controls");
     } catch (_) {}
     restoreVideoParent(video);
+    video.dispatchEvent(new CustomEvent('cig-output-fullscreen-exit', { detail: playback }));
     try { video.__cigGpuUi && (video.__cigGpuUi.hit.title = ""); } catch (_) {}
 }
 

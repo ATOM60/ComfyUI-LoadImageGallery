@@ -59,7 +59,7 @@ function ensureStyles(){
 .ovg-gpu-player:fullscreen .ovg-gpu-fs-controls,.ovg-gpu-player:-webkit-full-screen .ovg-gpu-fs-controls{display:flex!important}
 .ovg-gpu-player:fullscreen .ovg-gpu-native,.ovg-gpu-player:-webkit-full-screen .ovg-gpu-native{padding:24px 14px 9px}.ovg-gpu-player:fullscreen .ovg-gpu-volume,.ovg-gpu-player:-webkit-full-screen .ovg-gpu-volume{width:100px!important;max-width:120px!important}
 body:has(.ovg-gpu-player)>.ovg-speed-control[popover]{display:none!important}
-@container (max-width:360px){.ovg-gpu-time,.ovg-gpu-volume{display:none!important}.ovg-gpu-native-row{gap:2px}.ovg-gpu-native{padding-left:5px;padding-right:5px}}
+@container (max-width:360px){.ovg-gpu-time,.ovg-gpu-spacer{display:none!important}.ovg-gpu-native-row{gap:2px}.ovg-gpu-native{padding-left:4px;padding-right:4px}.ovg-gpu-native button{width:24px;min-width:24px;font-size:14px}.ovg-gpu-volume{display:block!important;width:46px!important;min-width:24px!important;max-width:none!important;flex:1 1 46px}}
 `;
     document.head.appendChild(style);
 }
@@ -67,7 +67,7 @@ body:has(.ovg-gpu-player)>.ovg-speed-control[popover]{display:none!important}
 function galleryPaths(video){const grid=video.closest?.(".ovg-card")?.closest?.(".ovg-grid");if(!grid)return[];return[...grid.querySelectorAll(".ovg-card[data-path]")].map(el=>String(el.dataset.path||"")).filter(Boolean);}
 async function navigate(video,dir){const paths=galleryPaths(video);if(paths.length<2)return;let i=paths.indexOf(currentPath(video));if(i<0)i=0;i=(i+dir+paths.length)%paths.length;const path=paths[i];if(!path)return;video.dataset.cigCurrentPath=path;video.poster=thumbEndpoint(path);video.src=videoEndpoint(path);video.load();video.defaultPlaybackRate=loadRate();video.playbackRate=loadRate();video.volume=loadVolume();try{await video.play();}catch(_){}updateUi(video);}
 
-function updateUi(video){const ui=video?.__cigGpuUi,p=playerOf(video);if(!ui||!p)return;p.classList.toggle("paused",!!video.paused);ui.hit.title=video.paused?TEXT.play:TEXT.pause;ui.play.textContent=video.paused?"▶":"❚❚";ui.play.title=video.paused?TEXT.play:TEXT.pause;if(!ui.seeking){ui.seek.max=String(Math.max(.001,Number(video.duration)||0));ui.seek.value=String(Math.min(Number(video.currentTime)||0,Number(video.duration)||Number.MAX_SAFE_INTEGER));}ui.time.textContent=`${fmtTime(video.currentTime)} / ${fmtTime(video.duration)}`;ui.volume.value=String(video.volume);const fs=fullscreenElement()===p;ui.fullscreen.textContent=fs?"⤢":"⛶";ui.fullscreen.title=fs?TEXT.exitFullscreen:TEXT.fullscreen;const rate=clamp(video.playbackRate,.25,3,1);ui.speedRange.value=String(rate);ui.speedValue.textContent=`${rate.toFixed(rate%1?2:0)}×`;}
+function updateUi(video){const ui=video?.__cigGpuUi,p=playerOf(video);if(!ui||!p)return;p.classList.toggle("paused",!!video.paused);ui.hit.title=video.paused?TEXT.play:TEXT.pause;ui.play.textContent=video.paused?"▶":"❚❚";ui.play.title=video.paused?TEXT.play:TEXT.pause;if(!ui.seeking){ui.seek.max=String(Math.max(.001,Number(video.duration)||0));ui.seek.value=String(Math.min(Number(video.currentTime)||0,Number(video.duration)||Number.MAX_SAFE_INTEGER));}ui.time.textContent=`${fmtTime(video.currentTime)} / ${fmtTime(video.duration)}`;ui.volume.value=String(video.muted?0:video.volume);ui.mute.textContent=video.muted||video.volume===0?"🔇":"🔊";ui.mute.setAttribute("aria-pressed",String(video.muted||video.volume===0));const fs=fullscreenElement()===p;ui.fullscreen.textContent=fs?"⤢":"⛶";ui.fullscreen.title=fs?TEXT.exitFullscreen:TEXT.fullscreen;const rate=clamp(video.playbackRate,.25,3,1);ui.speedRange.value=String(rate);ui.speedValue.textContent=`${rate.toFixed(rate%1?2:0)}×`;}
 
 function enterFullscreen(video){const p=playerOf(video);if(!(p instanceof HTMLElement)||fullscreenElement()===p)return;try{const r=p.requestFullscreen?.()||p.webkitRequestFullscreen?.();r?.catch?.(()=>{});}catch(_){} }
 function exitFullscreen(video,{pause=false}={}){const p=playerOf(video);if(pause){try{video.pause();}catch(_){}}if(fullscreenElement()!==p)return;try{const r=document.exitFullscreen?.()||document.webkitExitFullscreen?.();r?.catch?.(()=>{});}catch(_){}}
@@ -76,30 +76,47 @@ function buildPlayer(video){
     const holder=video.closest(".ovg-thumb");if(!(holder instanceof HTMLElement)||!video.parentNode)return null;
     const p=document.createElement("div");p.className="ovg-gpu-player";p.dataset.cigGpuCpuPlayer="1";
     holder.insertBefore(p,video);p.appendChild(video);video.__cigGpuPlayer=p;
-    p.insertAdjacentHTML("beforeend",`<button class="ovg-gpu-hit" type="button"></button><div class="ovg-gpu-badge">GPU</div><div class="ovg-gpu-paused">▶</div><div class="ovg-gpu-native"><input class="ovg-gpu-seek" type="range" min="0" max="1" step="0.01"><div class="ovg-gpu-native-row"><button class="ovg-gpu-ui-play" type="button">▶</button><span class="ovg-gpu-time">0:00 / 0:00</span><span class="ovg-gpu-spacer"></span><span>🔊</span><input class="ovg-gpu-volume" type="range" min="0" max="1" step="0.05" title="${TEXT.volume}"><button class="ovg-gpu-ui-fullscreen" type="button" title="${TEXT.fullscreen}">⛶</button></div></div><div class="ovg-gpu-fs-controls"><button class="ovg-gpu-prev" type="button" title="${TEXT.prev}">⏮</button><div style="position:relative"><button class="ovg-gpu-speed" type="button" title="${TEXT.speed}">⏱</button><div class="ovg-gpu-speed-panel2"><input class="ovg-gpu-speed-range" type="range" min="0.25" max="3" step="0.05"><span class="ovg-gpu-speed-value2"></span></div></div><button class="ovg-gpu-next" type="button" title="${TEXT.next}">⏭</button></div>`);
-    const ui={hit:p.querySelector(".ovg-gpu-hit"),play:p.querySelector(".ovg-gpu-ui-play"),seek:p.querySelector(".ovg-gpu-seek"),time:p.querySelector(".ovg-gpu-time"),volume:p.querySelector(".ovg-gpu-volume"),fullscreen:p.querySelector(".ovg-gpu-ui-fullscreen"),prev:p.querySelector(".ovg-gpu-prev"),next:p.querySelector(".ovg-gpu-next"),speed:p.querySelector(".ovg-gpu-speed"),speedPanel:p.querySelector(".ovg-gpu-speed-panel2"),speedRange:p.querySelector(".ovg-gpu-speed-range"),speedValue:p.querySelector(".ovg-gpu-speed-value2"),seeking:false};
+    p.insertAdjacentHTML("beforeend",`<button class="ovg-gpu-hit" type="button"></button><div class="ovg-gpu-badge">GPU</div><div class="ovg-gpu-paused">▶</div><div class="ovg-gpu-native"><input class="ovg-gpu-seek" type="range" min="0" max="1" step="0.01"><div class="ovg-gpu-native-row"><button class="ovg-gpu-ui-play" type="button">▶</button><span class="ovg-gpu-time">0:00 / 0:00</span><span class="ovg-gpu-spacer"></span><button class="ovg-gpu-ui-mute" type="button" title="${TEXT.volume}" aria-label="${TEXT.volume}">🔊</button><input class="ovg-gpu-volume" type="range" min="0" max="1" step="0.05" title="${TEXT.volume}"><button class="ovg-gpu-ui-fullscreen" type="button" title="${TEXT.fullscreen}">⛶</button></div></div><div class="ovg-gpu-fs-controls"><button class="ovg-gpu-prev" type="button" title="${TEXT.prev}">⏮</button><div style="position:relative"><button class="ovg-gpu-speed" type="button" title="${TEXT.speed}">⏱</button><div class="ovg-gpu-speed-panel2"><input class="ovg-gpu-speed-range" type="range" min="0.25" max="3" step="0.05"><span class="ovg-gpu-speed-value2"></span></div></div><button class="ovg-gpu-next" type="button" title="${TEXT.next}">⏭</button></div>`);
+    const ui={hit:p.querySelector(".ovg-gpu-hit"),play:p.querySelector(".ovg-gpu-ui-play"),seek:p.querySelector(".ovg-gpu-seek"),time:p.querySelector(".ovg-gpu-time"),volume:p.querySelector(".ovg-gpu-volume"),mute:p.querySelector(".ovg-gpu-ui-mute"),fullscreen:p.querySelector(".ovg-gpu-ui-fullscreen"),prev:p.querySelector(".ovg-gpu-prev"),next:p.querySelector(".ovg-gpu-next"),speed:p.querySelector(".ovg-gpu-speed"),speedPanel:p.querySelector(".ovg-gpu-speed-panel2"),speedRange:p.querySelector(".ovg-gpu-speed-range"),speedValue:p.querySelector(".ovg-gpu-speed-value2"),seeking:false};
     video.__cigGpuUi=ui;
     const stop=e=>e.stopPropagation();p.querySelectorAll(".ovg-gpu-native,.ovg-gpu-native *,.ovg-gpu-fs-controls,.ovg-gpu-fs-controls *").forEach(el=>{el.addEventListener("pointerdown",stop);el.addEventListener("dblclick",stop);});
     let clickTimer=0;
-    ui.hit.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();if(e.detail>=2){if(clickTimer)clearTimeout(clickTimer);clickTimer=0;if(fullscreenElement()===p){try{video.pause();}catch(_){}exitFullscreen(video);}else enterFullscreen(video);return;}if(clickTimer)clearTimeout(clickTimer);clickTimer=0;clickTimer=setTimeout(()=>{clickTimer=0;video.paused?video.play().catch(()=>{}):video.pause();},CLICK_DELAY);});
+    ui.hit.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();if(e.detail>=2){if(clickTimer)clearTimeout(clickTimer);clickTimer=0;if(fullscreenElement()===p){exitFullscreen(video);}else enterFullscreen(video);return;}if(clickTimer)clearTimeout(clickTimer);clickTimer=0;clickTimer=setTimeout(()=>{clickTimer=0;video.paused?video.play().catch(()=>{}):video.pause();},CLICK_DELAY);});
     ui.hit.addEventListener("dblclick",e=>{e.preventDefault();e.stopPropagation();});
     ui.play.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();video.paused?video.play().catch(()=>{}):video.pause();});
     ui.seek.addEventListener("pointerdown",()=>{ui.seeking=true;});ui.seek.addEventListener("input",()=>{ui.seeking=true;ui.time.textContent=`${fmtTime(ui.seek.value)} / ${fmtTime(video.duration)}`;});ui.seek.addEventListener("change",()=>{try{video.currentTime=clamp(ui.seek.value,0,Math.max(0,video.duration||ui.seek.value),0);}catch(_){}ui.seeking=false;updateUi(video);});ui.seek.addEventListener("pointerup",()=>{ui.seeking=false;});
-    ui.volume.addEventListener("input",()=>{video.volume=clamp(ui.volume.value,0,1,1);if(video.volume>0&&video.muted)video.muted=false;saveVolume(video.volume);});
+    let audibleVolume = video.volume > 0 ? video.volume : 1;
+    const setVolume = value => {
+        const next = clamp(value, 0, 1, 1);
+        if (next > 0) audibleVolume = next;
+        video.volume = next;
+        video.muted = next === 0;
+        saveVolume(next);
+        updateUi(video);
+    };
+    ui.volume.addEventListener("input", () => setVolume(ui.volume.value));
+    ui.volume.addEventListener("change", () => setVolume(ui.volume.value));
+    ui.mute.addEventListener("click", event => {
+        event.preventDefault(); event.stopPropagation();
+        if (video.volume > 0) audibleVolume = video.volume;
+        setVolume(video.muted || video.volume === 0 ? audibleVolume : 0);
+    });
     ui.fullscreen.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();fullscreenElement()===p?exitFullscreen(video):enterFullscreen(video);});
     ui.prev.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();navigate(video,-1);});ui.next.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();navigate(video,1);});
     ui.speed.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();ui.speedPanel.classList.toggle("open");});ui.speedRange.addEventListener("input",()=>{const r=clamp(ui.speedRange.value,.25,3,1);video.defaultPlaybackRate=r;video.playbackRate=r;saveRate(r);ui.speedValue.textContent=`${r.toFixed(r%1?2:0)}×`;});
-    p.addEventListener("wheel",e=>{if(e.target instanceof Element&&e.target.closest("input"))return;e.preventDefault();e.stopPropagation();video.volume=clamp(video.volume+(e.deltaY<0?.05:-.05),0,1,1);if(video.volume>0&&video.muted)video.muted=false;saveVolume(video.volume);updateUi(video);},{passive:false});
+    p.addEventListener("wheel",e=>{if(e.target instanceof Element&&e.target.closest("input:not(.ovg-gpu-volume)"))return;e.preventDefault();e.stopPropagation();setVolume((video.muted?0:video.volume)+(e.deltaY<0?.05:-.05));},{passive:false});
     return p;
 }
 
 function attachVideo(video){
     if(!(video instanceof HTMLVideoElement)||attached.has(video))return;attached.add(video);video.dataset.cigGpuCpuStyle="1";video.controls=false;video.removeAttribute("controls");video.loop=true;video.setAttribute("loop","");video.defaultPlaybackRate=loadRate();video.playbackRate=loadRate();video.volume=loadVolume();
+    const wasPlaying=!video.paused;
     const p=buildPlayer(video);if(!p)return;
     const attrObserver=new MutationObserver(()=>{if(video.hasAttribute("controls")){video.controls=false;video.removeAttribute("controls");}});attrObserver.observe(video,{attributes:true,attributeFilter:["controls"]});video.__cigGpuControlsObserver=attrObserver;
     const apply=()=>{video.controls=false;video.removeAttribute("controls");video.defaultPlaybackRate=loadRate();if(!Number.isFinite(video.playbackRate)||video.playbackRate<=0)video.playbackRate=loadRate();updateUi(video);};
     for(const type of ["loadedmetadata","durationchange","timeupdate","play","pause","ratechange","volumechange"]){video.addEventListener(type,()=>{if(type==="ratechange")saveRate(video.playbackRate);if(type==="volumechange")saveVolume(video.volume);updateUi(video);});}
     video.addEventListener("loadedmetadata",apply);apply();
+    if(wasPlaying)video.play()?.catch?.(()=>{});
 }
 
 function ensureGpuVideo(thumb){

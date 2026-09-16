@@ -82,6 +82,10 @@ Image and video gallery for ComfyUI with fast browsing, selection, playback, ful
 - Видео повторяется по кругу.
 - Скорость и громкость запоминаются.
 
+После выхода из полноэкранного режима последнее открытое видео воспроизводится в своей карточке с той же позиции. Это работает и для избранного, и в CPU-режиме, включая выход после паузы.
+
+Ползунок громкости доступен даже на маленьком предпросмотре. Нажмите на значок динамика, чтобы выключить звук или вернуть предыдущую громкость; колесо мыши также меняет громкость.
+
 В полноэкранном режиме справа доступны:
 
 - **⏮** — предыдущее видео;
@@ -212,6 +216,10 @@ If a new file is not visible yet, press **Refresh**.
 - Mouse wheel over the video — change volume.
 - Videos loop automatically.
 - Playback speed and volume are remembered.
+
+After leaving fullscreen, the last viewed video plays in its own card at the same position, including favorites and CPU playback. Playback resumes even if the video was paused before exiting.
+
+The volume slider remains available on small previews. Click the speaker to mute or restore the previous volume; the mouse wheel also changes volume.
 
 Fullscreen controls on the right:
 
