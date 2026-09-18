@@ -7,12 +7,15 @@ const LOCK_PX = 12;
 const DIRECTION_RATIO = 1.15;
 const CLICK_SUPPRESS_MS = 550;
 const FULLSCREEN_CONTROLS_SAFE_ZONE = 90;
+const DOUBLE_TAP_MS = 360;
+const DOUBLE_TAP_DISTANCE_PX = 36;
 
 const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
     .toLowerCase().startsWith("ru");
 const SECOND_UNIT = RU ? "с" : "s";
 
 let activeGesture = null;
+let lastFullscreenTap = null;
 
 function clamp(value, min, max) {
     const n = Number(value);
@@ -28,6 +31,10 @@ function fmtTime(value) {
     return h
         ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
         : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
 function ensureStyles() {
@@ -125,6 +132,41 @@ function suppressNextClick(target) {
     target.addEventListener("click", handler, true);
 }
 
+function handleFullscreenTap(event, g) {
+    const target = g?.target;
+    if (!(target instanceof HTMLElement) || !target.classList.contains("cig-native-fs-shell")) {
+        lastFullscreenTap = null;
+        return false;
+    }
+    if (fullscreenElement() !== target || g.locked || g.cancelled) {
+        lastFullscreenTap = null;
+        return false;
+    }
+
+    const x = Number(event?.clientX ?? g.lastX);
+    const y = Number(event?.clientY ?? g.lastY);
+    const now = performance.now();
+    const previous = lastFullscreenTap;
+    const isDouble = previous && previous.target === target &&
+        now - previous.time <= DOUBLE_TAP_MS &&
+        Math.hypot(x - previous.x, y - previous.y) <= DOUBLE_TAP_DISTANCE_PX;
+
+    if (!isDouble) {
+        lastFullscreenTap = { target, time:now, x, y };
+        return false;
+    }
+
+    lastFullscreenTap = null;
+    suppressNextClick(target);
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    try {
+        const result = document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+        result?.catch?.(() => {});
+    } catch (_) {}
+    return true;
+}
+
 function stopActiveGesture({ commit = false, event = null } = {}) {
     const g = activeGesture;
     if (!g) return;
@@ -144,6 +186,7 @@ function stopActiveGesture({ commit = false, event = null } = {}) {
 
     try { g.video.currentTime = targetTime; } catch (_) {}
     suppressNextClick(g.target);
+    lastFullscreenTap = null;
 
     event?.preventDefault?.();
     event?.stopPropagation?.();
@@ -157,6 +200,7 @@ function startGesture(event, target, info) {
         startX: event.clientX,
         startY: event.clientY,
         lastX: event.clientX,
+        lastY: event.clientY,
         startedAt: performance.now(),
         startTime: info.current,
         duration: info.duration,
@@ -171,6 +215,7 @@ function startGesture(event, target, info) {
     g.onMove = moveEvent => {
         if (activeGesture !== g || moveEvent.pointerId !== g.id || g.cancelled) return;
         g.lastX = moveEvent.clientX;
+        g.lastY = moveEvent.clientY;
 
         const dx = moveEvent.clientX - g.startX;
         const dy = moveEvent.clientY - g.startY;
@@ -181,11 +226,13 @@ function startGesture(event, target, info) {
             if (Math.max(ax, ay) < LOCK_PX) return;
             if (ay > ax * DIRECTION_RATIO) {
                 g.cancelled = true;
+                lastFullscreenTap = null;
                 stopActiveGesture({ commit:false });
                 return;
             }
             if (ax <= ay * DIRECTION_RATIO) return;
             g.locked = true;
+            lastFullscreenTap = null;
         }
 
         moveEvent.preventDefault();
@@ -204,11 +251,13 @@ function startGesture(event, target, info) {
 
     g.onUp = upEvent => {
         if (upEvent.pointerId !== g.id) return;
+        if (!g.locked && !g.cancelled) handleFullscreenTap(upEvent, g);
         stopActiveGesture({ commit:true, event:upEvent });
     };
 
     g.onCancel = cancelEvent => {
         if (cancelEvent.pointerId !== g.id) return;
+        lastFullscreenTap = null;
         stopActiveGesture({ commit:false, event:cancelEvent });
     };
 
