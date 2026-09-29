@@ -2,7 +2,7 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.InputPreviewButtonsOrder";
 const NODE_CLASS = "LoadImageGallery";
-const MAX_FRAMES = 12;
+const MAX_FRAMES = 24;
 
 let graphSwitchListenerInstalled = false;
 
@@ -27,12 +27,14 @@ function settleOrder(node) {
 
         const preview = findPreview(node);
         if (preview && !app.configuringGraph) {
-            // The stable layout already owns the actual ordering. Calling it only
-            // after the preview exists keeps the image above the button row while
-            // avoiding addWidget/addCustomWidget hooks during workflow restore.
+            // ComfyUI 0.38 can re-apply widget layout for several frames after a
+            // workflow tab switch. Re-assert the existing stable layout for a
+            // short, finite settling window instead of stopping after the first
+            // successful frame. This never hooks widget creation and is not a
+            // persistent observer/poll.
             node.__cigNodeLayout?.refresh?.();
             node.graph?.setDirtyCanvas?.(true, true);
-            return;
+            node.setDirtyCanvas?.(true, true);
         }
 
         if (frame < MAX_FRAMES) requestAnimationFrame(tick);
@@ -65,14 +67,15 @@ function ensureGraphSwitchListener() {
     graphSwitchListenerInstalled = true;
     canvasElement.addEventListener("litegraph:set-graph", event => {
         const graph = event?.detail?.newGraph || app?.rootGraphOrUndefined || app?.graph;
-        // set-graph can fire while ComfyUI is still swapping its active graph.
-        // One frame later the node layout controller belongs to the active graph.
-        requestAnimationFrame(() => settleGraph(graph));
+        settleGraph(graph);
     });
 }
 
 app.registerExtension({
     name: EXT_NAME,
+    setup() {
+        ensureGraphSwitchListener();
+    },
     nodeCreated(node) {
         ensureGraphSwitchListener();
         settleOrder(node);
