@@ -176,7 +176,6 @@ function stabilize(node) {
     }
 
     const preview = exactPreview(node);
-
     const output = node.widgets.find(w => w?.name === OUTPUT_BUTTON) || null;
     const start = node.widgets.find(w => w?.name === START_BUTTON) || null;
 
@@ -213,29 +212,61 @@ function stabilize(node) {
 function installLayout(node) {
     if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return null;
     if (node.__cigNodeLayout) return node.__cigNodeLayout;
+
     let disposed = false;
     let running = false;
+    let refreshQueued = false;
+    let dynamicHooksInstalled = false;
     const hooks = [];
+
     const refresh = () => {
         if (disposed || running) return;
         running = true;
         try { stabilize(node); } finally { running = false; }
     };
-    for (const name of ["addWidget", "addCustomWidget", "onConfigure", "onExecuted"]) {
+
+    const scheduleRefresh = () => {
+        if (disposed || refreshQueued) return;
+        refreshQueued = true;
+        queueMicrotask(() => {
+            refreshQueued = false;
+            if (!disposed) refresh();
+        });
+    };
+
+    const hook = name => {
+        if (hooks.some(entry => entry[0] === name)) return;
         const own = Object.hasOwn(node, name);
         const original = node[name];
         const wrapped = function(...args) {
             const result = original?.apply(this, args);
-            refresh();
+            scheduleRefresh();
             return result;
         };
         node[name] = wrapped;
         hooks.push([name, original, wrapped, own]);
-    }
+    };
+
+    // Lifecycle hooks are safe during workflow loading because they only queue
+    // stabilization after the current configure/execution call stack finishes.
+    hook("onConfigure");
+    hook("onExecuted");
+
+    const enableDynamicHooks = () => {
+        if (disposed || dynamicHooksInstalled) return;
+        dynamicHooksInstalled = true;
+        // ComfyUI 0.38+ converts/registers widgets inside addWidget/addCustomWidget.
+        // Hook them only after the initial workflow restoration has finished, and
+        // never reorder the widget array from inside the registration call itself.
+        hook("addWidget");
+        hook("addCustomWidget");
+    };
+
     const oldRemoved = node.onRemoved;
     const ownRemoved = Object.hasOwn(node, "onRemoved");
     const removed = function(...args) {
         disposed = true;
+        refreshQueued = false;
         for (const [name, original, wrapped, own] of hooks) if (node[name] === wrapped) {
             if (own) node[name] = original;
             else delete node[name];
@@ -248,16 +279,21 @@ function installLayout(node) {
         return oldRemoved?.apply(this, args);
     };
     node.onRemoved = removed;
-    const controller = { refresh };
+
+    const controller = { refresh, scheduleRefresh, enableDynamicHooks };
     node.__cigNodeLayout = controller;
-    // A single owner sets the row layout whenever widgets are added/restored.
-    // No polling, delayed hiding, property locks or patched array methods.
-    refresh();
     return controller;
+}
+
+function initializeAfterCurrentRestore(node) {
+    const controller = installLayout(node);
+    if (!controller) return;
+    controller.scheduleRefresh();
+    queueMicrotask(() => controller.enableDynamicHooks());
 }
 
 app.registerExtension({
     name: EXT_NAME,
-    nodeCreated(node) { installLayout(node)?.refresh(); },
-    loadedGraphNode(node) { installLayout(node)?.refresh(); },
+    nodeCreated(node) { initializeAfterCurrentRestore(node); },
+    loadedGraphNode(node) { initializeAfterCurrentRestore(node); },
 });
