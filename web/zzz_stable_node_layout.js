@@ -5,94 +5,89 @@ const NODE_CLASS = "LoadImageGallery";
 const OUTPUT_BUTTON = "Галерея output";
 const START_BUTTON = "▶ СТАРТ";
 const LEGACY_BUTTON = "🖼 Превью папки";
+const CONTROL_ROW = "__cig_controls_row";
 const LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 const OUTPUT_BUTTON_LABEL = LANG === "ru" ? "▦  Галерея output" : "▦  Output Gallery";
 const START_BUTTON_LABEL = LANG === "ru" ? "▶  СТАРТ" : "▶  START";
 
+function isTarget(node) {
+    return !!node && (node.comfyClass === NODE_CLASS || node.type === NODE_CLASS);
+}
+
 function exactPreview(node) {
-    return node?.widgets?.find(w => w?.name === "$$canvas-image-preview" || w?.type === "IMAGE_PREVIEW") || null;
+    return node?.widgets?.find?.(w => w?.name === "$$canvas-image-preview" || w?.type === "IMAGE_PREVIEW") || null;
 }
 
-function rawSplice(array, ...args) {
-    return Array.prototype.splice.call(array, ...args);
-}
-
-function hideAux(w) {
-    if (!w) return false;
+function setHidden(widget, hidden = true) {
+    if (!widget) return false;
     let changed = false;
-    if (w.hidden !== true) {
-        w.hidden = true;
+    if (widget.hidden !== hidden) {
+        widget.hidden = hidden;
         changed = true;
     }
-    if (!w.__cigHiddenSize) {
-        w.__cigHiddenSize = () => [0, -4];
-        w.__cigHiddenLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
+    if (hidden) {
+        if (!widget.__cigHiddenSize) {
+            widget.__cigHiddenSize = () => [0, 0];
+            widget.__cigHiddenLayoutSize = () => ({ minHeight: 0, maxHeight: 0, minWidth: 0, maxWidth: 0 });
+        }
+        if (widget.computeSize !== widget.__cigHiddenSize) {
+            widget.computeSize = widget.__cigHiddenSize;
+            changed = true;
+        }
+        if (widget.computeLayoutSize !== widget.__cigHiddenLayoutSize) {
+            widget.computeLayoutSize = widget.__cigHiddenLayoutSize;
+            changed = true;
+        }
     }
-    if (w.computeSize !== w.__cigHiddenSize) {
-        w.computeSize = w.__cigHiddenSize;
-        changed = true;
-    }
-    if (w.computeLayoutSize !== w.__cigHiddenLayoutSize) {
-        w.computeLayoutSize = w.__cigHiddenLayoutSize;
+    return changed;
+}
+
+function restorePreview(preview) {
+    if (!preview) return false;
+    let changed = false;
+    if (preview.hidden !== false) {
+        preview.hidden = false;
         changed = true;
     }
     return changed;
 }
 
-function hideStartInRow(start) {
-    if (!start) return false;
+function configureControlRow(node, row, output, start) {
     let changed = false;
-    if (start.hidden !== true) {
-        start.hidden = true;
-        changed = true;
-    }
-    if (!start.__cigRowHiddenSize) {
-        start.__cigRowHiddenSize = () => [0, 0];
-        start.__cigRowHiddenLayoutSize = () => ({ minHeight:0, maxHeight:0, minWidth:0, maxWidth:0 });
-    }
-    if (start.computeSize !== start.__cigRowHiddenSize) {
-        start.computeSize = start.__cigRowHiddenSize;
-        changed = true;
-    }
-    if (start.computeLayoutSize !== start.__cigRowHiddenLayoutSize) {
-        start.computeLayoutSize = start.__cigRowHiddenLayoutSize;
-        changed = true;
-    }
-    return changed;
-}
+    if (!row) return changed;
 
-function restoreOutputButton(node, button, start) {
-    if (!button) return false;
-    let changed = false;
-
-    if (button.hidden !== false) {
-        button.hidden = false;
+    if (row.serialize !== false) {
+        row.serialize = false;
         changed = true;
     }
-    if (button.serialize !== false) {
-        button.serialize = false;
+    if (row.hidden !== false) {
+        row.hidden = false;
         changed = true;
     }
-    if (!button.__cigRowComputeSize) {
-        button.__cigRowComputeSize = width => [width ?? node.size?.[0] ?? 320, 64];
-        button.__cigRowComputeLayoutSize = () => ({ minHeight:64, maxHeight:64, minWidth:0 });
-    }
-    if (button.computeSize !== button.__cigRowComputeSize) {
-        button.computeSize = button.__cigRowComputeSize;
+    if (row.__cigOutputWidget !== output) {
+        row.__cigOutputWidget = output;
         changed = true;
     }
-    if (button.computeLayoutSize !== button.__cigRowComputeLayoutSize) {
-        button.computeLayoutSize = button.__cigRowComputeLayoutSize;
+    if (row.__cigStartWidget !== start) {
+        row.__cigStartWidget = start;
         changed = true;
     }
 
-    if (button.__cigRowStartWidget !== start) {
-        button.__cigRowStartWidget = start;
+    if (!row.__cigRowComputeSize) {
+        row.__cigRowComputeSize = width => [width ?? node.size?.[0] ?? 320, 64];
+        row.__cigRowComputeLayoutSize = () => ({ minHeight: 64, maxHeight: 64, minWidth: 0 });
+    }
+    if (row.computeSize !== row.__cigRowComputeSize) {
+        row.computeSize = row.__cigRowComputeSize;
+        changed = true;
+    }
+    if (row.computeLayoutSize !== row.__cigRowComputeLayoutSize) {
+        row.computeLayoutSize = row.__cigRowComputeLayoutSize;
         changed = true;
     }
 
-    if (!button.__cigRowDraw) {
-        button.__cigRowDraw = function(ctx, options) {
+    if (!row.__cigRowDraw) {
+        row.__cigRowDraw = function(ctx, options) {
             const h = this.computedHeight ?? 64;
             const y = this.y ?? 0;
             const width = options?.width ?? node.size?.[0] ?? 320;
@@ -100,7 +95,8 @@ function restoreOutputButton(node, button, start) {
             const gap = 8;
             const available = Math.max(2, width - outer * 2 - gap);
             const half = available / 2;
-            const startWidget = this.__cigRowStartWidget;
+            const outputWidget = this.__cigOutputWidget;
+            const startWidget = this.__cigStartWidget;
 
             const drawHalf = (x, w, label, sourceWidget) => {
                 ctx.save();
@@ -120,86 +116,116 @@ function restoreOutputButton(node, button, start) {
                 ctx.restore();
             };
 
-            drawHalf(outer, startWidget ? half : width - outer * 2, OUTPUT_BUTTON_LABEL, this);
-            if (startWidget) drawHalf(outer + half + gap, half, START_BUTTON_LABEL, startWidget);
+            if (outputWidget && startWidget) {
+                drawHalf(outer, half, OUTPUT_BUTTON_LABEL, outputWidget);
+                drawHalf(outer + half + gap, half, START_BUTTON_LABEL, startWidget);
+            } else if (outputWidget) {
+                drawHalf(outer, width - outer * 2, OUTPUT_BUTTON_LABEL, outputWidget);
+            } else if (startWidget) {
+                drawHalf(outer, width - outer * 2, START_BUTTON_LABEL, startWidget);
+            }
         };
         changed = true;
     }
-    if (button.drawWidget !== button.__cigRowDraw) {
-        button.drawWidget = button.__cigRowDraw;
+    if (row.drawWidget !== row.__cigRowDraw) {
+        row.drawWidget = row.__cigRowDraw;
         changed = true;
     }
 
-    if (!button.__cigRowPointerDown) {
-        button.__cigRowPointerDown = function(pointer, nodeArg, canvas) {
+    if (!row.__cigRowPointerDown) {
+        row.__cigRowPointerDown = function(pointer, nodeArg, canvas) {
             const down = pointer?.eDown;
             if (down?.button != null && down.button !== 0) return true;
 
             const localX = Number(down?.canvasX) - Number(node.pos?.[0] ?? 0);
             const width = Number(node.size?.[0] ?? 320);
-            const leftHalf = !this.__cigRowStartWidget || !Number.isFinite(localX) || localX < width / 2;
+            const outputWidget = this.__cigOutputWidget;
+            const startWidget = this.__cigStartWidget;
+            let source = outputWidget || startWidget;
+            if (outputWidget && startWidget && Number.isFinite(localX)) {
+                source = localX < width / 2 ? outputWidget : startWidget;
+            }
 
             pointer.onClick = upEvent => {
-                const source = leftHalf ? this : this.__cigRowStartWidget;
-                if (source?.computedDisabled) return;
-                const cb = source?.callback;
+                if (!source || source.computedDisabled) return;
                 try {
-                    cb?.(source?.value, canvas, nodeArg ?? node, [localX, Number(down?.canvasY) - Number(node.pos?.[1] ?? 0)], upEvent ?? down);
+                    source.callback?.(
+                        source.value,
+                        canvas,
+                        nodeArg ?? node,
+                        [localX, Number(down?.canvasY) - Number(node.pos?.[1] ?? 0)],
+                        upEvent ?? down,
+                    );
                 } catch (error) {
-                    console.error("[ImageGallery] button row callback:", error);
+                    console.error("[ImageGallery] control row callback:", error);
                 }
             };
             return true;
         };
         changed = true;
     }
-    if (button.onPointerDown !== button.__cigRowPointerDown) {
-        button.onPointerDown = button.__cigRowPointerDown;
+    if (row.onPointerDown !== row.__cigRowPointerDown) {
+        row.onPointerDown = row.__cigRowPointerDown;
         changed = true;
     }
+
     return changed;
 }
 
-function sameOrder(a, b) {
-    return a.length === b.length && a.every((item, index) => item === b[index]);
+function ensureControlRow(node, preview, output, start) {
+    if (!preview || (!output && !start) || app.configuringGraph) return null;
+    let row = node.widgets?.find?.(w => w?.name === CONTROL_ROW) || null;
+    if (!row) {
+        try {
+            row = node.addWidget("button", CONTROL_ROW, null, () => {}, { serialize: false });
+            if (row) row.serialize = false;
+        } catch (error) {
+            console.warn("[ImageGallery] unable to create control row:", error);
+            return null;
+        }
+    }
+    configureControlRow(node, row, output, start);
+    return row;
 }
 
 function stabilize(node) {
-    if (!node?.widgets || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return false;
+    if (!isTarget(node) || !Array.isArray(node.widgets)) return false;
     let changed = false;
-
-    for (let i = node.widgets.length - 1; i >= 0; i--) {
-        if (node.widgets[i]?.name === LEGACY_BUTTON) {
-            rawSplice(node.widgets, i, 1);
-            changed = true;
-        }
-    }
 
     const preview = exactPreview(node);
     const output = node.widgets.find(w => w?.name === OUTPUT_BUTTON) || null;
     const start = node.widgets.find(w => w?.name === START_BUTTON) || null;
+    let row = node.widgets.find(w => w?.name === CONTROL_ROW) || null;
 
-    if (preview && preview.hidden !== false) {
-        preview.hidden = false;
-        changed = true;
+    changed = restorePreview(preview) || changed;
+
+    // Keep ComfyUI's real widget order intact. In particular, never splice/reorder
+    // the image widget: ComfyUI 0.38+ serialises/restores widgets through its own
+    // widget store and multiple LoadImageGallery instances must retain independent
+    // image values. The original action buttons stay registered but take no space.
+    changed = setHidden(output, true) || changed;
+    changed = setHidden(start, true) || changed;
+
+    for (const widget of node.widgets) {
+        if (!widget || widget === preview || widget === output || widget === start || widget === row) continue;
+        if (widget.name === LEGACY_BUTTON) {
+            changed = setHidden(widget, true) || changed;
+            continue;
+        }
+        changed = setHidden(widget, true) || changed;
     }
-    changed = restoreOutputButton(node, output, start) || changed;
-    if (output) changed = hideStartInRow(start) || changed;
 
-    for (const w of node.widgets) {
-        if (!w || w === preview || w === output || w === start) continue;
-        changed = hideAux(w) || changed;
-    }
-
-    const hidden = node.widgets.filter(w => w !== output && w !== preview && w !== start);
-    const ordered = preview ? [preview] : [];
-    if (output) ordered.push(output);
-    if (start) ordered.push(start);
-    ordered.push(...hidden);
-
-    if (!sameOrder(node.widgets, ordered)) {
-        rawSplice(node.widgets, 0, node.widgets.length, ...ordered);
-        changed = true;
+    if (preview) {
+        row = ensureControlRow(node, preview, output, start) || row;
+        if (row) {
+            changed = configureControlRow(node, row, output, start) || changed;
+            if (row.hidden !== false) {
+                row.hidden = false;
+                changed = true;
+            }
+        }
+    } else if (row) {
+        changed = setHidden(row, true) || changed;
     }
 
     if (changed) {
@@ -210,7 +236,7 @@ function stabilize(node) {
 }
 
 function installLayout(node) {
-    if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return null;
+    if (!isTarget(node)) return null;
     if (node.__cigNodeLayout) return node.__cigNodeLayout;
 
     let disposed = false;
@@ -244,9 +270,6 @@ function installLayout(node) {
         hooks.push([name, original, wrapped, own]);
     };
 
-    // Never wrap addWidget/addCustomWidget on ComfyUI 0.38+: those methods are
-    // now part of the frontend's concrete-widget registration pipeline. Layout
-    // only needs lifecycle events; onExecuted catches late preview creation.
     hook("onConfigure");
     hook("onExecuted");
 
@@ -256,7 +279,8 @@ function installLayout(node) {
         disposed = true;
         if (frame) cancelAnimationFrame(frame);
         frame = 0;
-        for (const [name, original, wrapped, own] of hooks) if (node[name] === wrapped) {
+        for (const [name, original, wrapped, own] of hooks) {
+            if (node[name] !== wrapped) continue;
             if (own) node[name] = original;
             else delete node[name];
         }
