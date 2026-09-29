@@ -215,27 +215,24 @@ function installLayout(node) {
 
     let disposed = false;
     let running = false;
-    let refreshQueued = false;
-    let dynamicHooksInstalled = false;
+    let frame = 0;
     const hooks = [];
 
     const refresh = () => {
-        if (disposed || running) return;
+        if (disposed || running || app.configuringGraph) return;
         running = true;
         try { stabilize(node); } finally { running = false; }
     };
 
     const scheduleRefresh = () => {
-        if (disposed || refreshQueued) return;
-        refreshQueued = true;
-        queueMicrotask(() => {
-            refreshQueued = false;
-            if (!disposed) refresh();
+        if (disposed || frame) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            refresh();
         });
     };
 
     const hook = name => {
-        if (hooks.some(entry => entry[0] === name)) return;
         const own = Object.hasOwn(node, name);
         const original = node[name];
         const wrapped = function(...args) {
@@ -247,26 +244,18 @@ function installLayout(node) {
         hooks.push([name, original, wrapped, own]);
     };
 
-    // Lifecycle hooks are safe during workflow loading because they only queue
-    // stabilization after the current configure/execution call stack finishes.
+    // Never wrap addWidget/addCustomWidget on ComfyUI 0.38+: those methods are
+    // now part of the frontend's concrete-widget registration pipeline. Layout
+    // only needs lifecycle events; onExecuted catches late preview creation.
     hook("onConfigure");
     hook("onExecuted");
-
-    const enableDynamicHooks = () => {
-        if (disposed || dynamicHooksInstalled) return;
-        dynamicHooksInstalled = true;
-        // ComfyUI 0.38+ converts/registers widgets inside addWidget/addCustomWidget.
-        // Hook them only after the initial workflow restoration has finished, and
-        // never reorder the widget array from inside the registration call itself.
-        hook("addWidget");
-        hook("addCustomWidget");
-    };
 
     const oldRemoved = node.onRemoved;
     const ownRemoved = Object.hasOwn(node, "onRemoved");
     const removed = function(...args) {
         disposed = true;
-        refreshQueued = false;
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
         for (const [name, original, wrapped, own] of hooks) if (node[name] === wrapped) {
             if (own) node[name] = original;
             else delete node[name];
@@ -280,16 +269,13 @@ function installLayout(node) {
     };
     node.onRemoved = removed;
 
-    const controller = { refresh, scheduleRefresh, enableDynamicHooks };
+    const controller = { refresh, scheduleRefresh };
     node.__cigNodeLayout = controller;
     return controller;
 }
 
 function initializeAfterCurrentRestore(node) {
-    const controller = installLayout(node);
-    if (!controller) return;
-    controller.scheduleRefresh();
-    queueMicrotask(() => controller.enableDynamicHooks());
+    installLayout(node)?.scheduleRefresh();
 }
 
 app.registerExtension({
