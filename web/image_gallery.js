@@ -968,207 +968,40 @@ body.addEventListener("mousedown", e=>{
 
     updateRunState();
 }
-function hookNodePreview(node){const attach=()=>{const preview=node.widgets?.find(w=>w?.constructor?.name==="ImagePreviewWidget"||(w?.type==="custom"&&w?.options?.canvasOnly===true&&typeof w?.drawWidget==="function"&&typeof w?.onPointerDown==="function"));if(!preview||preview.__cigGalleryHooked)return;preview.__cigGalleryHooked=true;preview.onClick=()=>{openGallery(node);return true;};};attach();requestAnimationFrame(attach);setTimeout(attach,150);setTimeout(attach,600);setTimeout(attach,1500);}
-
-
-function installPreviewClickBridge() {
-    if (window.__cigPreviewClickBridgeInstalled) return;
-    window.__cigPreviewClickBridgeInstalled = true;
-    document.addEventListener("click", (e) => {
-        const target = e.target instanceof Element ? e.target : null;
-        if (!target) return;
-        const preview = target.closest(".image-preview");
-        if (!preview) return;
-        if (target.closest(".actions,button,a,input,select,textarea")) return;
-        const nodeEl = preview.closest("[data-node-id]");
-        const rawId = nodeEl?.dataset?.nodeId;
-        if (!rawId) return;
-        let node = app.graph?.getNodeById?.(rawId);
-        if (!node && /^\d+$/.test(rawId)) node = app.graph?.getNodeById?.(Number(rawId));
-        if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        openGallery(node);
-    }, true);
-}
-
-
-
-function hookCanvasPreviewClickV2(node){
-    if(node.__cigCanvasPreviewHookedV2)return;
-    node.__cigCanvasPreviewHookedV2=true;
-    const original=node.onMouseDown;
-    node.onMouseDown=function(event,pos,canvas){
-        try{
-            if(pos!=null&&pos.length>=2){
-                const x=Number(pos[0]),y=Number(pos[1]),w=Number(this.size?.[0]??0),h=Number(this.size?.[1]??0);
-                if(Number.isFinite(x)&&Number.isFinite(y)&&x>=0&&y>=0&&x<=w&&y<=h){
-                    let previewTop=0,foundWidget=false;
-                    for(const wd of (this.widgets??[])){
-                        if(!wd||wd.hidden||wd.computedDisabled||wd.name==="$$canvas-image-preview"||wd.type==="IMAGE_PREVIEW")continue;
-                        const wy=Number(wd.last_y??wd.y);
-                        if(!Number.isFinite(wy))continue;
-                        foundWidget=true;
-                        let wh=20;
-                        try{
-                            const cs=wd.computeSize?.(w);
-                            if(cs&&cs.length>=2&&Number.isFinite(Number(cs[1])))wh=Number(cs[1]);
-                        }catch(_){}
-                        previewTop=Math.max(previewTop,wy+Math.max(18,wh));
-                    }
-                    if(!foundWidget)previewTop=80;
-                    previewTop+=4;
-                    if(y>=previewTop&&(this.imgs?.length||this.images?.length||getImageWidget(this)?.value)){
-                        event?.preventDefault?.();
-                        event?.stopPropagation?.();
-                        queueMicrotask(()=>openGallery(this));
-                        return true;
-                    }
-                }
-            }
-        }catch(err){console.warn("[ImageGallery] preview click hook:",err);}
-        return original?.call(this,event,pos,canvas);
-    };
-}
-function installGalleryPreviewWidgetHook(node){
-    if(node.__cigPreviewWidgetWatcher)return;
-    node.__cigPreviewWidgetWatcher=true;
-    const patch=(w)=>{
-        if(!w||w.__cigGalleryPatched)return w;
-        const isPreview=w.name==="$$canvas-image-preview"||(w.options?.canvasOnly===true&&typeof w.drawWidget==="function"&&typeof w.onPointerDown==="function");
-        if(!isPreview)return w;
-        w.__cigGalleryPatched=true;
-        const originalPointerDown=typeof w.onPointerDown==="function"?w.onPointerDown.bind(w):null;
-        w.onPointerDown=function(pointer,nodeArg,canvas){
-            const button=pointer?.eDown?.button;
-            if(button!=null&&button!==0)return originalPointerDown?.(pointer,nodeArg,canvas)??false;
-            if(pointer){
-                pointer.onDragStart=undefined;
-                pointer.onDragEnd=undefined;
-                pointer.finally=undefined;
-            }
-            queueMicrotask(()=>openGallery(node));
-            return true;
-        };
-        w.onClick=function(){};
-        return w;
-    };
-    node.widgets?.forEach(patch);
-    const originalAddCustomWidget=typeof node.addCustomWidget==="function"?node.addCustomWidget.bind(node):null;
-    if(originalAddCustomWidget){
-        node.addCustomWidget=function(widget){
-            const result=originalAddCustomWidget(widget);
-            patch(result??widget);
-            return result;
-        };
-    }
-    const scan=()=>node.widgets?.forEach(patch);
-    requestAnimationFrame(scan);
-    setTimeout(scan,50);
-    setTimeout(scan,250);
-    setTimeout(scan,1000);
-}
-
-
 function installGalleryStartButton(node) {
     if (node.widgets?.some(w => w?.name === "▶ СТАРТ")) return;
     const button = node.addWidget("button", "▶ СТАРТ", null, () => app.queuePrompt(0, 1), { serialize: false });
     button.serialize = false;
 }
 
-function installGalleryDomFixV2(){
-    if(window.__cigDomFixV2)return;
-    window.__cigDomFixV2=true;
-    if(!document.getElementById("cig-dom-fix-v2")){
-        const st=document.createElement("style");
-        st.id="cig-dom-fix-v2";
-        st.textContent='.cig-footer{flex-wrap:nowrap!important;align-items:center!important}.cig-footer .cig-run{width:auto!important;min-width:0!important;height:auto!important;min-height:0!important;flex:0 0 auto!important;margin:0!important;padding:8px 12px!important;font-size:14px!important;font-weight:400!important;line-height:normal!important;border-radius:7px!important}.cig-footer>div[style*="flex-basis"]{display:none!important}';
-        document.head.appendChild(st);
-    }
-    const fix=()=>{
-        document.querySelectorAll(".cig-overlay").forEach(o=>{
-            const f=o.querySelector(".cig-footer"),c=o.querySelector(".cig-clear"),r=o.querySelector(".cig-run");
-            if(!f||!r)return;
-            if(c&&r.previousElementSibling!==c)c.insertAdjacentElement("afterend",r);
-            for(const d of [...f.children])if(d.tagName==="DIV"&&(d.getAttribute("style")||"").includes("flex-basis"))d.remove();
-            f.style.setProperty("flex-wrap","nowrap","important");
-            r.style.setProperty("width","auto","important");
-            r.style.setProperty("min-width","0","important");
-            r.style.setProperty("height","auto","important");
-            r.style.setProperty("min-height","0","important");
-            r.style.setProperty("flex","0 0 auto","important");
-            r.style.setProperty("margin","0","important");
-            r.style.setProperty("padding","8px 12px","important");
-            r.style.setProperty("font-size","14px","important");
-            r.style.setProperty("font-weight","400","important");
-        });
-    };
-    new MutationObserver(fix).observe(document.body,{childList:true,subtree:true});
-    fix();
-}
-
-function installGalleryPreviewNavigationV3(node) {
+function installNodePreview(node) {
     return installGalleryPreviewNavigation(node, {
         app, api, getImageWidget, setWidgetValue, openGallery,
         normalizePath, splitPath, joinPath,
     });
 }
 
-function installGalleryFooterFixV3(){
-    if(window.__cigFooterFixV3)return;
-    window.__cigFooterFixV3=true;
-
-    const apply=()=>{
-        document.querySelectorAll(".cig-footer").forEach(footer=>{
-            const folder=footer.querySelector(".cig-folder");
-            const clear=footer.querySelector(".cig-clear");
-            const run=footer.querySelector(".cig-run");
-            if(!run||!clear)return;
-
-            footer.querySelectorAll(":scope > div").forEach(el=>{
-                const st=el.getAttribute("style")||"";
-                if(/flex-basis\s*:\s*100%|width\s*:\s*100%/i.test(st))el.remove();
-            });
-
-            clear.insertAdjacentElement("afterend",run);
-
-            Object.assign(footer.style,{
-                flexWrap:"nowrap",
-                alignItems:"center"
-            });
-
-            if(folder){
-                folder.style.setProperty("flex","1 1 360px","important");
-                folder.style.setProperty("min-width","280px","important");
-                folder.style.setProperty("width","auto","important");
-                folder.style.setProperty("max-width","none","important");
-            }
-
-            for(const btn of [clear,run]){
-                btn.style.setProperty("flex","0 0 auto","important");
-                btn.style.setProperty("width","auto","important");
-                btn.style.setProperty("min-width","0","important");
-                btn.style.setProperty("height","40px","important");
-                btn.style.setProperty("min-height","40px","important");
-                btn.style.setProperty("max-height","40px","important");
-                btn.style.setProperty("padding","0 14px","important");
-                btn.style.setProperty("margin","0","important");
-                btn.style.setProperty("font-size","14px","important");
-                btn.style.setProperty("font-weight","400","important");
-                btn.style.setProperty("line-height","38px","important");
-                btn.style.setProperty("border-radius","7px","important");
-            }
-        });
-    };
-
-    new MutationObserver(apply).observe(document.body,{childList:true,subtree:true});
-    apply();
-}
-
-
 app.registerExtension({
-name:EXTENSION_NAME,
-beforeConfigureGraph(graphData){captureSerializedGalleryImage(graphData);},
-loadedGraphNode(node){restoreSerializedGalleryImage(node);if(node.comfyClass===NODE_CLASS||node.type===NODE_CLASS)installGalleryPreviewNavigationV3(node).refresh();},
-async nodeCreated(node){if(node.comfyClass!==NODE_CLASS&&node.type!==NODE_CLASS)return;if(node.widgets?.some(w=>w.name==="🖼 Превью папки"))return;const button=node.addWidget("button","🖼 Превью папки",null,()=>openGallery(node));button.serialize=false;if(node.widgets){const bi=node.widgets.indexOf(button),ii=node.widgets.findIndex(w=>w.name==="image");if(bi>=0&&ii>=0&&bi>ii){node.widgets.splice(bi,1);node.widgets.splice(ii,0,button);}}installGalleryPreviewNavigationV3(node);installGalleryStartButton(node);installCigTitleHelp(node);installExternalPreviewRestore(node);// CIG_STABLE_NODE_HEIGHT_V1
-const computed=node.computeSize?.();if(computed){const currentW=node.size?.[0]??computed[0];const currentH=node.size?.[1]??computed[1];const wantedW=Math.max(currentW,computed[0]);if(wantedW>currentW)node.setSize?.([wantedW,currentH]);}}});
+    name: EXTENSION_NAME,
+    beforeConfigureGraph(graphData) { captureSerializedGalleryImage(graphData); },
+    loadedGraphNode(node) {
+        restoreSerializedGalleryImage(node);
+        if (node.comfyClass === NODE_CLASS || node.type === NODE_CLASS) installNodePreview(node).refresh();
+    },
+    nodeCreated(node) {
+        if (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) return;
+        if (node.__cigImageGalleryInitialized) return;
+        node.__cigImageGalleryInitialized = true;
+        // The preview opens the gallery directly; no legacy helper widget is needed.
+        installNodePreview(node);
+        installGalleryStartButton(node);
+        installCigTitleHelp(node);
+        installExternalPreviewRestore(node);
+        const computed = node.computeSize?.();
+        if (computed) {
+            const currentW = node.size?.[0] ?? computed[0];
+            const currentH = node.size?.[1] ?? computed[1];
+            if (computed[0] > currentW) node.setSize?.([computed[0], currentH]);
+        }
+    },
+});

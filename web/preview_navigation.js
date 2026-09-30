@@ -107,8 +107,12 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
             if (disposed || request !== pending || folder !== pending.folder) return;
-            listedFolder = folder;
-            listedValues = (Array.isArray(data.images) ? data.images : []).map(name => joinPath(folder, String(name)));
+            // A gallery refresh can supply newer filenames while this metadata
+            // request is in flight. Keep that list and only fill in its metadata.
+            if (listedFolder !== folder) {
+                listedFolder = folder;
+                listedValues = (Array.isArray(data.images) ? data.images : []).map(name => joinPath(folder, String(name)));
+            }
             listedMetaFolder = folder;
             listedMeta = new Map((Array.isArray(data.items) ? data.items : []).map(item => [String(item?.name ?? ""), item || {}]));
             rebuild();
@@ -190,7 +194,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             syncValues();
             const width = Math.max(0, Number(options?.width ?? node.size?.[0] ?? 320));
             const y = Number(this.y ?? 0);
-            const height = Math.max(1, Number(this.computedHeight ?? 220));
+            const height = node.__cigNodeLayout?.previewHeight(this) ?? Math.max(1, Number(this.computedHeight ?? 220));
             const outer = Math.min(6, width / 20), gap = Math.min(8, width / 30);
             // Reserve both lanes for every aspect ratio, even while decoding.
             const side = Math.min(90, Math.max(32, width * .12), width * .22);
@@ -246,9 +250,11 @@ export function installGalleryPreviewNavigation(node, dependencies) {
                 }
                 if (inside(mouse, this.__cigImageRect) && app.canvas?.canvas) app.canvas.canvas.style.cursor = "pointer";
             } finally { ctx.restore(); }
+            node.__cigNodeLayout?.drawControls(this, ctx, width);
         };
         const down = function(pointer, nodeArg, canvas) {
             if (pointer?.eDown?.button != null && pointer.eDown.button !== 0) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;
+            if (node.__cigNodeLayout?.pointerDown(this, pointer, canvas ?? app.canvas)) return true;
             const p = point(pointer?.eDown, canvas);
             let action;
             if (inside(p, this.__cigPrevRect)) action = () => navigate(-1);
