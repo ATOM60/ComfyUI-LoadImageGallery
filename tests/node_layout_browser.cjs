@@ -9,14 +9,15 @@ const arg = name => process.argv.find(a => a.startsWith(name + '='))?.slice(name
 const baseline = arg('--baseline');
 const reference = arg('--reference');
 const files = ['node_controls.js', 'preview_navigation.js', 'image_gallery.js', 'output_video_gallery.js',
-    'zzz_stable_node_layout.js', '000_comfy038_widget_safety.js', 'zzzzzzzzzzzzzzzzzzzz_input_preview_buttons_order.js'];
+    'zzz_stable_node_layout.js', '000_comfy038_widget_safety.js', 'zzzzzzzzzzzzzzzzzzzz_input_preview_buttons_order.js',
+    'input_preview_metadata.js', 'zzzzzzzzzzzz_ui_style_unification.js', 'zzzzzzzzzzzzzzzzzzz_disable_title_help_test.js'];
 function readSources(ref) {
     return Object.fromEntries(files.flatMap(file => {
         try { return [[file, ref
             ? execFileSync('git', ['show', ref + ':web/' + file], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
             : fs.readFileSync(path.join(root, 'web', file), 'utf8')]]; }
         catch (error) {
-            if (file === 'node_controls.js' || file.includes('safety') || file.includes('buttons_order')) return [];
+            if (file === 'node_controls.js' || file === 'input_preview_metadata.js' || file.includes('safety') || file.includes('buttons_order')) return [];
             throw error;
         }
     }));
@@ -137,11 +138,21 @@ function readSources(ref) {
             }
             function paint(node) {
                 const canvas = document.createElement('canvas'); canvas.width = node.size[0]; canvas.height = node.size[1];
-                const ctx = canvas.getContext('2d'), rects = [];
+                const ctx = canvas.getContext('2d'), rects = [], texts = [];
+                ctx.fillStyle = '#3d4f58'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.save(); ctx.fillStyle = '#b8bdc0'; ctx.font = '12px Arial'; ctx.textAlign = 'right';
+                ctx.fillText('IMAGE', canvas.width - 14, 16); ctx.fillText('MASK', canvas.width - 14, 34); ctx.restore();
                 const roundRect = ctx.roundRect.bind(ctx);
                 ctx.roundRect = (...args) => { rects.push(args); return roundRect(...args); };
+                const fillText = ctx.fillText.bind(ctx);
+                ctx.fillText = (text, x, y, ...args) => {
+                    texts.push({ text, x, y, width: ctx.measureText(text).width });
+                    return fillText(text, x, y, ...args);
+                };
+                // ComfyUI calls this before arranging and drawing its widgets.
+                node.onDrawForeground?.(ctx, env.app.canvas);
                 for (const w of arrange(node)) w.drawWidget(ctx, { width: canvas.width, previewImages: node.imgs });
-                return { canvas, ctx, buttons: rects.filter(r => r[3] === 68 && r[4] === 12) };
+                return { canvas, ctx, texts, buttons: rects.filter(r => r[3] === 68 && r[4] === 12) };
             }
             function hasFooter(node) {
                 const { buttons } = paint(node);
@@ -164,6 +175,9 @@ function readSources(ref) {
                     if (action === 'L') extensions.get('Comfy.ImageGallery.StableUnifiedNode').nodeCreated(node);
                 }
                 extensions.get('Comfy.ImageGallery.InputPreviewButtonsOrder')?.nodeCreated(node);
+                extensions.get('Comfy.ImageGallery.InputPreviewMetadata')?.nodeCreated(node);
+                extensions.get('Comfy.ImageGallery.UnifiedUiStyle')?.nodeCreated(node);
+                extensions.get('Comfy.ImageGallery.DisableTitleForegroundTest')?.nodeCreated(node);
                 await flush(); advance(1000); await flush();
                 return node;
             }
@@ -233,6 +247,50 @@ function readSources(ref) {
             check('footer survives asynchronous preview work', before.every((v, i) => v === after[i]));
             check('later canvas overlay survives', painted.ctx.getImageData(110, 60, 1, 1).data[0] === 240);
             check('portrait arrows use entire side margin', recreated.__cigPrevRect.w > 200 && recreated.__cigNextRect.w > 200);
+            // Regression: the shipped title-help extension resets onDrawForeground
+            // immediately and on delayed callbacks, erasing the previous metadata hook.
+            const headerTexts = node => paint(node).texts.filter(t => t.y > 0 && t.y < 40);
+            const unchangedSize = [...late.size];
+            const unchangedWidgets = [...late.widgets];
+            const previewHeight = recreated.computedHeight;
+            check('title suppression is active in fixture', late.onDrawForeground == null);
+            let text = headerTexts(late);
+            check('filename and dimensions survive title suppression', text.some(t => t.text === 'a.png') && text.some(t => t.text.includes('200 × 1600')));
+            check('metadata stays above the preview', text.length === 2 && text.every(t => t.x >= 14 && t.x + t.width <= late.size[0] - 145));
+            late.widgets[0].value = 'C:\\input\\портрет.png [input]';
+            const landscape = document.createElement('canvas'); landscape.width = 1920; landscape.height = 1080;
+            late.imgs = [landscape];
+            text = headerTexts(late);
+            check('metadata follows selected file and actual resolution', text.some(t => t.text === 'портрет.png') && text.some(t => t.text.includes('1920 × 1080')));
+            check('metadata does not resize or add widgets', late.size.every((v, i) => v === unchangedSize[i]) && late.widgets.every((w, i) => w === unchangedWidgets[i]) && late.widgets.length === unchangedWidgets.length && recreated.computedHeight === previewHeight);
+            late.widgets[0].value = 'photos/' + 'длинное-имя-🖼️-'.repeat(12) + '.png';
+            late.size[0] = 320;
+            text = headerTexts(late);
+            check('long names truncate and keep resolution', text.some(t => t.text.endsWith('…')) && text.some(t => t.text.includes('1920 × 1080')));
+            check('narrow node leaves output labels clear', text.length === 2 && text.every(t => t.x + t.width <= 175));
+            const pending = new Image(); pending.width = 999; pending.height = 999;
+            late.imgs = [pending];
+            text = headerTexts(late);
+            check('pending image never reports CSS dimensions', !text.some(t => t.text.includes('×')) && text.length === 1);
+            late.imgs = [image, landscape]; late.imageIndex = 1; late.size[0] = 600;
+            text = headerTexts(late);
+            check('metadata uses active image index', text.some(t => t.text.includes('1920 × 1080')));
+            late.flags = { collapsed: true };
+            check('collapsed node has no preview metadata', headerTexts(late).length === 0);
+            late.flags.collapsed = false;
+            late.imgs = [image]; late.imageIndex = 0; late.widgets[0].value = 'photos/a.png';
+            // Reserve the real localized output label width, not just a fixed lane.
+            late.outputs = [{ label: 'ОЧЕНЬ ДЛИННОЕ НАЗВАНИЕ ВЫХОДА' }, { name: 'MASK' }];
+            text = headerTexts(late);
+            check('localized output labels stay clear', text.every(t => t.x + t.width < 360));
+            late.outputs = [];
+            const sample = paint(late).canvas;
+            sample.dataset.previewMetadata = '1'; document.body.appendChild(sample);
+            await flush(); advance(1000); await flush();
+            const beforeIdle = dirty;
+            for (let i = 0; i < 100; i++) paint(late);
+            advance(1000); await flush();
+            check('metadata causes no extra redraws or timers', dirty === beforeIdle && timers.size === 0);
             if (referenceSources) {
                 const referenceEnv = load(referenceSources);
                 const oldNode = await create(referenceEnv);
@@ -240,7 +298,7 @@ function readSources(ref) {
                     oldNode.size = late.size = [width, height];
                     const oldPixels = paint(oldNode).ctx.getImageData(0, 0, width, height).data;
                     const newPixels = paint(late).ctx.getImageData(0, 0, width, height).data;
-                    check('unchanged pixels at ' + width + 'x' + height, oldPixels.every((v, i) => v === newPixels[i]));
+                    check('unchanged preview/footer pixels at ' + width + 'x' + height, oldPixels.slice(40 * width * 4).every((v, i) => v === newPixels[i + 40 * width * 4]));
                 }
                 oldNode.onRemoved();
             }
@@ -250,6 +308,7 @@ function readSources(ref) {
             return reports;
         }, { sources: readSources(baseline), referenceSources: reference ? readSources(reference) : null });
         const failures = reports.filter(r => !r.ok);
+        if (arg('--screenshot')) await page.locator('canvas[data-preview-metadata]').screenshot({ path: arg('--screenshot') });
         console.log(JSON.stringify({ mode: baseline || 'current', checks: reports.length, failures, browserErrors: errors }, null, 2));
         assert.equal(errors.length, 0, 'browser errors');
         assert.equal(failures.length, 0, 'layout regressions');

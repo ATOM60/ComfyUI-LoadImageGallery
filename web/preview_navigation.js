@@ -250,6 +250,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
                 }
                 if (inside(mouse, this.__cigImageRect) && app.canvas?.canvas) app.canvas.canvas.style.cursor = "pointer";
             } finally { ctx.restore(); }
+            node.__cigDrawPreviewMetadata?.(ctx, this, options);
             node.__cigNodeLayout?.drawControls(this, ctx, width);
         };
         const down = function(pointer, nodeArg, canvas) {
