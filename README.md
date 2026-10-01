@@ -17,6 +17,8 @@ The node provides:
 - **START** — queues selected images one by one;
 - **IMAGE** and **MASK** outputs.
 
+![Liber Load Image from Gallery node](docs/images/node-en.png)
+
 ## Scenario 1. Choose one image
 
 1. Click the image preview in the node.
@@ -25,6 +27,8 @@ The node provides:
 4. The image is loaded into the node and the gallery closes.
 
 When the workflow is opened again, the last selected image is restored automatically.
+
+![Image Gallery](docs/images/image-gallery-en.png)
 
 ## Scenario 2. Browse images directly in the node
 
@@ -69,6 +73,8 @@ You can:
 4. Use search, sorting, favorites and card size to find the video you need.
 
 If a new file is not visible yet, press **Refresh**.
+
+![Video Gallery](docs/images/video-gallery-en.png)
 
 ## Scenario 7. Watch videos
 
