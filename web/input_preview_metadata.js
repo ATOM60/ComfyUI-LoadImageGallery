@@ -62,7 +62,13 @@ function install(node) {
                 const suffixWidth = ctx.measureText(suffix).width;
                 ctx.font = NAME_FONT;
                 const fitted = fitText(ctx, name, available - suffixWidth);
-                cached = { available, name: fitted, suffix: fitted ? suffix : size, nameWidth: ctx.measureText(fitted).width };
+                const nameWidth = ctx.measureText(fitted).width;
+                const displayedSuffix = fitted ? suffix : size;
+                ctx.font = SIZE_FONT;
+                const textWidth = nameWidth + ctx.measureText(displayedSuffix).width;
+                // Center over the image, keeping long labels clear of the outputs.
+                const x = Math.max(14, Math.min((width - textWidth) / 2, width - reserved - textWidth));
+                cached = { available, name: fitted, suffix: displayedSuffix, nameWidth, x };
                 cachedKey = key;
             }
             if (cached.available <= 0) return;
@@ -76,11 +82,11 @@ function install(node) {
             const y = top / 2;
             ctx.font = NAME_FONT;
             ctx.fillStyle = "rgba(235,235,235,.92)";
-            if (cached.name) ctx.fillText(cached.name, 14, y);
+            if (cached.name) ctx.fillText(cached.name, cached.x, y);
             if (cached.suffix) {
                 ctx.font = SIZE_FONT;
                 ctx.fillStyle = "rgba(210,210,210,.82)";
-                ctx.fillText(cached.suffix, 14 + cached.nameWidth, y);
+                ctx.fillText(cached.suffix, cached.x + cached.nameWidth, y);
             }
         } finally { ctx.restore(); }
     };
