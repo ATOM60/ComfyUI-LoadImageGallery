@@ -238,7 +238,7 @@ function ensureStyles() {
 .ovg-toolbar input[type=text],.ovg-toolbar select{background:var(--comfy-input-bg,#292929);color:var(--input-text,#ddd);border:1px solid rgba(255,255,255,.13);border-radius:6px;padding:7px 8px}.ovg-search{min-width:220px;flex:1 1 260px}.ovg-toolbar .ovg-size{width:110px}
 .ovg-btn{border:1px solid rgba(255,255,255,.14);background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);border-radius:6px;padding:7px 10px;cursor:pointer}.ovg-btn:hover{filter:brightness(1.17)}.ovg-btn:disabled{opacity:.45;cursor:not-allowed}
 .ovg-grid-wrap{position:relative;flex:1 1 auto;overflow:auto;padding:12px;user-select:none}.ovg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ovg-card-size,180px),1fr));gap:10px;align-items:start}
-.ovg-card{position:relative;min-width:0;border:1px solid rgba(255,255,255,.11);border-radius:8px;overflow:hidden;background:#151515;cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s,transform .12s,background .12s}.ovg-card:hover{border-color:rgba(255,255,255,.35);transform:translateY(-1px)}.ovg-card.marked{box-shadow:inset 0 0 0 2px #6ba7ff;background:#26364b}
+.ovg-card{position:relative;min-width:0;border:1px solid rgba(255,255,255,.11);border-radius:8px;overflow:hidden;background:#151515;cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s,transform .12s,background .12s}.ovg-card:hover{border-color:rgba(255,255,255,.35);transform:translateY(-1px)}.ovg-card:focus{outline:none}.ovg-card.ovg-keynav-focus{outline:2px solid #6ba7ff;outline-offset:2px}.ovg-card.marked{box-shadow:inset 0 0 0 2px #6ba7ff;background:#26364b}
 .ovg-thumb{position:relative;aspect-ratio:16/10;background:#050505;overflow:hidden}.ovg-thumb img{width:100%;height:100%;display:block;object-fit:cover;background:#000}.ovg-thumb-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#777;font-size:34px}
 .ovg-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;width:48px;height:48px;border:0;border-radius:50%;background:rgba(0,0,0,.66);color:#fff;font-size:23px;line-height:48px;padding:0 0 0 3px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.35)}.ovg-play:hover{background:rgba(0,0,0,.84);transform:translate(-50%,-50%) scale(1.06)}
 .ovg-inline-video{position:absolute;inset:0;z-index:5;width:100%;height:100%;display:block;object-fit:contain;background:#000}.ovg-card-info{padding:7px 8px 8px}.ovg-card-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:600}.ovg-card-meta{display:flex;justify-content:space-between;gap:6px;margin-top:4px;opacity:.65;font-size:10px}.ovg-empty-grid{grid-column:1/-1;padding:60px 20px;text-align:center;color:#888}
@@ -601,6 +601,7 @@ app.registerExtension({
                 for (const item of rows) {
                     const card = document.createElement("div");
                     card.className = `ovg-card${state.marked.has(item.path) ? " marked" : ""}`;
+                    card.tabIndex = -1;
                     card.dataset.path = item.path;
                     const date = new Date(item.mtime * 1000).toLocaleString();
                     card.innerHTML = `
@@ -617,6 +618,8 @@ app.registerExtension({
                     card.addEventListener("click", e => {
                         if (e.target.closest("button") || e.target.closest("video")) return;
                         if (performance.now() < state.dragSuppressUntil || e.detail !== 1) return;
+                        state.modal?.querySelectorAll(".ovg-keynav-focus").forEach(el => el.classList.remove("ovg-keynav-focus"));
+                        card.focus({preventScroll:true});
                         clickTimer = setTimeout(() => toggleMarked(item.path), 180);
                     });
                     card.addEventListener("dblclick", async e => {
@@ -735,6 +738,21 @@ app.registerExtension({
                 }, {passive:true});
             }
 
+            function primeKeyboardFocus() {
+                if (!state.modal) return;
+                const active = document.activeElement;
+                if (active && state.modal.contains(active) && !active.classList?.contains("ovg-card")) return;
+                const wrap = state.modal.querySelector(".ovg-grid-wrap");
+                const cards = [...state.modal.querySelectorAll(".ovg-card")];
+                if (!wrap || !cards.length) return;
+                const wr = wrap.getBoundingClientRect();
+                const visible = cards.find(card => {
+                    const r = card.getBoundingClientRect();
+                    return r.bottom > wr.top && r.top < wr.bottom;
+                });
+                (visible || cards[0])?.focus({preventScroll:true});
+            }
+
             function closeModal() {
                 closeMenu(); releaseAllPlayers();
                 state.thumbObserver?.disconnect(); state.thumbObserver = null;
@@ -776,9 +794,65 @@ app.registerExtension({
                 modal.querySelector(".ovg-clear-all").onclick=()=>{state.marked.clear();paintMarkedCards();};
                 modal.querySelector(".ovg-help").onclick=e=>{e.preventDefault();e.stopPropagation();openHelp();};
                 setupRectangleSelection(modal); setupPlayerEvictionOnScroll(modal); updateCount();
-                state.escapeHandler=e=>{if(e.key==="Escape"&&state.modal===modal)closeModal();};
+                state.escapeHandler=async e=>{
+                    if(state.modal!==modal)return;
+                    if(e.key==="Escape"){closeModal();return;}
+                    if(document.fullscreenElement||document.webkitFullscreenElement)return;
+
+                    const active=document.activeElement;
+                    if(!active?.classList?.contains("ovg-card")||!modal.contains(active))return;
+
+                    if(e.key==="Enter"){
+                        e.preventDefault();
+                        const path=active.dataset.path;
+                        const item=state.videos.find(v=>v.path===path);
+                        const playBtn=active.querySelector(".ovg-play");
+                        if(item&&playBtn){
+                            try{await activateInlinePlayer(active,item,playBtn);}
+                            catch(err){toast(err.message||String(err),"error");}
+                        }
+                        return;
+                    }
+
+                    if(e.key===" "){
+                        e.preventDefault();
+                        if(active.dataset.path)toggleMarked(active.dataset.path);
+                        return;
+                    }
+
+                    if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;
+                    const cards=[...modal.querySelectorAll(".ovg-card")];
+                    const index=cards.indexOf(active);
+                    if(index<0||!cards.length)return;
+
+                    let columns=1;
+                    const firstTop=cards[0].offsetTop;
+                    while(columns<cards.length&&Math.abs(cards[columns].offsetTop-firstTop)<2)columns++;
+
+                    const delta={
+                        ArrowLeft:-1,
+                        ArrowRight:1,
+                        ArrowUp:-columns,
+                        ArrowDown:columns,
+                    }[e.key];
+                    const next=Math.max(0,Math.min(cards.length-1,index+delta));
+                    e.preventDefault();
+                    if(next===index)return;
+                    for(const card of cards)card.classList.remove("ovg-keynav-focus");
+                    cards[next].classList.add("ovg-keynav-focus");
+                    cards[next].focus({preventScroll:true});
+                    cards[next].scrollIntoView({block:"nearest",inline:"nearest"});
+                };
                 document.addEventListener("keydown",state.escapeHandler);
-                try { await fetchVideos(); renderGrid(); } catch(e) { toast(e.message||String(e),"error"); renderGrid(); }
+                try {
+                    await fetchVideos();
+                    renderGrid();
+                    requestAnimationFrame(primeKeyboardFocus);
+                } catch(e) {
+                    toast(e.message||String(e),"error");
+                    renderGrid();
+                    requestAnimationFrame(primeKeyboardFocus);
+                }
             }
 
             if (!node.widgets?.some(w => w?.name === "Галерея output")) {
