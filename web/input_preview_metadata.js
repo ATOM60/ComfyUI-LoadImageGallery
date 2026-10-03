@@ -48,8 +48,10 @@ function install(node) {
     // Called by the preview after LiteGraph has arranged widgets. The legacy
     // title-help suppression clears onDrawForeground, so never attach there.
     const draw = function(ctx, preview, options) {
-        const top = Number(preview?.y);
-        if (node.flags?.collapsed || node.collapsed || !Number.isFinite(top) || top < 18) return;
+        const row = preview?.__cigMetadataRect;
+        const top = Number(row?.y);
+        const rowHeight = Number(row?.h);
+        if (node.flags?.collapsed || node.collapsed || !Number.isFinite(top) || !Number.isFinite(rowHeight) || rowHeight < 18) return;
 
         const stack = node.__cigStackController;
         const showStack = !!stack?.isRoot?.();
@@ -68,9 +70,9 @@ function install(node) {
             node.__cigStackControlRects = null;
 
             if (showStack) {
-                const y = top / 2;
+                const y = top + rowHeight / 2;
                 const buttonSize = 18;
-                const buttonY = Math.max(1, y - buttonSize / 2);
+                const buttonY = y - buttonSize / 2;
                 const prev = { x:10, y:buttonY, w:buttonSize, h:buttonSize };
 
                 ctx.font = COUNT_FONT;
@@ -132,14 +134,15 @@ function install(node) {
             }
 
             if (!cached || cached.available <= 0 || !name) return;
-            // Keep filename/resolution in the same existing band, to the right of
-            // the node counter and away from output labels. Node height is unchanged.
+            // The row is now physically inside the preview widget, so its arrows
+            // use the exact same pointer path as the working image navigation.
+            // Total node height is unchanged; only the preview image area is reduced.
             ctx.beginPath();
-            ctx.rect(cached.contentLeft, 0, cached.available, top);
+            ctx.rect(cached.contentLeft, top, cached.available, rowHeight);
             ctx.clip();
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            const y = top / 2;
+            const y = top + rowHeight / 2;
             ctx.font = NAME_FONT;
             ctx.fillStyle = "rgba(235,235,235,.92)";
             if (cached.name) ctx.fillText(cached.name, cached.x, y);
