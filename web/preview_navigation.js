@@ -255,8 +255,27 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         };
         const down = function(pointer, nodeArg, canvas) {
             if (pointer?.eDown?.button != null && pointer.eDown.button !== 0) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;
-            if (node.__cigNodeLayout?.pointerDown(this, pointer, canvas ?? app.canvas)) return true;
             const p = point(pointer?.eDown, canvas);
+
+            // Node stack arrows use exactly the same pointer/click path as the
+            // proven image-navigation arrows below.
+            const stack = node.__cigStackController;
+            const stackRects = node.__cigStackControlRects;
+            let stackAction = null;
+            if (stack?.isRoot?.() && stackRects) {
+                if (inside(p, stackRects.prev)) {
+                    stackAction = (Number(stack.count?.()) || 1) > 1 ? () => stack.remove?.() : () => {};
+                } else if (inside(p, stackRects.next)) {
+                    stackAction = () => stack.add?.();
+                }
+            }
+            if (stackAction) {
+                pointer.onDragStart = undefined; pointer.onDragEnd = undefined; pointer.finally = undefined;
+                pointer.onClick = () => { if (!disposed) stackAction(); };
+                return true;
+            }
+
+            if (node.__cigNodeLayout?.pointerDown(this, pointer, canvas ?? app.canvas)) return true;
             let action;
             if (inside(p, this.__cigPrevRect)) action = () => navigate(-1);
             else if (inside(p, this.__cigNextRect)) action = () => navigate(1);
