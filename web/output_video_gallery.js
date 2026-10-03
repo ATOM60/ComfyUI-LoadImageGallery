@@ -113,6 +113,9 @@ const I18N = {
         empty: "No videos found in the output folder",
         count: (shown, total, selected) => `${shown} of ${total} · selected ${selected}`,
         help: "Help",
+        gpuLog: "Copy persistent GPU crash log",
+        gpuLogCopied: "GPU crash log copied to clipboard",
+        gpuLogCopyError: "Could not copy GPU crash log",
         helpTitle: "Load Image Gallery — quick guide",
         helpClose: "Close",
         helpHtml: `
@@ -186,6 +189,9 @@ const I18N = {
         empty: "Видео не найдены в папке output",
         count: (shown, total, selected) => `${shown} из ${total} · выбрано ${selected}`,
         help: "Инструкция",
+        gpuLog: "Скопировать постоянный GPU crash log",
+        gpuLogCopied: "GPU crash log скопирован в буфер обмена",
+        gpuLogCopyError: "Не удалось скопировать GPU crash log",
         helpTitle: "Load Image Gallery — краткая инструкция",
         helpClose: "Закрыть",
         helpHtml: `
@@ -818,6 +824,7 @@ app.registerExtension({
                             <button class="ovg-btn ovg-refresh-modal" title="${t.refresh}">↻</button>
                             <button class="ovg-btn ovg-select-all">${t.selectAll}</button>
                             <button class="ovg-btn ovg-clear-all">${t.clearAll}</button>
+                            <button class="ovg-btn ovg-gpu-log" title="${t.gpuLog}">LOG</button>
                             <button class="ovg-btn ovg-help" title="${t.help}">?</button>
                         </div>
                         <div class="ovg-grid-wrap"><div class="ovg-grid"></div></div>
@@ -834,6 +841,11 @@ app.registerExtension({
                 modal.querySelector(".ovg-refresh-modal").onclick=async()=>{try{const done=setBusy(t.refreshBusy);await fetchVideos({clearSelection:true});done();renderGrid();}catch(e){toast(e.message||String(e),"error");}};
                 modal.querySelector(".ovg-select-all").onclick=()=>{for(const v of sortedFilteredVideos())state.marked.add(v.path);paintMarkedCards();};
                 modal.querySelector(".ovg-clear-all").onclick=()=>{state.marked.clear();paintMarkedCards();};
+                modal.querySelector(".ovg-gpu-log").onclick=async e=>{
+                    e.preventDefault();e.stopPropagation();
+                    const ok=await globalThis.__CIG_GPU_TRACE_COPY?.();
+                    toast(ok ? t.gpuLogCopied : t.gpuLogCopyError, ok ? "success" : "error");
+                };
                 modal.querySelector(".ovg-help").onclick=e=>{e.preventDefault();e.stopPropagation();openHelp();};
                 setupRectangleSelection(modal); setupPlayerEvictionOnScroll(modal); updateCount();
                 state.escapeHandler=e=>{if(e.key==="Escape"&&state.modal===modal)closeModal();};
