@@ -10,7 +10,6 @@ const registered = new Set();
 const controllers = new WeakMap();
 const lastPositions = new WeakMap();
 let hookedCanvas = null;
-let previousOnNodeMoved = null;
 
 const isTarget = node => node && (node.comfyClass === NODE_CLASS || node.type === NODE_CLASS);
 const graphNodes = graph => graph?._nodes || graph?.nodes || [];
@@ -261,9 +260,9 @@ function installCanvasHook() {
     if (!canvas || canvas === hookedCanvas) return;
 
     hookedCanvas = canvas;
-    previousOnNodeMoved = canvas.onNodeMoved;
+    const originalOnNodeMoved = canvas.onNodeMoved;
     canvas.onNodeMoved = function(node) {
-        const result = previousOnNodeMoved?.apply(this, arguments);
+        const result = originalOnNodeMoved?.apply(this, arguments);
         handleMoved(node?.graph || this.graph || app.graph);
         return result;
     };
@@ -289,6 +288,19 @@ function install(node) {
     controllers.set(node, controller);
     node.__cigStackController = controller;
 
+    const ownResize = Object.hasOwn(node, "onResize");
+    const oldResize = node.onResize;
+    const resized = function(...args) {
+        const result = oldResize?.apply(this, args);
+        requestAnimationFrame(() => {
+            if (!node.graph) return;
+            const root = rootFor(node);
+            if (root) reflowRoot(root);
+        });
+        return result;
+    };
+    node.onResize = resized;
+
     const ownRemoved = Object.hasOwn(node, "onRemoved");
     const oldRemoved = node.onRemoved;
     const removed = function(...args) {
@@ -309,6 +321,10 @@ function install(node) {
         controllers.delete(node);
         lastPositions.delete(node);
         if (node.__cigStackController === controller) delete node.__cigStackController;
+        if (node.onResize === resized) {
+            if (ownResize) node.onResize = oldResize;
+            else delete node.onResize;
+        }
 
         if (node.onRemoved === removed) {
             if (ownRemoved) node.onRemoved = oldRemoved;
