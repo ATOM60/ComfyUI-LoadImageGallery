@@ -179,28 +179,6 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         syncValues();
     }
 
-    // The stack controls are drawn in the existing metadata band above the
-    // preview. Route hits in that band to the preview widget itself so ComfyUI
-    // calls the exact same onPointerDown/pointer.onClick path used by the
-    // working image-navigation arrows.
-    const ownGetWidgetOnPos = Object.hasOwn(node, "getWidgetOnPos");
-    const originalGetWidgetOnPos = node.getWidgetOnPos;
-    const getWidgetOnPos = function(x, y, ...args) {
-        const rects = node.__cigStackControlRects;
-        const stack = node.__cigStackController;
-        if (rects && stack?.isRoot?.()) {
-            const rx = Number(x) - Number(node.pos?.[0] || 0);
-            const ry = Number(y) - Number(node.pos?.[1] || 0);
-            const hit = rect => rect && rx >= rect.x && rx <= rect.x + rect.w && ry >= rect.y && ry <= rect.y + rect.h;
-            if (hit(rects.prev) || hit(rects.next)) {
-                const preview = node.widgets?.find(isPreview);
-                if (preview) return preview;
-            }
-        }
-        return originalGetWidgetOnPos?.call(this, x, y, ...args) ?? null;
-    };
-    node.getWidgetOnPos = getWidgetOnPos;
-
     function patch(widget) {
         if (disposed || !isPreview(widget) || patched.has(widget)) return;
         // Animated/static preview switches can replace the widget many times.
@@ -279,24 +257,6 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             if (pointer?.eDown?.button != null && pointer.eDown.button !== 0) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;
             const p = point(pointer?.eDown, canvas);
 
-            // Node stack arrows use exactly the same pointer/click path as the
-            // proven image-navigation arrows below.
-            const stack = node.__cigStackController;
-            const stackRects = node.__cigStackControlRects;
-            let stackAction = null;
-            if (stack?.isRoot?.() && stackRects) {
-                if (inside(p, stackRects.prev)) {
-                    stackAction = (Number(stack.count?.()) || 1) > 1 ? () => stack.remove?.() : () => {};
-                } else if (inside(p, stackRects.next)) {
-                    stackAction = () => stack.add?.();
-                }
-            }
-            if (stackAction) {
-                pointer.onDragStart = undefined; pointer.onDragEnd = undefined; pointer.finally = undefined;
-                pointer.onClick = () => { if (!disposed) stackAction(); };
-                return true;
-            }
-
             if (node.__cigNodeLayout?.pointerDown(this, pointer, canvas ?? app.canvas)) return true;
             let action;
             if (inside(p, this.__cigPrevRect)) action = () => navigate(-1);
@@ -362,10 +322,6 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         }
         patched.clear();
         for (const [name, original, wrapped] of hooks) if (node[name] === wrapped) node[name] = original;
-        if (node.getWidgetOnPos === getWidgetOnPos) {
-            if (ownGetWidgetOnPos) node.getWidgetOnPos = originalGetWidgetOnPos;
-            else delete node.getWidgetOnPos;
-        }
         if (node.onRemoved === removed) node.onRemoved = originalRemoved;
         delete node.__cigPreviewNavigation;
     }
