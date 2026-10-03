@@ -152,43 +152,11 @@ function install(node) {
     };
     node.__cigDrawPreviewMetadata = draw;
 
-    const ownDown = Object.hasOwn(node, "onMouseDown");
-    const oldDown = node.onMouseDown;
-    const down = function(e, pos, graphcanvas) {
-        const rects = node.__cigStackControlRects;
-        const stack = node.__cigStackController;
-        const x = Array.isArray(pos) ? Number(pos[0]) : Number(pos?.x);
-        const y = Array.isArray(pos) ? Number(pos[1]) : Number(pos?.y);
-
-        if (rects && stack?.isRoot?.() && Number.isFinite(x) && Number.isFinite(y)) {
-            let action = null;
-            if (inside(x, y, rects.prev)) {
-                if ((Number(stack.count?.()) || 1) > 1) action = () => stack.remove?.();
-                else action = () => {};
-            } else if (inside(x, y, rects.next)) {
-                action = () => stack.add?.();
-            }
-
-            if (action) {
-                e?.preventDefault?.();
-                e?.stopPropagation?.();
-                action();
-                return true;
-            }
-        }
-        return oldDown?.call(this, e, pos, graphcanvas) ?? false;
-    };
-    node.onMouseDown = down;
-
     const ownRemoved = Object.hasOwn(node, "onRemoved");
     const oldRemoved = node.onRemoved;
     const removed = function(...args) {
         if (node.__cigDrawPreviewMetadata === draw) delete node.__cigDrawPreviewMetadata;
         delete node.__cigStackControlRects;
-        if (node.onMouseDown === down) {
-            if (ownDown) node.onMouseDown = oldDown;
-            else delete node.onMouseDown;
-        }
         if (node.onRemoved === removed) {
             if (ownRemoved) node.onRemoved = oldRemoved;
             else delete node.onRemoved;
