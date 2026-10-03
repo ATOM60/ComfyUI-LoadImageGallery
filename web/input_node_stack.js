@@ -10,8 +10,6 @@ const registered = new Set();
 const controllers = new WeakMap();
 const lastPositions = new WeakMap();
 let hookedCanvas = null;
-let hookedDomCanvas = null;
-let stackPointerHandler = null;
 
 const isTarget = node => node && (node.comfyClass === NODE_CLASS || node.type === NODE_CLASS);
 const graphNodes = graph => graph?._nodes || graph?.nodes || [];
@@ -259,71 +257,15 @@ function handleMoved(graph) {
 
 function installCanvasHook() {
     const canvas = app.canvas;
-    if (!canvas) return;
+    if (!canvas || canvas === hookedCanvas) return;
 
-    if (canvas !== hookedCanvas) {
-        hookedCanvas = canvas;
-        const originalOnNodeMoved = canvas.onNodeMoved;
-        canvas.onNodeMoved = function(node) {
-            const result = originalOnNodeMoved?.apply(this, arguments);
-            handleMoved(node?.graph || this.graph || app.graph);
-            return result;
-        };
-    }
-
-    const domCanvas = canvas.canvas;
-    if (!domCanvas?.addEventListener || domCanvas === hookedDomCanvas) return;
-
-    if (hookedDomCanvas && stackPointerHandler) {
-        hookedDomCanvas.removeEventListener("pointerdown", stackPointerHandler, true);
-    }
-
-    hookedDomCanvas = domCanvas;
-    stackPointerHandler = event => {
-        if (event.button != null && event.button !== 0) return;
-
-        let graphPoint;
-        try {
-            graphPoint = canvas.convertEventToCanvasOffset?.(event);
-        } catch (_) {
-            graphPoint = null;
-        }
-        if (!Array.isArray(graphPoint) || graphPoint.length < 2) return;
-
-        const graph = canvas.graph || app.rootGraphOrUndefined || app.graph;
-        const nodes = [...graphNodes(graph)].reverse();
-
-        for (const node of nodes) {
-            if (!isTarget(node) || validParent(node) || node.flags?.collapsed || node.collapsed) continue;
-            const rects = node.__cigStackControlRects;
-            const controller = node.__cigStackController;
-            if (!rects || !controller?.isRoot?.()) continue;
-
-            const x = graphPoint[0] - Number(node.pos?.[0] || 0);
-            const y = graphPoint[1] - Number(node.pos?.[1] || 0);
-            const hit = rect => !!rect &&
-                x >= rect.x && x <= rect.x + rect.w &&
-                y >= rect.y && y <= rect.y + rect.h;
-
-            let action = null;
-            if (hit(rects.prev)) {
-                if ((Number(controller.count?.()) || 1) > 1) action = () => controller.remove?.();
-                else action = () => {};
-            } else if (hit(rects.next)) {
-                action = () => controller.add?.();
-            }
-            if (!action) continue;
-
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            action();
-            markDirty(node, true);
-            return;
-        }
+    hookedCanvas = canvas;
+    const originalOnNodeMoved = canvas.onNodeMoved;
+    canvas.onNodeMoved = function(node) {
+        const result = originalOnNodeMoved?.apply(this, arguments);
+        handleMoved(node?.graph || this.graph || app.graph);
+        return result;
     };
-
-    domCanvas.addEventListener("pointerdown", stackPointerHandler, true);
 }
 
 function install(node) {
