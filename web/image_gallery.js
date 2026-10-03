@@ -327,7 +327,7 @@ async function openGallery(node){
             const [mode,ru,en]=choice;const b=document.createElement("button");b.type="button";b.classList.toggle("active",mode===sortMode);
             const check=document.createElement("span");check.className="cig-sort-check";check.textContent=mode===sortMode?"✓":"";
             const label=document.createElement("span");label.textContent=CIG_LANG==="ru"?ru:en;b.append(check,label);
-            b.addEventListener("click",ev=>{ev.preventDefault();ev.stopPropagation();sortMode=mode;try{localStorage.setItem(CIG_SORT_KEY,mode);}catch(_){}closeSortMenu();updateSortButton();body.scrollTop=0;render();});
+            b.addEventListener("click",ev=>{ev.preventDefault();ev.stopPropagation();__cigSaveScroll();sortMode=mode;try{localStorage.setItem(CIG_SORT_KEY,mode);}catch(_){}closeSortMenu();updateSortButton();body.scrollTop=0;render();});
             menu.appendChild(b);
         }
         document.body.appendChild(menu);const r=sortButton.getBoundingClientRect(),mr=menu.getBoundingClientRect();menu.style.left=`${Math.max(4,Math.min(r.right-mr.width,innerWidth-mr.width-4))}px`;menu.style.top=`${Math.min(r.bottom+5,innerHeight-mr.height-4)}px`;__cigSortMenu=menu;
@@ -344,6 +344,21 @@ async function openGallery(node){
     };
     let thumbLoader = makeThumbLoader(body,scheduleCacheStats);
 
+    // CIG_SESSION_SCROLL_MEMORY_V1
+    // Keep gallery position per node/folder/sort mode for the current ComfyUI
+    // session only. This intentionally never enters workflow JSON or localStorage.
+    if(!(node.__cigScrollByFolder instanceof Map)) node.__cigScrollByFolder = new Map();
+    const __cigScrollByFolder = node.__cigScrollByFolder;
+    const __cigScrollKey = (folder, mode=sortMode) => `${normalizeNavPath(folder)}\u0000${mode}`;
+    const __cigSaveScroll = () => {
+        if(filterText.trim()) return;
+        __cigScrollByFolder.set(__cigScrollKey(activeFolder), Math.max(0, Number(body.scrollTop) || 0));
+    };
+    const __cigSavedScroll = folder => {
+        const value = __cigScrollByFolder.get(__cigScrollKey(folder));
+        return Number.isFinite(value) ? value : null;
+    };
+
     const marquee = document.createElement("div");
     Object.assign(marquee.style,{
         position:"fixed",
@@ -358,6 +373,7 @@ async function openGallery(node){
     document.body.appendChild(marquee);
 
     const cleanup = ()=>{
+        __cigSaveScroll();
         document.removeEventListener("keydown", onKey);
         document.removeEventListener("pointerdown",__cigSortOutside,true);
         closeSortMenu();
@@ -635,10 +651,16 @@ async function openGallery(node){
 
         images = Array.isArray(data.images) ? data.images : [];imageMeta=new Map((Array.isArray(data.items)?data.items:[]).map(x=>[String(x?.name??""),x]));subfolders=Array.isArray(data.folders)?data.folders:[];node.__cigGalleryValues=images.map(name=>joinPath(activeFolder,name));
         node.__cigPreviewNavigation?.setFolderValues(activeFolder, node.__cigGalleryValues);
-        render({scrollToCurrent});renderBreadcrumbs();
+        const savedScroll = preserveScroll ? oldScroll : __cigSavedScroll(activeFolder);
+        render({scrollToCurrent: scrollToCurrent && savedScroll === null});renderBreadcrumbs();
 
-        if(preserveScroll) body.scrollTop = oldScroll;
-        else if(!scrollToCurrent) body.scrollTop = 0;
+        if(savedScroll !== null){
+            requestAnimationFrame(()=>{
+                if(overlay.isConnected) body.scrollTop = savedScroll;
+            });
+        }else if(!scrollToCurrent){
+            body.scrollTop = 0;
+        }
 
         updateCacheStats();
     }
@@ -676,6 +698,7 @@ async function openGallery(node){
     body.addEventListener("scroll",()=>{
         cancelAnimationFrame(__cigSelectionSyncRAF);
         __cigSelectionSyncRAF=requestAnimationFrame(()=>{
+            __cigSaveScroll();
             syncCardSelection();
         });
     },{passive:true});
