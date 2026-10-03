@@ -403,7 +403,18 @@ async function openGallery(node){
         const active=document.activeElement;
         if(!active?.classList?.contains("cig-card")||!grid.contains(active))return;
 
-        if(e.key==="Enter"||e.key===" "){
+        if(e.key==="Enter"){
+            e.preventDefault();
+            const relative=active.__cigRelative;
+            if(!relative)return;
+            setWidgetValue(node,relative);
+            node.__cigFolder=splitPath(relative).folder;
+            __cigAllowClose=true;
+            close();
+            return;
+        }
+
+        if(e.key===" "){
             e.preventDefault();
             const relative=active.__cigRelative;
             if(!relative)return;
@@ -934,6 +945,19 @@ body.addEventListener("mousedown", e=>{
     try{
         activeFolder = await fillFolders(activeFolder);
         await loadFolder(activeFolder,{scrollToCurrent:true});
+        requestAnimationFrame(()=>{
+            if(!overlay.isConnected)return;
+            const cards=[...grid.querySelectorAll(".cig-card")];
+            if(!cards.length)return;
+            const viewport=body.getBoundingClientRect();
+            const visible=cards.find(card=>{
+                const r=card.getBoundingClientRect();
+                return r.bottom>viewport.top&&r.top<viewport.bottom;
+            });
+            const currentValue=normalizePath(String(widget.value??""));
+            const currentCard=cards.find(card=>card.__cigRelative===currentValue);
+            (visible||currentCard||cards[0])?.focus({preventScroll:true});
+        });
     }catch(error){
         grid.innerHTML = `<div class="cig-empty">${cigT.error}: ${String(error?.message ?? error)}</div>`;
     }
