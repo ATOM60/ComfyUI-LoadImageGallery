@@ -7,6 +7,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
     const patched = new Map();
     const SORT_KEY = "ComfyUI-LoadImageGallery.sortMode";
     const FAVORITES_KEY = "ComfyUI-LoadImageGallery.favorites";
+    const METADATA_ROW_HEIGHT = 26;
     let disposed = false;
     let folder = null;
     let values = empty;
@@ -195,11 +196,15 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             const width = Math.max(0, Number(options?.width ?? node.size?.[0] ?? 320));
             const y = Number(this.y ?? 0);
             const height = node.__cigNodeLayout?.previewHeight(this) ?? Math.max(1, Number(this.computedHeight ?? 220));
+            const metadataHeight = Math.min(METADATA_ROW_HEIGHT, Math.max(18, height - 1));
+            const imageTop = y + metadataHeight;
+            const imageAreaHeight = Math.max(1, height - metadataHeight);
+            this.__cigMetadataRect = { x:0, y, w:width, h:metadataHeight };
             const outer = Math.min(6, width / 20), gap = Math.min(8, width / 30);
             // Reserve both lanes for every aspect ratio, even while decoding.
             const side = Math.min(90, Math.max(32, width * .12), width * .22);
             const imageWidth = Math.max(1, width - 2 * (outer + side + gap));
-            const imageHeight = Math.max(1, height - 8);
+            const imageHeight = Math.max(1, imageAreaHeight - 8);
             const images = options?.previewImages?.length ? options.previewImages : (node.imgs ?? empty);
             const img = images[node.imageIndex ?? 0] ?? images[0];
             const iw = Number(img?.naturalWidth || img?.width || 0), ih = Number(img?.naturalHeight || img?.height || 0);
@@ -209,15 +214,15 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             if (iw > 0 && ih > 0) {
                 const scale = Math.min(imageWidth / iw, imageHeight / ih);
                 const w = iw * scale, h = ih * scale;
-                this.__cigImageRect = { x: (width - w) / 2, y: y + (height - h) / 2, w, h };
+                this.__cigImageRect = { x: (width - w) / 2, y: imageTop + (imageAreaHeight - h) / 2, w, h };
             }
-            // Expand the click targets across ALL space beside the fitted image.
-            // The minimum reserved lanes only prevent narrow portraits losing arrows.
+            // Expand the click targets across all space beside the fitted image,
+            // but keep the metadata row separate for its own controls.
             const imageRect = this.__cigImageRect;
             const leftWidth = imageRect ? Math.max(0, imageRect.x - gap - outer) : side;
             const rightX = imageRect ? imageRect.x + imageRect.w + gap : width - outer - side;
-            this.__cigPrevRect = showControls ? { x: outer, y, w: leftWidth, h: height } : null;
-            this.__cigNextRect = showControls ? { x: rightX, y, w: Math.max(0, width - outer - rightX), h: height } : null;
+            this.__cigPrevRect = showControls ? { x: outer, y:imageTop, w:leftWidth, h:imageAreaHeight } : null;
+            this.__cigNextRect = showControls ? { x:rightX, y:imageTop, w:Math.max(0, width - outer - rightX), h:imageAreaHeight } : null;
             ctx.save();
             try {
                 // Paint inside the widget's current clip and z-order. Deferring a
@@ -256,6 +261,22 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         const down = function(pointer, nodeArg, canvas) {
             if (pointer?.eDown?.button != null && pointer.eDown.button !== 0) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;
             const p = point(pointer?.eDown, canvas);
+
+            const stack = node.__cigStackController;
+            const stackRects = node.__cigStackControlRects;
+            let stackAction = null;
+            if (stack?.isRoot?.() && stackRects) {
+                if (inside(p, stackRects.prev)) {
+                    stackAction = (Number(stack.count?.()) || 1) > 1 ? () => stack.remove?.() : () => {};
+                } else if (inside(p, stackRects.next)) {
+                    stackAction = () => stack.add?.();
+                }
+            }
+            if (stackAction) {
+                pointer.onDragStart = undefined; pointer.onDragEnd = undefined; pointer.finally = undefined;
+                pointer.onClick = () => { if (!disposed) stackAction(); };
+                return true;
+            }
 
             if (node.__cigNodeLayout?.pointerDown(this, pointer, canvas ?? app.canvas)) return true;
             let action;
