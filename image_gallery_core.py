@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import io
 import subprocess
 import json
 import os
@@ -24,7 +25,10 @@ THUMB_SIZE = 320
 THUMB_QUALITY = 72
 CACHE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024
 CACHE_SWEEP_INTERVAL = 600
+THUMB_DECODE_PARALLEL = 4
 _cache_lock = threading.Lock()
+_thumb_decode_semaphore = threading.Semaphore(THUMB_DECODE_PARALLEL)
+_thumb_locks = [threading.Lock() for _ in range(32)]
 _last_cache_sweep = 0.0
 
 
@@ -281,14 +285,23 @@ def _thumb_valid(source: str, thumb: str, meta: str) -> bool:
         return False
 
 
-def _make_thumb(source: str, thumb: str, meta: str):
+def _thumb_lock(path: str):
+    digest = hashlib.sha1(os.path.normcase(path).encode("utf-8")).digest()
+    return _thumb_locks[int.from_bytes(digest[:4], "little") % len(_thumb_locks)]
+
+
+def _render_thumb(source: str):
     st = os.stat(source)
-    os.makedirs(os.path.dirname(thumb), exist_ok=True)
-    tmp = thumb + ".tmp.webp"
-    try:
+    with _thumb_decode_semaphore:
         with Image.open(source) as im:
             try:
                 im.seek(0)
+            except Exception:
+                pass
+            # JPEG/MPO decoders can downsample before full decode, reducing
+            # memory and CPU for large source images used only as thumbnails.
+            try:
+                im.draft("RGB", (THUMB_SIZE, THUMB_SIZE))
             except Exception:
                 pass
             im = ImageOps.exif_transpose(im)
@@ -299,9 +312,20 @@ def _make_thumb(source: str, thumb: str, meta: str):
                     im = im.convert("RGB")
             resampling = getattr(Image, "Resampling", Image).LANCZOS
             im.thumbnail((THUMB_SIZE, THUMB_SIZE), resampling)
-            im.save(tmp, "WEBP", quality=THUMB_QUALITY, method=4)
+            buffer = io.BytesIO()
+            im.save(buffer, "WEBP", quality=THUMB_QUALITY, method=4)
+            data = buffer.getvalue()
+    return data, {"size": st.st_size, "mtime_ns": st.st_mtime_ns, "thumb_size": THUMB_SIZE}
+
+
+def _commit_thumb(thumb: str, meta: str, data: bytes, metadata: dict):
+    os.makedirs(os.path.dirname(thumb), exist_ok=True)
+    tmp = f"{thumb}.tmp.{threading.get_ident()}.{time.time_ns()}.webp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
         os.replace(tmp, thumb)
-        _write_meta(meta, {"size": st.st_size, "mtime_ns": st.st_mtime_ns, "thumb_size": THUMB_SIZE})
+        _write_meta(meta, metadata)
     finally:
         if os.path.exists(tmp):
             try:
@@ -310,24 +334,44 @@ def _make_thumb(source: str, thumb: str, meta: str):
                 pass
 
 
+def _touch_thumb(thumb: str, meta: str):
+    try:
+        now = time.time()
+        os.utime(thumb, (now, now))
+        os.utime(meta, (now, now))
+    except OSError:
+        pass
+
+
 def _get_or_make_thumb(folder: str, filename: str) -> str:
     source, _rel = _gallery_file(folder, filename)
     thumb, meta = _cache_paths(folder, filename)
-    with _cache_lock:
-        if not _thumb_valid(source, thumb, meta):
-            for p in (thumb, meta):
-                try:
-                    if os.path.exists(p):
-                        os.remove(p)
-                except OSError:
-                    pass
-            _make_thumb(source, thumb, meta)
-        try:
-            now = time.time()
-            os.utime(thumb, (now, now))
-            os.utime(meta, (now, now))
-        except OSError:
-            pass
+
+    # Different thumbnails may decode in parallel; only requests for the same
+    # cache stripe wait for each other. The global cache lock is held only for
+    # short filesystem mutations, never while Pillow decodes/resizes an image.
+    with _thumb_lock(thumb):
+        with _cache_lock:
+            valid = _thumb_valid(source, thumb, meta)
+            if not valid:
+                for p in (thumb, meta):
+                    try:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except OSError:
+                        pass
+
+        if not valid:
+            data, metadata = _render_thumb(source)
+            with _cache_lock:
+                # Cache may have been populated or cleared while this image
+                # decoded. Re-check before committing the freshly rendered data.
+                if not _thumb_valid(source, thumb, meta):
+                    _commit_thumb(thumb, meta, data, metadata)
+
+        with _cache_lock:
+            _touch_thumb(thumb, meta)
+
     _maybe_sweep_cache()
     return thumb
 
