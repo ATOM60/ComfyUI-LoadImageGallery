@@ -17,11 +17,48 @@ function patchHelpOverlay(overlay) {
     const old = head.querySelector("button");
     if (!(old instanceof HTMLButtonElement)) return;
 
+    // Keep the title and close action as two independent flex items. Some
+    // ComfyUI themes apply aggressive global button/text rules, so the few
+    // layout-critical properties are set with !important.
+    head.style.setProperty("display", "flex", "important");
+    head.style.setProperty("align-items", "center", "important");
+    head.style.setProperty("gap", "16px", "important");
+
+    const title = head.firstElementChild;
+    if (title instanceof HTMLElement && title !== old) {
+        title.style.setProperty("flex", "1 1 auto", "important");
+        title.style.setProperty("min-width", "0", "important");
+        title.style.setProperty("margin", "0", "important");
+    }
+
     const button = old.cloneNode(false);
     button.type = "button";
+    button.classList.add("cig-help-close-fixed");
     button.textContent = isRu() ? "Закрыть" : "Close";
     button.title = button.textContent;
-    button.style.cssText = "height:34px;min-width:84px;padding:0 14px;background:#2c2c2c;color:#eee;border:1px solid #555;border-radius:7px;cursor:pointer;font-size:13px";
+    const fixed = {
+        display:"inline-flex",
+        alignItems:"center",
+        justifyContent:"center",
+        flex:"0 0 auto",
+        height:"34px",
+        minWidth:"84px",
+        padding:"0 14px",
+        margin:"0",
+        background:"#2c2c2c",
+        color:"#eee",
+        border:"1px solid #555",
+        borderRadius:"7px",
+        cursor:"pointer",
+        fontSize:"13px",
+        lineHeight:"32px",
+        whiteSpace:"nowrap",
+        boxSizing:"border-box",
+        textDecoration:"none",
+    };
+    for (const [key, value] of Object.entries(fixed)) {
+        button.style.setProperty(key.replace(/[A-Z]/g, m => "-" + m.toLowerCase()), value, "important");
+    }
 
     const close = event => {
         event?.preventDefault?.();
