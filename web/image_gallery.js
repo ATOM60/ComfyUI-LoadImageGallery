@@ -166,15 +166,15 @@ function showCigHelp(){
         ["START","Queues the selected images, clears the selection and keeps the gallery open."],
         ["Closing","The ✕ button closes the gallery. Double-clicking an image loads it into the node and also closes the gallery. Escape and clicking outside do not close it."]
     ];
-    const ov=document.createElement("div");ov.className="cig-help-overlay";ov.style.cssText="position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:20px";
+    const ov=document.createElement("div");ov.className="cig-help-overlay";ov.dataset.cigHelpClosePatched="1";ov.style.cssText="position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:20px";
     const box=document.createElement("div");box.style.cssText="width:min(620px,94vw);max-height:86vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid #555;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.65);font-family:Arial,sans-serif";
-    const head=document.createElement("div");head.style.cssText="display:flex;align-items:center;padding:15px 18px;border-bottom:1px solid #383838;position:sticky;top:0;background:#1d1d1d";
-    const title=document.createElement("div");title.style.cssText="font-size:18px;font-weight:700;flex:1";title.textContent=ru?"ⓘ Инструкция — Load Image Gallery":"ⓘ Load Image Gallery Help";
-    const x=document.createElement("button");x.type="button";x.textContent="✕";x.style.cssText="width:34px;height:34px;background:#2c2c2c;color:#eee;border:1px solid #555;border-radius:7px;cursor:pointer";
+    const head=document.createElement("div");head.style.cssText="position:sticky;top:0;z-index:2;min-height:34px;padding:15px 120px 15px 18px;border-bottom:1px solid #383838;background:#1d1d1d;box-sizing:border-box";
+    const title=document.createElement("div");title.style.cssText="font-size:18px;font-weight:700;line-height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";title.textContent=ru?"Инструкция — Load Image Gallery":"Load Image Gallery Help";
+    const x=document.createElement("button");x.type="button";x.textContent=ru?"Закрыть":"Close";x.title=x.textContent;x.style.cssText="all:unset;box-sizing:border-box;position:absolute;right:18px;top:15px;width:84px;height:34px;display:flex;align-items:center;justify-content:center;background:#2c2c2c;color:#eee;border:1px solid #555;border-radius:7px;cursor:pointer;font:500 13px/1 Arial,sans-serif;white-space:nowrap;text-align:center";
     const content=document.createElement("div");content.style.cssText="padding:10px 18px 18px";
     for(const [a,b] of rows){const r=document.createElement("div");r.style.cssText="padding:10px 0;border-bottom:1px solid #303030";const n=document.createElement("div");n.style.cssText="font-weight:700;font-size:14px;margin-bottom:4px";n.textContent=a;const t=document.createElement("div");t.style.cssText="font-size:13px;line-height:1.45;color:#bbb";t.textContent=b;r.append(n,t);content.appendChild(r);}
     head.append(title,x);box.append(head,content);ov.appendChild(box);document.body.appendChild(ov);
-    x.onclick=()=>ov.remove();
+    x.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();ov.remove();});
 }
 
 // CIG_HELP_TITLEBAR_V1
