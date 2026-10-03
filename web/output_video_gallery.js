@@ -7,7 +7,24 @@ const NODE_CLASS = "LoadImageGallery";
 const LS_SORT = "ComfyUI-LoadImageGallery.outputVideoSort";
 const LS_THUMB = "ComfyUI-LoadImageGallery.outputVideoThumb";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
-const MAX_LIVE_PLAYERS = 3;
+const MAX_LIVE_PLAYERS = 1;
+const GPU_TRACE_LIMIT = 240;
+
+function traceGpuPlayer(type, detail = {}) {
+    const row = { ts: Date.now(), type, ...detail };
+    const trace = Array.isArray(globalThis.__CIG_GPU_TRACE) ? globalThis.__CIG_GPU_TRACE : [];
+    trace.push(row);
+    if (trace.length > GPU_TRACE_LIMIT) trace.splice(0, trace.length - GPU_TRACE_LIMIT);
+    globalThis.__CIG_GPU_TRACE = trace;
+    try { console.debug("[CIG GPU]", row); } catch (_) {}
+}
+
+try {
+    api.addEventListener?.("execution_start", () => traceGpuPlayer("execution_start"));
+    api.addEventListener?.("execution_success", () => traceGpuPlayer("execution_success"));
+    api.addEventListener?.("execution_error", event => traceGpuPlayer("execution_error", { message:String(event?.detail?.exception_message || "") }));
+    api.addEventListener?.("execution_interrupted", () => traceGpuPlayer("execution_interrupted"));
+} catch (_) {}
 const LANG = String(localStorage.getItem(LANG_KEY) || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 
 const I18N = {
@@ -391,8 +408,11 @@ app.registerExtension({
             function releaseInlinePlayer(path) {
                 const entry = state.players.get(path);
                 if (!entry) return;
+                traceGpuPlayer("release", { path });
                 try { entry.video.pause(); } catch (_) {}
+                try { entry.video.__cigNativeFsCleanup?.(); } catch (_) {}
                 try { entry.video.removeAttribute("src"); entry.video.load(); } catch (_) {}
+                try { entry.video.__cigGpuCleanup?.(); } catch (_) {}
                 entry.video.remove();
                 if (entry.playBtn?.isConnected) entry.playBtn.style.display = "";
                 if (entry.img?.isConnected) entry.img.style.removeProperty("display");
@@ -481,14 +501,27 @@ app.registerExtension({
                 holder.prepend(video);
                 const entry = { path:item.path, item, card, holder, img, fallback, playBtn, video, lastUsed:performance.now() };
                 state.players.set(item.path, entry);
-                video.addEventListener("play", () => { entry.lastUsed = performance.now(); pauseOtherPlayers(entry.path); });
+                video.addEventListener("play", () => {
+                    entry.lastUsed = performance.now();
+                    pauseOtherPlayers(entry.path);
+                    traceGpuPlayer("play", { path:entry.path, readyState:video.readyState });
+                });
+                video.addEventListener("pause", () => traceGpuPlayer("pause", { path:entry.path, currentTime:video.currentTime }));
+                video.addEventListener("loadeddata", () => traceGpuPlayer("loadeddata", { path:entry.path, readyState:video.readyState }));
+                video.addEventListener("seeking", () => traceGpuPlayer("seeking", { path:entry.path, currentTime:video.currentTime }));
+                video.addEventListener("seeked", () => traceGpuPlayer("seeked", { path:entry.path, currentTime:video.currentTime }));
                 video.addEventListener("contextmenu", e => openContextMenu(e, entry.item));
                 video.addEventListener("cig-output-fullscreen-exit", e => restoreFullscreenPlayer(entry, e.detail));
+                video.addEventListener("cig-output-release-player", () => releaseInlinePlayer(entry.path));
                 video.addEventListener("pointerdown", e => e.stopPropagation());
                 video.addEventListener("click", e => e.stopPropagation());
                 video.addEventListener("dblclick", e => e.stopPropagation());
-                video.addEventListener("error", () => { releaseInlinePlayer(entry.path); toast(t.videoError(entry.item.name), "error"); }, {once:true});
-                try { await video.play(); } catch (_) {}
+                video.addEventListener("error", () => {
+                    traceGpuPlayer("error", { path:entry.path, code:video.error?.code || 0, message:String(video.error?.message || "") });
+                    releaseInlinePlayer(entry.path);
+                    toast(t.videoError(entry.item.name), "error");
+                }, {once:true});
+                try { await video.play(); } catch (error) { traceGpuPlayer("play_rejected", { path:entry.path, message:String(error?.message || error || "") }); }
             }
 
             async function playItem(item) {

@@ -21,6 +21,7 @@ const TEXT = RU ? {
 const modalState = new WeakMap();
 const eventTimers = new Set();
 let tickTimer = 0;
+let executionActive = false;
 
 function activeModal() {
     const modals = [...document.querySelectorAll(".ovg-modal")];
@@ -116,7 +117,7 @@ function performRefresh(modal, state) {
 }
 
 async function checkActiveModal({ force=false, baselineOnly=false } = {}) {
-    if (document.hidden) return;
+    if (document.hidden || executionActive) return;
     const modal = activeModal();
     if (!modal) return;
     const state = getState(modal);
@@ -169,7 +170,7 @@ function stopTicker() {
 }
 
 function syncTicker() {
-    if (document.hidden || !activeModal()) {
+    if (document.hidden || executionActive || !activeModal()) {
         stopTicker();
         return;
     }
@@ -215,8 +216,19 @@ app.registerExtension({
         setTimeout(captureInitialBaseline, 50);
         setTimeout(captureInitialBaseline, 250);
 
-        for (const eventName of ["executed","execution_success"]) {
-            try { api.addEventListener?.(eventName, scheduleEventChecks); } catch (_) {}
+        const onExecutionStart = () => {
+            executionActive = true;
+            clearEventChecks();
+            stopTicker();
+        };
+        const onExecutionEnd = () => {
+            executionActive = false;
+            syncTicker();
+            scheduleEventChecks();
+        };
+        try { api.addEventListener?.("execution_start", onExecutionStart); } catch (_) {}
+        for (const eventName of ["execution_success","execution_error","execution_interrupted"]) {
+            try { api.addEventListener?.(eventName, onExecutionEnd); } catch (_) {}
         }
 
         document.addEventListener("visibilitychange",()=>{

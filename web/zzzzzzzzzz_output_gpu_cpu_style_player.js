@@ -108,14 +108,22 @@ function buildPlayer(video){
     return p;
 }
 
+function releaseOtherGpuVideos(current){
+    for(const other of [...attached]){
+        if(other===current||!(other instanceof HTMLVideoElement))continue;
+        try{other.pause();}catch(_){}
+        try{other.dispatchEvent(new CustomEvent("cig-output-release-player"));}catch(_){}
+    }
+}
+
 function attachVideo(video){
-    if(!(video instanceof HTMLVideoElement)||attached.has(video))return;attached.add(video);video.dataset.cigGpuCpuStyle="1";video.controls=false;video.removeAttribute("controls");video.loop=true;video.setAttribute("loop","");video.defaultPlaybackRate=loadRate();video.playbackRate=loadRate();video.volume=loadVolume();
+    if(!(video instanceof HTMLVideoElement)||attached.has(video))return;attached.add(video);video.dataset.cigGpuCpuStyle="1";video.controls=false;video.removeAttribute("controls");video.autoplay=false;video.removeAttribute("autoplay");video.preload="metadata";video.loop=true;video.setAttribute("loop","");try{video.disablePictureInPicture=true;}catch(_){}video.defaultPlaybackRate=loadRate();video.playbackRate=loadRate();video.volume=loadVolume();
     const wasPlaying=!video.paused;
     const p=buildPlayer(video);if(!p)return;
     const attrObserver=new MutationObserver(()=>{if(video.hasAttribute("controls")){video.controls=false;video.removeAttribute("controls");}});attrObserver.observe(video,{attributes:true,attributeFilter:["controls"]});video.__cigGpuControlsObserver=attrObserver;
     const apply=()=>{video.controls=false;video.removeAttribute("controls");video.defaultPlaybackRate=loadRate();if(!Number.isFinite(video.playbackRate)||video.playbackRate<=0)video.playbackRate=loadRate();updateUi(video);};
-    for(const type of ["loadedmetadata","durationchange","timeupdate","play","pause","ratechange","volumechange"]){video.addEventListener(type,()=>{if(type==="ratechange")saveRate(video.playbackRate);if(type==="volumechange")saveVolume(video.volume);updateUi(video);});}
-    video.addEventListener("loadedmetadata",apply);apply();
+    for(const type of ["loadedmetadata","durationchange","timeupdate","play","pause","ratechange","volumechange"]){video.addEventListener(type,()=>{if(type==="play")releaseOtherGpuVideos(video);if(type==="ratechange")saveRate(video.playbackRate);if(type==="volumechange")saveVolume(video.volume);updateUi(video);});}
+    video.addEventListener("loadedmetadata",apply);video.__cigGpuCleanup=()=>cleanupVideo(video);apply();
     if(wasPlaying)video.play()?.catch?.(()=>{});
 }
 
@@ -166,7 +174,7 @@ function blockPreviewGeneratedClicks(event){
     event.preventDefault();event.stopImmediatePropagation();
 }
 
-function cleanupVideo(video){if(!(video instanceof HTMLVideoElement))return;video.__cigGpuControlsObserver?.disconnect?.();delete video.__cigGpuControlsObserver;const p=playerOf(video);if(fullscreenElement()===p){try{document.exitFullscreen?.();}catch(_){}}delete video.__cigGpuUi;delete video.__cigGpuPlayer;delete video.dataset.cigGpuCpuStyle;attached.delete(video);try{p?.remove();}catch(_){} }
+function cleanupVideo(video){if(!(video instanceof HTMLVideoElement))return;video.__cigGpuControlsObserver?.disconnect?.();delete video.__cigGpuControlsObserver;try{video.__cigNativeFsCleanup?.();}catch(_){}const p=playerOf(video);if(fullscreenElement()===p){try{document.exitFullscreen?.();}catch(_){}}try{video.pause();}catch(_){}try{video.removeAttribute("src");video.load();}catch(_){}delete video.__cigGpuCleanup;delete video.__cigGpuUi;delete video.__cigGpuPlayer;delete video.dataset.cigGpuCpuStyle;attached.delete(video);try{p?.remove();}catch(_){} }
 function scan(root){if(!(root instanceof Element))return;if(root instanceof HTMLVideoElement&&root.classList.contains("ovg-inline-video"))attachVideo(root);root.querySelectorAll?.("video.ovg-inline-video").forEach(attachVideo);}
 function cleanupRemoved(root){if(!(root instanceof Element)||root.isConnected)return;if(root instanceof HTMLVideoElement&&root.classList.contains("ovg-inline-video"))cleanupVideo(root);root.querySelectorAll?.("video.ovg-inline-video").forEach(cleanupVideo);}
 function installModal(modal){if(!(modal instanceof HTMLElement)||modalObservers.has(modal))return;scan(modal);const observer=new MutationObserver(records=>{for(const r of records){for(const n of r.addedNodes)if(n instanceof Element)scan(n);for(const n of r.removedNodes)if(n instanceof Element)cleanupRemoved(n);}});observer.observe(modal,{childList:true,subtree:true});modalObservers.set(modal,observer);}
