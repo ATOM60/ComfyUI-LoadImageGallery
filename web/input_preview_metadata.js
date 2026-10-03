@@ -4,6 +4,9 @@ const EXT_NAME = "Comfy.ImageGallery.InputPreviewMetadata";
 const NODE_CLASS = "LoadImageGallery";
 const NAME_FONT = "600 13px Arial, sans-serif";
 const SIZE_FONT = "500 12px Arial, sans-serif";
+const COUNT_FONT = "600 11px Arial, sans-serif";
+const RU = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en")
+    .toLowerCase().startsWith("ru");
 
 function filenameFrom(value) {
     const text = String(value ?? "").replace(/\\/g, "/").replace(/\s*\[(input|output|temp)\]\s*$/i, "");
@@ -34,6 +37,10 @@ function fitText(ctx, text, maxWidth) {
     return letters.slice(0, lo).join("") + "…";
 }
 
+function inside(x, y, rect) {
+    return !!rect && x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+}
+
 function install(node) {
     if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) || node.__cigDrawPreviewMetadata) return;
     let cachedKey = "", cached = null;
@@ -43,20 +50,72 @@ function install(node) {
     const draw = function(ctx, preview, options) {
         const top = Number(preview?.y);
         if (node.flags?.collapsed || node.collapsed || !Number.isFinite(top) || top < 18) return;
+
+        const stack = node.__cigStackController;
+        const showStack = !!stack?.isRoot?.();
+        const stackCount = showStack ? Math.max(1, Number(stack.count?.()) || 1) : 0;
         const name = filenameFrom(node.widgets?.find(w => w?.name === "image")?.value ?? node.properties?.__cigLastImage);
-        if (!name) return;
-        const size = dimensions(node, options);
+        if (!name && !showStack) return;
+
+        const size = name ? dimensions(node, options) : "";
         const width = Number(options?.width ?? node.size?.[0] ?? 320);
         const slotFont = node.innerFontStyle || ctx.font;
         const labels = (node.outputs || []).map(output => String(output.label || output.localized_name || output.name || ""));
-        const key = JSON.stringify([name, size, width, slotFont, labels]);
 
         ctx.save();
         try {
+            let contentLeft = 14;
+            node.__cigStackControlRects = null;
+
+            if (showStack) {
+                const y = top / 2;
+                const buttonSize = 18;
+                const buttonY = Math.max(1, y - buttonSize / 2);
+                const prev = { x:10, y:buttonY, w:buttonSize, h:buttonSize };
+
+                ctx.font = COUNT_FONT;
+                const countLabel = `${RU ? "нод" : "nodes"}: ${stackCount}`;
+                const labelWidth = Math.ceil(ctx.measureText(countLabel).width);
+                const labelX = prev.x + prev.w + 5;
+                const next = { x:labelX + labelWidth + 5, y:buttonY, w:buttonSize, h:buttonSize };
+
+                node.__cigStackControlRects = { prev, next };
+
+                const drawArrow = (rect, glyph, enabled) => {
+                    ctx.save();
+                    ctx.globalAlpha *= enabled ? 1 : .35;
+                    ctx.fillStyle = "rgba(255,255,255,.06)";
+                    ctx.strokeStyle = "rgba(255,255,255,.18)";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 5);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = "rgba(238,238,238,.92)";
+                    ctx.font = "700 14px Arial, sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(glyph, rect.x + rect.w / 2, rect.y + rect.h / 2 - .5);
+                    ctx.restore();
+                };
+
+                drawArrow(prev, "‹", stackCount > 1);
+                drawArrow(next, "›", true);
+
+                ctx.font = COUNT_FONT;
+                ctx.fillStyle = "rgba(220,220,220,.86)";
+                ctx.textAlign = "left";
+                ctx.textBaseline = "middle";
+                ctx.fillText(countLabel, labelX, y);
+
+                contentLeft = next.x + next.w + 10;
+            }
+
+            const key = JSON.stringify([name, size, width, slotFont, labels, showStack, stackCount, contentLeft]);
             if (key !== cachedKey) {
                 ctx.font = slotFont;
-                const reserved = Math.max(145, ...labels.map(label => ctx.measureText(label).width + 32));
-                const available = width - 14 - reserved;
+                const reservedRight = Math.max(145, ...labels.map(label => ctx.measureText(label).width + 32));
+                const available = Math.max(0, width - contentLeft - reservedRight);
                 ctx.font = SIZE_FONT;
                 const suffix = size ? "  •  " + size : "";
                 const suffixWidth = ctx.measureText(suffix).width;
@@ -66,16 +125,17 @@ function install(node) {
                 const displayedSuffix = fitted ? suffix : size;
                 ctx.font = SIZE_FONT;
                 const textWidth = nameWidth + ctx.measureText(displayedSuffix).width;
-                // Center over the image, keeping long labels clear of the outputs.
-                const x = Math.max(14, Math.min((width - textWidth) / 2, width - reserved - textWidth));
-                cached = { available, name: fitted, suffix: displayedSuffix, nameWidth, x };
+                const centered = contentLeft + Math.max(0, (available - textWidth) / 2);
+                const x = Math.max(contentLeft, Math.min(centered, width - reservedRight - textWidth));
+                cached = { available, contentLeft, name:fitted, suffix:displayedSuffix, nameWidth, x };
                 cachedKey = key;
             }
-            if (cached.available <= 0) return;
-            // Clip to the existing empty band, away from the output labels.
-            // No widgets, node dimensions or preview coordinates are changed.
+
+            if (!cached || cached.available <= 0 || !name) return;
+            // Keep filename/resolution in the same existing band, to the right of
+            // the node counter and away from output labels. Node height is unchanged.
             ctx.beginPath();
-            ctx.rect(14, 0, cached.available, top);
+            ctx.rect(cached.contentLeft, 0, cached.available, top);
             ctx.clip();
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
@@ -92,10 +152,43 @@ function install(node) {
     };
     node.__cigDrawPreviewMetadata = draw;
 
+    const ownDown = Object.hasOwn(node, "onMouseDown");
+    const oldDown = node.onMouseDown;
+    const down = function(e, pos, graphcanvas) {
+        const rects = node.__cigStackControlRects;
+        const stack = node.__cigStackController;
+        const x = Array.isArray(pos) ? Number(pos[0]) : Number(pos?.x);
+        const y = Array.isArray(pos) ? Number(pos[1]) : Number(pos?.y);
+
+        if (rects && stack?.isRoot?.() && Number.isFinite(x) && Number.isFinite(y)) {
+            let action = null;
+            if (inside(x, y, rects.prev)) {
+                if ((Number(stack.count?.()) || 1) > 1) action = () => stack.remove?.();
+                else action = () => {};
+            } else if (inside(x, y, rects.next)) {
+                action = () => stack.add?.();
+            }
+
+            if (action) {
+                e?.preventDefault?.();
+                e?.stopPropagation?.();
+                action();
+                return true;
+            }
+        }
+        return oldDown?.call(this, e, pos, graphcanvas) ?? false;
+    };
+    node.onMouseDown = down;
+
     const ownRemoved = Object.hasOwn(node, "onRemoved");
     const oldRemoved = node.onRemoved;
     const removed = function(...args) {
         if (node.__cigDrawPreviewMetadata === draw) delete node.__cigDrawPreviewMetadata;
+        delete node.__cigStackControlRects;
+        if (node.onMouseDown === down) {
+            if (ownDown) node.onMouseDown = oldDown;
+            else delete node.onMouseDown;
+        }
         if (node.onRemoved === removed) {
             if (ownRemoved) node.onRemoved = oldRemoved;
             else delete node.onRemoved;
