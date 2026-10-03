@@ -171,6 +171,13 @@ def _pick_folder_native() -> str:
     except Exception as exc:
         raise RuntimeError(f"Native folder picker is unavailable: {exc}")
 
+def _normalize_high_bit_grayscale(image):
+    if image.mode.startswith("I;16") or image.mode == "I":
+        # Pillow clips high-bit grayscale when converting directly to RGB.
+        return image.point(lambda x: x * (1 / 257)).convert("L")
+    return image
+
+
 def _load_external_image(path: str):
     dtype = comfy.model_management.intermediate_dtype()
     device = comfy.model_management.intermediate_device()
@@ -180,6 +187,7 @@ def _load_external_image(path: str):
     w = h = None
     for frame in ImageSequence.Iterator(img):
         frame = node_helpers.pillow(ImageOps.exif_transpose, frame)
+        frame = _normalize_high_bit_grayscale(frame)
         rgb = frame.convert("RGB")
         if w is None:
             w, h = rgb.size
@@ -305,6 +313,7 @@ def _render_thumb(source: str):
             except Exception:
                 pass
             im = ImageOps.exif_transpose(im)
+            im = _normalize_high_bit_grayscale(im)
             if im.mode not in ("RGB", "RGBA"):
                 if "transparency" in im.info or im.mode in ("LA", "P"):
                     im = im.convert("RGBA")
