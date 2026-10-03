@@ -148,10 +148,19 @@ function addNode(root) {
     if (!root || !graph) return null;
 
     const factory = globalThis.LiteGraph?.createNode;
-    if (typeof factory !== "function") return null;
-
-    const child = factory(root.type || NODE_CLASS);
-    if (!child) return null;
+    let child = null;
+    if (typeof factory === "function") {
+        try { child = factory(root.type || NODE_CLASS); } catch (_) {}
+    }
+    // clone() is a reliable fallback on legacy/current ComfyUI and keeps the
+    // exact registered node class without copying graph links.
+    if (!child) {
+        try { child = root.clone?.() || null; } catch (_) {}
+    }
+    if (!child) {
+        console.error("[ImageGallery] Could not create stacked Load Image Gallery node");
+        return null;
+    }
 
     child.properties = child.properties || {};
     child.properties[STACK_PARENT] = root.id;
