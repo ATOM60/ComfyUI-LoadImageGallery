@@ -8,22 +8,79 @@ const LS_SORT = "ComfyUI-LoadImageGallery.outputVideoSort";
 const LS_THUMB = "ComfyUI-LoadImageGallery.outputVideoThumb";
 const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const MAX_LIVE_PLAYERS = 1;
-const GPU_TRACE_LIMIT = 240;
+const GPU_TRACE_LIMIT = 500;
+const GPU_TRACE_KEY = "ComfyUI-LoadImageGallery.gpuCrashTrace.v2";
+const GPU_TRACE_SESSION = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+function loadGpuTrace() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(GPU_TRACE_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.slice(-GPU_TRACE_LIMIT) : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function gpuTraceContext() {
+    const videos = [...document.querySelectorAll("video.ovg-inline-video")];
+    return {
+        visibility: document.visibilityState,
+        galleryOpen: !!document.querySelector(".ovg-modal"),
+        liveVideos: videos.length,
+        playingVideos: videos.filter(video => !video.paused && !video.ended).length,
+    };
+}
+
+function persistGpuTrace(trace) {
+    try { localStorage.setItem(GPU_TRACE_KEY, JSON.stringify(trace.slice(-GPU_TRACE_LIMIT))); }
+    catch (_) {}
+}
+
+globalThis.__CIG_GPU_TRACE = loadGpuTrace();
+globalThis.__CIG_GPU_TRACE_EXPORT = () => JSON.stringify(globalThis.__CIG_GPU_TRACE || [], null, 2);
+globalThis.__CIG_GPU_TRACE_CLEAR = () => {
+    globalThis.__CIG_GPU_TRACE = [];
+    try { localStorage.removeItem(GPU_TRACE_KEY); } catch (_) {}
+};
+globalThis.__CIG_GPU_TRACE_COPY = async () => {
+    const text = globalThis.__CIG_GPU_TRACE_EXPORT();
+    try { await navigator.clipboard.writeText(text); return true; } catch (_) { return false; }
+};
 
 function traceGpuPlayer(type, detail = {}) {
-    const row = { ts: Date.now(), type, ...detail };
+    const now = Date.now();
+    const row = {
+        ts: now,
+        iso: new Date(now).toISOString(),
+        session: GPU_TRACE_SESSION,
+        type,
+        ...gpuTraceContext(),
+        ...detail,
+    };
     const trace = Array.isArray(globalThis.__CIG_GPU_TRACE) ? globalThis.__CIG_GPU_TRACE : [];
     trace.push(row);
     if (trace.length > GPU_TRACE_LIMIT) trace.splice(0, trace.length - GPU_TRACE_LIMIT);
     globalThis.__CIG_GPU_TRACE = trace;
+    persistGpuTrace(trace);
     try { console.debug("[CIG GPU]", row); } catch (_) {}
 }
 
+traceGpuPlayer("session_start", { href:String(location.href || "") });
+window.addEventListener("pagehide", () => traceGpuPlayer("session_end", { reason:"pagehide" }), { once:true });
+document.addEventListener("fullscreenchange", () => traceGpuPlayer("fullscreen_change", {
+    active: !!document.fullscreenElement,
+    targetClass: document.fullscreenElement?.className || "",
+}), true);
+
 try {
-    api.addEventListener?.("execution_start", () => traceGpuPlayer("execution_start"));
-    api.addEventListener?.("execution_success", () => traceGpuPlayer("execution_success"));
-    api.addEventListener?.("execution_error", event => traceGpuPlayer("execution_error", { message:String(event?.detail?.exception_message || "") }));
-    api.addEventListener?.("execution_interrupted", () => traceGpuPlayer("execution_interrupted"));
+    api.addEventListener?.("execution_start", event => traceGpuPlayer("execution_start", { promptId:String(event?.detail?.prompt_id || "") }));
+    api.addEventListener?.("execution_success", event => traceGpuPlayer("execution_success", { promptId:String(event?.detail?.prompt_id || "") }));
+    api.addEventListener?.("execution_error", event => traceGpuPlayer("execution_error", {
+        promptId:String(event?.detail?.prompt_id || ""),
+        nodeId:String(event?.detail?.node_id || ""),
+        message:String(event?.detail?.exception_message || ""),
+    }));
+    api.addEventListener?.("execution_interrupted", event => traceGpuPlayer("execution_interrupted", { promptId:String(event?.detail?.prompt_id || "") }));
 } catch (_) {}
 const LANG = String(localStorage.getItem(LANG_KEY) || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 
@@ -489,6 +546,7 @@ app.registerExtension({
                 const img = holder.querySelector("img");
                 const fallback = holder.querySelector(".ovg-thumb-fallback");
                 const video = document.createElement("video");
+                traceGpuPlayer("player_create", { path:item.path });
                 video.className = "ovg-inline-video";
                 video.controls = true;
                 video.preload = "metadata";
@@ -735,6 +793,8 @@ app.registerExtension({
             }
 
             function closeModal() {
+                const wasOpen = !!state.modal?.isConnected;
+                if (wasOpen) traceGpuPlayer("gallery_close", { activePlayers:state.players.size });
                 closeMenu(); releaseAllPlayers();
                 state.thumbObserver?.disconnect(); state.thumbObserver = null;
                 if (state.scrollRaf) cancelAnimationFrame(state.scrollRaf); state.scrollRaf = 0;
@@ -763,6 +823,7 @@ app.registerExtension({
                         <div class="ovg-grid-wrap"><div class="ovg-grid"></div></div>
                     </div>`;
                 document.body.appendChild(modal); state.modal=modal;
+                traceGpuPlayer("gallery_open");
                 modal.querySelector(".ovg-sort").value=state.sort;
                 modal.querySelector(".ovg-search").value=state.search;
                 modal.querySelector(".ovg-close").onclick=closeModal;
