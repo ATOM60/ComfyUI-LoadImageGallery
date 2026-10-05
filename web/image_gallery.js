@@ -6,8 +6,8 @@ const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
 const CIG_LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 const CIG_I18N = {
-    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", clearing:"Clearing…", error:"Error", thumbError:"error" },
-    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка" }
+    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", loadingList:"Loading list…", up:"Up", clearing:"Clearing…", error:"Error", thumbError:"error" },
+    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", loadingList:"Загрузка списка…", up:"Вверх", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка" }
 };
 const cigT = CIG_I18N[CIG_LANG];
 
@@ -207,7 +207,8 @@ function showCigHelp(){
         ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
         ["Меню изображения","Правый клик по изображению открывает команды Сохранить, Копировать и Вставить. Вставка помещает изображение в текущую открытую папку."],
         ["Кэш","Используется постоянный кэш миниатюр и быстрый кэш браузера. Очистка кэша удаляет постоянные миниатюры и меняет версию браузерного кэша; после обновления папки миниатюры создаются заново один раз."],
-        ["Наборы","Кнопка «Наборы» в нижней панели сохраняет текущее выделение под именем. Набор можно загрузить, переименовать, заменить текущим выделением, добавить или убрать выделенные изображения и удалить."],
+        ["Наборы","Кнопка «Наборы» в нижней панели сохраняет текущее выделение под именем. Сохраняется и порядок выделения. Набор можно загрузить, переименовать, заменить текущим выделением, добавить или убрать выделенные изображения и удалить."],
+        ["Старт набора","Откройте ⋮ у сохранённого набора и нажмите «Старт», чтобы сразу поставить весь набор в очередь в сохранённом порядке, не загружая его предварительно в текущее выделение."],
         ["СТАРТ","Ставит выбранные изображения в очередь. После запуска постановка продолжается независимо от того, открыта галерея или уже закрыта."],
         ["Закрытие","Кнопка ✕ закрывает галерею. Двойной клик по изображению загружает его в ноду и также закрывает галерею. Esc и клик вне окна галерею не закрывают."]
     ]:[
@@ -222,7 +223,8 @@ function showCigHelp(){
         ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
         ["Image menu","Right-click an image for Save Image, Copy Image, and Paste Image. Paste places the clipboard image into the currently open folder."],
         ["Cache","The gallery uses a persistent thumbnail cache plus a fast browser cache. Clear cache removes persistent thumbnails and changes the browser-cache version; refreshing the folder rebuilds thumbnails once."],
-        ["Sets","The Sets button in the bottom bar saves the current selection by name. A set can be loaded, renamed, replaced by the current selection, extended, trimmed, or deleted."],
+        ["Sets","The Sets button in the bottom bar saves the current selection by name, including its selection order. A set can be loaded, renamed, replaced by the current selection, extended, trimmed, or deleted."],
+        ["Start a set","Open ⋮ for a saved set and press Start to queue the whole set immediately in its saved order without first loading it into the current selection."],
         ["START","Queues the selected images. Once started, queueing continues even if the gallery is closed."],
         ["Closing","The ✕ button closes the gallery. Double-clicking an image loads it into the node and also closes the gallery. Escape and clicking outside do not close it."]
     ];
@@ -341,7 +343,7 @@ async function openGallery(node){
         <div class="cig-breadcrumbs"></div><div class="cig-body"><div class="cig-grid"></div></div>
         <div class="cig-footer">
             <span class="cig-folder-label">${cigT.folder}</span>
-            <select class="cig-folder"></select><button class="cig-up-folder" type="button" title="Вверх">↑</button><button class="cig-pick-folder" type="button">...</button>
+            <select class="cig-folder"></select><button class="cig-up-folder" type="button" title="${cigT.up}">↑</button><button class="cig-pick-folder" type="button">...</button>
             <span class="cig-count"></span>
             <button class="cig-sets" type="button">${CIG_LANG==="ru"?"Наборы ▾":"Sets ▾"}</button>
             <span class="cig-cache"></span>
@@ -992,7 +994,7 @@ async function openGallery(node){
         activeFolder = normalizeNavPath(folder);
         node.__cigFolder = activeFolder;
         rebuildThumbLoader();
-        grid.innerHTML = '<div class="cig-empty">Загрузка списка…</div>';
+        grid.innerHTML = `<div class="cig-empty">${cigT.loadingList}</div>`;
         count.textContent = "";
 
         const data = await fetchJson(`/image-gallery/list?folder=${encodeURIComponent(activeFolder)}`);
