@@ -46,16 +46,38 @@ The file list loads automatically when the workflow opens or the selected folder
 3. On a touch screen, hold and then drag to select an area.
 4. Press **START**.
 
-The selected images are sent to the ComfyUI queue one after another.
+The selected images are sent to the ComfyUI queue one after another. After START is pressed, queueing continues even if the image gallery is closed before every prompt has been added.
 
-## Scenario 4. Use another image folder
+## Scenario 4. Save and reuse image sets
+
+Use **Sets ▾** in the bottom bar when you want to keep an ordered group of images for repeated runs.
+
+1. Select the images you need.
+2. Press **Sets ▾**.
+3. Choose **+ Create from selected** and enter a name.
+4. Later, click the set name to restore that set as the current selection.
+
+The saved set preserves the current selection order. With individual clicks, this is the click order; if you deselect an image and select it again, it moves to the end of the selection order.
+
+Open **⋮** next to a saved set to edit it:
+
+- **Replace with selected** — replace the whole set with the current selection;
+- **Add selected** — append selected images that are not already in the set;
+- **Remove selected** — remove only selected images that are present in the set; selected images outside the set are ignored;
+- **Rename** — change the set name;
+- **Delete** — remove the saved set;
+- **Start** — queue the whole set immediately in its saved order without first loading it into the current selection.
+
+Sets can contain images from different folders, including external folders. They are shared between workflows and nodes and are stored in `ComfyUI/user/image_gallery_sets.json`, not in the workflow file.
+
+## Scenario 5. Use another image folder
 
 1. Open the image gallery.
 2. Browse nested folders or press **...**.
 3. Use **...** to choose any available folder in the system folder picker.
 4. Recently used external folders can be reopened quickly.
 
-## Scenario 5. Find images faster
+## Scenario 6. Find images faster
 
 You can:
 
@@ -65,7 +87,7 @@ You can:
 - add images to favorites;
 - copy, paste and save images from the context menu.
 
-## Scenario 6. Open the video gallery
+## Scenario 7. Open the video gallery
 
 1. Press **Output Gallery**.
 2. Choose `output` or a previously opened external folder.
@@ -76,7 +98,7 @@ If a new file is not visible yet, press **Refresh**.
 
 ![Video Gallery](docs/images/video-gallery-en.png)
 
-## Scenario 7. Watch videos
+## Scenario 8. Watch videos
 
 - Single click — play or pause.
 - Double click — enter fullscreen.
@@ -98,7 +120,7 @@ Fullscreen controls on the right:
 
 Controls hide after a short period of inactivity. Move the mouse, touch the screen or press a key to show them again. While paused, the interface stays visible.
 
-## Scenario 8. Watch videos while the GPU is busy
+## Scenario 9. Watch videos while the GPU is busy
 
 If normal playback becomes slow during generation:
 
@@ -110,7 +132,7 @@ CPU mode keeps the same main actions: play/pause, seeking, volume, speed, fullsc
 
 Press **CPU** again to return to normal playback.
 
-## Scenario 9. Manage video files
+## Scenario 10. Manage video files
 
 The video context menu lets you:
 
@@ -131,13 +153,13 @@ You can also delete several selected videos at once.
 
 If a video contains saved ComfyUI workflow data, use the corresponding context-menu action to open the workflow.
 
-## Scenario 10. Use favorites
+## Scenario 11. Use favorites
 
 Click the favorite icon on an image or video card. Favorites make frequently used files easier to find again without losing your current gallery position.
 
 ## Built-in help
 
-The **? / Help** button in the video gallery opens a short guide in the selected language. It follows the same usage scenarios: images, folders, multi-selection, playback, fullscreen, gestures, CPU mode and file management.
+The **ⓘ / Help** control for the image node and the **? / Help** button in the video gallery open short guides in the selected language. The image guide covers selection, folders, saved sets, ordered set runs and background queueing; the video guide covers playback, fullscreen, gestures, CPU mode and file management.
 
 ## Language
 
