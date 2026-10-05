@@ -25,6 +25,7 @@ THUMB_QUALITY = 72
 CACHE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024
 CACHE_SWEEP_INTERVAL = 600
 _cache_lock = threading.Lock()
+_sets_lock = threading.Lock()
 _last_cache_sweep = 0.0
 
 
@@ -428,6 +429,131 @@ def _clear_cache():
         os.makedirs(root, exist_ok=True)
 
 
+# CIG_IMAGE_SETS_V1
+def _sets_file() -> str:
+    return os.path.join(folder_paths.get_user_directory(), "image_gallery_sets.json")
+
+
+def _normalize_set_path(value) -> str:
+    raw = str(value or "").replace("\\", "/").strip()
+    if not raw:
+        return ""
+    if _is_abs_path(raw):
+        return Path(os.path.abspath(os.path.expanduser(raw))).as_posix()
+    return _norm_rel(raw)
+
+
+def _clean_set_images(values) -> list[str]:
+    if not isinstance(values, list):
+        raise ValueError("images must be a list")
+    result = []
+    seen = set()
+    for value in values:
+        path = _normalize_set_path(value)
+        if path and path not in seen:
+            seen.add(path)
+            result.append(path)
+    if len(result) > 10000:
+        raise ValueError("Too many images in one set")
+    return result
+
+
+def _read_image_sets_unlocked() -> list[dict]:
+    path = _sets_file()
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    raw_sets = data.get("sets", []) if isinstance(data, dict) else []
+    result = []
+    seen_names = set()
+    for item in raw_sets:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        try:
+            images = _clean_set_images(item.get("images", []))
+        except Exception:
+            images = []
+        result.append({"name": name, "images": images})
+    return result
+
+
+def _write_image_sets_unlocked(sets: list[dict]):
+    path = _sets_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + f".tmp.{os.getpid()}.{threading.get_ident()}"
+    data = {"version": 1, "sets": sets}
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def _get_image_sets() -> list[dict]:
+    with _sets_lock:
+        return _read_image_sets_unlocked()
+
+
+def _save_image_set(name: str, images: list, old_name: str = "") -> list[dict]:
+    name = str(name or "").strip()
+    old_name = str(old_name or "").strip()
+    if not name:
+        raise ValueError("Set name is required")
+    if len(name) > 120:
+        raise ValueError("Set name is too long")
+    clean_images = _clean_set_images(images)
+    with _sets_lock:
+        sets = _read_image_sets_unlocked()
+        old_key = old_name.casefold() if old_name else None
+        new_key = name.casefold()
+        updated = []
+        replaced = False
+        for item in sets:
+            key = item["name"].casefold()
+            if old_key and key == old_key:
+                if not replaced:
+                    updated.append({"name": name, "images": clean_images})
+                    replaced = True
+                continue
+            if key == new_key:
+                if not replaced:
+                    updated.append({"name": name, "images": clean_images})
+                    replaced = True
+                continue
+            updated.append(item)
+        if not replaced:
+            updated.append({"name": name, "images": clean_images})
+        _write_image_sets_unlocked(updated)
+        return updated
+
+
+def _delete_image_set(name: str) -> list[dict]:
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("Set name is required")
+    key = name.casefold()
+    with _sets_lock:
+        sets = [item for item in _read_image_sets_unlocked() if item["name"].casefold() != key]
+        _write_image_sets_unlocked(sets)
+        return sets
+
+
 class LoadImageGallery(LoadImage):
     @classmethod
     def INPUT_TYPES(cls):
@@ -462,6 +588,44 @@ class LoadImageGallery(LoadImage):
             path = os.path.abspath(os.path.expanduser(str(image)))
             return True if _is_image_file(path) else f"Invalid image file: {image}"
         return super().VALIDATE_INPUTS(image)
+
+
+@PromptServer.instance.routes.get("/image-gallery/sets")
+async def image_gallery_sets_list(request):
+    try:
+        sets = await asyncio.to_thread(_get_image_sets)
+        return web.json_response({"sets": sets})
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.post("/image-gallery/sets/save")
+async def image_gallery_sets_save(request):
+    try:
+        data = await request.json()
+        sets = await asyncio.to_thread(
+            _save_image_set,
+            data.get("name", ""),
+            data.get("images", []),
+            data.get("old_name", ""),
+        )
+        return web.json_response({"ok": True, "sets": sets})
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.post("/image-gallery/sets/delete")
+async def image_gallery_sets_delete(request):
+    try:
+        data = await request.json()
+        sets = await asyncio.to_thread(_delete_image_set, data.get("name", ""))
+        return web.json_response({"ok": True, "sets": sets})
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
 
 
 @PromptServer.instance.routes.get("/image-gallery/folders")
