@@ -28,6 +28,7 @@ function injectStyles() {
 .cig-breadcrumbs{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-height:32px;padding:4px 16px;border-bottom:1px solid #303030;background:#1d1d1d;overflow-x:auto;white-space:nowrap}.cig-crumb{border:0;background:transparent;color:#9ec8ff;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}.cig-crumb:hover{background:#303a46;color:#fff}.cig-crumb-sep{color:#666}.cig-up-folder{flex:0 0 auto;width:40px;height:40px;min-width:40px;padding:0;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:22px;line-height:38px;cursor:pointer}.cig-up-folder:hover{background:#3a3a3a}.cig-up-folder:disabled{opacity:.3;cursor:default}.cig-folder-card{position:relative;background:#24282d;border:2px solid transparent;border-radius:9px;padding:6px;cursor:pointer;min-width:0;user-select:none}.cig-folder-card:hover{background:#303740;border-color:#53677e}.cig-folder-icon{width:100%;aspect-ratio:1/1;background:#191d22;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:58px}.cig-folder-name{font-size:12px;line-height:1.25;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;color:#ddd}
 /* CIG_FAVORITES_CORNER_V3 */ .cig-favorite{position:absolute;top:0;right:0;z-index:3;width:38px;height:38px;min-width:38px;padding:0;border:0;border-radius:0;background:transparent;color:rgba(255,255,255,.68);font-size:24px;line-height:38px;text-align:center;cursor:pointer;touch-action:manipulation;user-select:none;opacity:.78;text-shadow:0 1px 3px rgba(0,0,0,.85)}.cig-favorite:hover{background:transparent;color:#fff;opacity:1}.cig-favorite.active{color:#ff6f8f;background:transparent;opacity:1;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 /* CIG_SORT_MENU_V1 */ .cig-sort{flex:0 0 auto;width:40px;height:38px;min-width:40px;padding:0;font-size:21px;line-height:36px}.cig-sort-menu{position:fixed;z-index:100030;min-width:210px;padding:6px;background:#242424;border:1px solid #4b4b4b;border-radius:8px;box-shadow:0 10px 35px rgba(0,0,0,.6)}.cig-sort-menu button{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border:0;border-radius:5px;background:transparent;color:#eee;text-align:left;font-size:14px;cursor:pointer;white-space:nowrap}.cig-sort-menu button:hover{background:#3a3a3a}.cig-sort-menu button.active{color:#9ec8ff;background:#303a46}.cig-sort-check{width:14px;display:inline-block;text-align:center}
+/* CIG_IMAGE_SETS_V1 */ .cig-sets{flex:0 0 auto;height:40px;padding:0 12px;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:13px;cursor:pointer;white-space:nowrap}.cig-sets:hover{background:#3a3a3a}.cig-sets:disabled{opacity:.45;cursor:default}.cig-sets-menu{position:fixed;z-index:100040;width:330px;max-height:min(520px,70vh);overflow:auto;padding:7px;background:#242424;border:1px solid #4b4b4b;border-radius:9px;box-shadow:0 12px 40px rgba(0,0,0,.65)}.cig-sets-menu button{font-family:Arial,sans-serif}.cig-sets-create{width:100%;height:38px;border:0;border-radius:6px;background:#303a46;color:#dcecff;text-align:left;padding:0 11px;cursor:pointer;font-size:13px}.cig-sets-create:hover{background:#38485a}.cig-sets-create:disabled{opacity:.4;cursor:default}.cig-sets-empty{padding:14px 10px;color:#888;font-size:12px;text-align:center}.cig-set-row{margin-top:6px;border:1px solid #3a3a3a;border-radius:7px;overflow:hidden;background:#202020}.cig-set-main{display:flex;align-items:stretch;min-height:38px}.cig-set-load{flex:1;min-width:0;border:0;background:transparent;color:#eee;text-align:left;padding:0 10px;cursor:pointer;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cig-set-load:hover{background:#303030}.cig-set-count{color:#888;margin-left:7px;font-size:11px}.cig-set-more{width:38px;min-width:38px;border:0;border-left:1px solid #383838;background:transparent;color:#bbb;cursor:pointer;font-size:18px}.cig-set-more:hover{background:#333;color:#fff}.cig-set-actions{display:none;padding:6px;border-top:1px solid #383838;background:#1d1d1d}.cig-set-row.editing .cig-set-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}.cig-set-actions button{height:32px;border:1px solid #444;border-radius:5px;background:#2a2a2a;color:#ddd;cursor:pointer;font-size:11px;padding:0 7px}.cig-set-actions button:hover{background:#373737}.cig-set-actions button.danger{color:#ff9b9b}.cig-set-actions button:disabled{opacity:.4;cursor:default}
 @media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
 `;
     document.head.appendChild(style);
@@ -206,6 +207,7 @@ function showCigHelp(){
         ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
         ["Меню изображения","Правый клик по изображению открывает команды Сохранить, Копировать и Вставить. Вставка помещает изображение в текущую открытую папку."],
         ["Кэш","Используется постоянный кэш миниатюр и быстрый кэш браузера. Очистка кэша удаляет постоянные миниатюры и меняет версию браузерного кэша; после обновления папки миниатюры создаются заново один раз."],
+        ["Наборы","Кнопка «Наборы» в нижней панели сохраняет текущее выделение под именем. Набор можно загрузить, переименовать, заменить текущим выделением, добавить или убрать выделенные изображения и удалить."],
         ["СТАРТ","Ставит выбранные изображения в очередь. После запуска постановка продолжается независимо от того, открыта галерея или уже закрыта."],
         ["Закрытие","Кнопка ✕ закрывает галерею. Двойной клик по изображению загружает его в ноду и также закрывает галерею. Esc и клик вне окна галерею не закрывают."]
     ]:[
@@ -220,6 +222,7 @@ function showCigHelp(){
         ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
         ["Image menu","Right-click an image for Save Image, Copy Image, and Paste Image. Paste places the clipboard image into the currently open folder."],
         ["Cache","The gallery uses a persistent thumbnail cache plus a fast browser cache. Clear cache removes persistent thumbnails and changes the browser-cache version; refreshing the folder rebuilds thumbnails once."],
+        ["Sets","The Sets button in the bottom bar saves the current selection by name. A set can be loaded, renamed, replaced by the current selection, extended, trimmed, or deleted."],
         ["START","Queues the selected images. Once started, queueing continues even if the gallery is closed."],
         ["Closing","The ✕ button closes the gallery. Double-clicking an image loads it into the node and also closes the gallery. Escape and clicking outside do not close it."]
     ];
@@ -340,6 +343,7 @@ async function openGallery(node){
             <span class="cig-folder-label">${cigT.folder}</span>
             <select class="cig-folder"></select><button class="cig-up-folder" type="button" title="Вверх">↑</button><button class="cig-pick-folder" type="button">...</button>
             <span class="cig-count"></span>
+            <button class="cig-sets" type="button">${CIG_LANG==="ru"?"Наборы ▾":"Sets ▾"}</button>
             <span class="cig-cache"></span>
             <button class="cig-clear" type="button">${cigT.clearCache}</button>
             <button class="cig-run cig-clear" type="button">▶ ${cigT.start} (0)</button>
@@ -357,6 +361,7 @@ async function openGallery(node){
     pickFolderButton.title=(typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru")?"Выбрать папку":"Choose folder";
     const search = overlay.querySelector(".cig-search");
     const count = overlay.querySelector(".cig-count");
+    const setsButton = overlay.querySelector(".cig-sets");
     const cacheInfo = overlay.querySelector(".cig-cache");
     const sortButton = overlay.querySelector(".cig-sort");
     const closeButton = overlay.querySelector(".cig-close");
@@ -370,6 +375,150 @@ async function openGallery(node){
     const refreshButton = overlay.querySelector(".cig-refresh");
     const clearButton = overlay.querySelector(".cig-clear");
     const runButton = overlay.querySelector(".cig-run");
+
+    // CIG_IMAGE_SETS_V1
+    const setUi=CIG_LANG==="ru"?{
+        create:"+ Создать из выделенных",empty:"Сохранённых наборов пока нет",replace:"Заменить текущим",add:"Добавить выделенные",remove:"Убрать выделенные",rename:"Переименовать",del:"Удалить",name:"Название набора",confirmDelete:"Удалить набор",error:"Ошибка наборов"
+    }:{
+        create:"+ Create from selected",empty:"No saved sets yet",replace:"Replace with selected",add:"Add selected",remove:"Remove selected",rename:"Rename",del:"Delete",name:"Set name",confirmDelete:"Delete set",error:"Sets error"
+    };
+    let __cigSetsMenu=null;
+    let __cigSavedSets=[];
+
+    function closeSetsMenu(){__cigSetsMenu?.remove();__cigSetsMenu=null;}
+    function normalizeSetList(data){
+        return (Array.isArray(data?.sets)?data.sets:[]).map(item=>({
+            name:String(item?.name??"").trim(),
+            images:(Array.isArray(item?.images)?item.images:[]).map(v=>normalizePath(String(v??""))).filter(Boolean)
+        })).filter(item=>item.name);
+    }
+    async function loadSavedSets(){
+        const data=await fetchJson("/image-gallery/sets");
+        __cigSavedSets=normalizeSetList(data);
+        return __cigSavedSets;
+    }
+    async function saveNamedSet(name,images,oldName=""){
+        const data=await fetchJson("/image-gallery/sets/save",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({name,images:[...images],old_name:oldName})
+        });
+        __cigSavedSets=normalizeSetList(data);
+        return __cigSavedSets;
+    }
+    async function deleteNamedSet(name){
+        const data=await fetchJson("/image-gallery/sets/delete",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({name})
+        });
+        __cigSavedSets=normalizeSetList(data);
+        return __cigSavedSets;
+    }
+    function askSetName(initial=""){
+        const value=window.prompt(setUi.name,initial);
+        return value===null?null:String(value).trim();
+    }
+    function reportSetError(error){
+        console.error("[ImageGallery] image sets:",error);
+        window.alert(`${setUi.error}: ${String(error?.message??error)}`);
+    }
+    function applySavedSet(item){
+        selected.clear();
+        for(const path of item.images)selected.add(normalizePath(path));
+        syncCardSelection();
+        closeSetsMenu();
+    }
+    function positionSetsMenu(menu){
+        const r=setsButton.getBoundingClientRect();
+        const mr=menu.getBoundingClientRect();
+        const left=Math.max(4,Math.min(r.left,innerWidth-mr.width-4));
+        const above=r.top-mr.height-6;
+        const top=above>=4?above:Math.min(r.bottom+6,innerHeight-mr.height-4);
+        menu.style.left=`${left}px`;
+        menu.style.top=`${Math.max(4,top)}px`;
+    }
+    async function reopenSetsMenu(){
+        closeSetsMenu();
+        await openSetsMenu();
+    }
+    async function openSetsMenu(){
+        if(__cigSetsMenu){closeSetsMenu();return;}
+        setsButton.disabled=true;
+        try{await loadSavedSets();}catch(error){reportSetError(error);setsButton.disabled=false;return;}
+        setsButton.disabled=false;
+        if(!overlay.isConnected)return;
+
+        const menu=document.createElement("div");
+        menu.className="cig-sets-menu";
+
+        const create=document.createElement("button");
+        create.type="button";create.className="cig-sets-create";create.textContent=setUi.create;
+        create.disabled=selected.size===0;
+        create.addEventListener("click",async e=>{
+            e.preventDefault();e.stopPropagation();
+            const name=askSetName("");
+            if(!name)return;
+            try{await saveNamedSet(name,[...selected]);await reopenSetsMenu();}catch(error){reportSetError(error);}
+        });
+        menu.appendChild(create);
+
+        if(!__cigSavedSets.length){
+            const empty=document.createElement("div");empty.className="cig-sets-empty";empty.textContent=setUi.empty;menu.appendChild(empty);
+        }
+
+        for(const item of __cigSavedSets){
+            const row=document.createElement("div");row.className="cig-set-row";
+            const main=document.createElement("div");main.className="cig-set-main";
+            const load=document.createElement("button");load.type="button";load.className="cig-set-load";
+            const label=document.createElement("span");label.textContent=item.name;
+            const qty=document.createElement("span");qty.className="cig-set-count";qty.textContent=`(${item.images.length})`;
+            load.append(label,qty);
+            load.title=item.name;
+            load.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();applySavedSet(item);});
+            const more=document.createElement("button");more.type="button";more.className="cig-set-more";more.textContent="⋮";
+            more.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();row.classList.toggle("editing");positionSetsMenu(menu);});
+            main.append(load,more);
+
+            const actions=document.createElement("div");actions.className="cig-set-actions";
+            const addAction=(text,handler,{danger=false,needsSelection=false}={})=>{
+                const b=document.createElement("button");b.type="button";b.textContent=text;b.classList.toggle("danger",danger);b.disabled=needsSelection&&selected.size===0;
+                b.addEventListener("click",async e=>{e.preventDefault();e.stopPropagation();try{await handler();}catch(error){reportSetError(error);}});
+                actions.appendChild(b);
+            };
+            addAction(setUi.replace,async()=>{await saveNamedSet(item.name,[...selected],item.name);await reopenSetsMenu();},{needsSelection:true});
+            addAction(setUi.add,async()=>{
+                const merged=new Set(item.images);
+                for(const path of selected)merged.add(normalizePath(path));
+                await saveNamedSet(item.name,[...merged],item.name);await reopenSetsMenu();
+            },{needsSelection:true});
+            addAction(setUi.remove,async()=>{
+                const remove=new Set([...selected].map(v=>normalizePath(v)));
+                const next=item.images.filter(path=>!remove.has(normalizePath(path)));
+                await saveNamedSet(item.name,next,item.name);await reopenSetsMenu();
+            },{needsSelection:true});
+            addAction(setUi.rename,async()=>{
+                const name=askSetName(item.name);
+                if(!name||name===item.name)return;
+                await saveNamedSet(name,item.images,item.name);await reopenSetsMenu();
+            });
+            addAction(setUi.del,async()=>{
+                if(!window.confirm(`${setUi.confirmDelete} “${item.name}”? `))return;
+                await deleteNamedSet(item.name);await reopenSetsMenu();
+            },{danger:true});
+
+            row.append(main,actions);menu.appendChild(row);
+        }
+
+        document.body.appendChild(menu);
+        __cigSetsMenu=menu;
+        positionSetsMenu(menu);
+    }
+
+    setsButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();void openSetsMenu();});
+    const __cigSetsOutside=e=>{if(__cigSetsMenu&&!__cigSetsMenu.contains(e.target)&&e.target!==setsButton)closeSetsMenu();};
+    document.addEventListener("pointerdown",__cigSetsOutside,true);
+
     let __cigSortMenu=null;
     function sortLabel(mode=sortMode){const x=sortChoices.find(v=>v[0]===mode);return x?(CIG_LANG==="ru"?x[1]:x[2]):"Sort";}
     function updateSortButton(){sortButton.title=(CIG_LANG==="ru"?"Сортировка: ":"Sort: ")+sortLabel();}
@@ -436,7 +585,9 @@ async function openGallery(node){
         __cigSaveScroll();
         document.removeEventListener("keydown", onKey);
         document.removeEventListener("pointerdown",__cigSortOutside,true);
+        document.removeEventListener("pointerdown",__cigSetsOutside,true);
         closeSortMenu();
+        closeSetsMenu();
         clearTimeout(__cigCacheStatsTimer);
         thumbLoader?.dispose();
         marquee.remove();
