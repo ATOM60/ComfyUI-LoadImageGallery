@@ -378,9 +378,9 @@ async function openGallery(node){
 
     // CIG_IMAGE_SETS_V1
     const setUi=CIG_LANG==="ru"?{
-        create:"+ Создать из выделенных",empty:"Сохранённых наборов пока нет",replace:"Заменить текущим",add:"Добавить выделенные",remove:"Убрать выделенные",rename:"Переименовать",del:"Удалить",name:"Название набора",confirmDelete:"Удалить набор",error:"Ошибка наборов"
+        create:"+ Создать из выделенных",empty:"Сохранённых наборов пока нет",replace:"Заменить текущим",add:"Добавить выделенные",remove:"Убрать выделенные",rename:"Переименовать",del:"Удалить",start:"Старт",name:"Название набора",confirmDelete:"Удалить набор",error:"Ошибка наборов"
     }:{
-        create:"+ Create from selected",empty:"No saved sets yet",replace:"Replace with selected",add:"Add selected",remove:"Remove selected",rename:"Rename",del:"Delete",name:"Set name",confirmDelete:"Delete set",error:"Sets error"
+        create:"+ Create from selected",empty:"No saved sets yet",replace:"Replace with selected",add:"Add selected",remove:"Remove selected",rename:"Rename",del:"Delete",start:"Start",name:"Set name",confirmDelete:"Delete set",error:"Sets error"
     };
     let __cigSetsMenu=null;
     let __cigSavedSets=[];
@@ -543,8 +543,8 @@ async function openGallery(node){
             main.append(load,more);
 
             const actions=document.createElement("div");actions.className="cig-set-actions";
-            const addAction=(text,handler,{danger=false,needsSelection=false}={})=>{
-                const b=document.createElement("button");b.type="button";b.textContent=text;b.classList.toggle("danger",danger);b.disabled=needsSelection&&selected.size===0;
+            const addAction=(text,handler,{danger=false,needsSelection=false,disabled=false}={})=>{
+                const b=document.createElement("button");b.type="button";b.textContent=text;b.classList.toggle("danger",danger);b.disabled=disabled||(needsSelection&&selected.size===0);
                 b.addEventListener("click",async e=>{e.preventDefault();e.stopPropagation();try{await handler();}catch(error){reportSetError(error);}});
                 actions.appendChild(b);
             };
@@ -568,6 +568,12 @@ async function openGallery(node){
                 if(!window.confirm(`${setUi.confirmDelete} “${item.name}”? `))return;
                 await deleteNamedSet(item.name);await reopenSetsMenu();
             },{danger:true});
+            addAction(setUi.start,async()=>{
+                if(CIG_BATCH_JOBS.get(node)?.running)return;
+                closeSetsMenu();
+                const job=startDetachedBatchQueue(node,item.images);
+                if(job)bindBatchUi(job);
+            },{disabled:!!CIG_BATCH_JOBS.get(node)?.running});
 
             row.append(main,actions);menu.appendChild(row);
         }
