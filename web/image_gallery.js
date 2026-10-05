@@ -117,6 +117,63 @@ function setWidgetValue(node,relativePath,captureState=true){
         }
     }
 }
+// CIG_DETACHED_BATCH_QUEUE_V1
+// Batch queueing belongs to the node, not to the gallery modal. Closing the
+// gallery only removes its UI; this task keeps queueing the captured image list.
+const CIG_BATCH_JOBS = new WeakMap();
+
+function notifyBatchJob(job){
+    for(const listener of [...job.listeners]){
+        try{listener(job);}catch(error){console.warn("[ImageGallery] batch listener:",error);}
+    }
+}
+
+function watchBatchJob(job,listener){
+    if(!job||typeof listener!=="function")return ()=>{};
+    job.listeners.add(listener);
+    try{listener(job);}catch(_){}
+    return ()=>job.listeners.delete(listener);
+}
+
+function startDetachedBatchQueue(node,sourceList){
+    const existing=CIG_BATCH_JOBS.get(node);
+    if(existing?.running)return existing;
+
+    const list=[...sourceList].map(v=>normalizePath(String(v??""))).filter(Boolean);
+    if(!list.length)return null;
+
+    const job={running:true,index:0,total:list.length,list,listeners:new Set(),error:null,promise:null};
+    CIG_BATCH_JOBS.set(node,job);
+
+    job.promise=(async()=>{
+        try{
+            for(let i=0;i<list.length;i++){
+                if(!node?.graph)throw new Error("Load Image Gallery node was removed");
+                const relative=list[i];
+                setWidgetValue(node,relative);
+                node.__cigFolder=splitPath(relative).folder;
+                job.index=i+1;
+                notifyBatchJob(job);
+
+                // Do not depend on the gallery DOM or requestAnimationFrame:
+                // the modal may already be closed when the next prompt is queued.
+                await new Promise(resolve=>setTimeout(resolve,0));
+                await app.queuePrompt(0,1);
+            }
+        }catch(error){
+            job.error=error;
+            console.error("[ImageGallery] detached batch queue:",error);
+        }finally{
+            job.running=false;
+            notifyBatchJob(job);
+            if(CIG_BATCH_JOBS.get(node)===job)CIG_BATCH_JOBS.delete(node);
+            job.listeners.clear();
+        }
+    })();
+
+    return job;
+}
+
 function humanBytes(n){ if(!Number.isFinite(n))return ""; const u=CIG_LANG==="ru"?["Б","КБ","МБ","ГБ"]:["B","KB","MB","GB"]; let i=0,v=n; while(v>=1024&&i<u.length-1){v/=1024;i++;} return `${v.toFixed(i<2?0:1)} ${u[i]}`; }
 
 function makeThumbLoader(root,onProgress=null) {
@@ -149,7 +206,7 @@ function showCigHelp(){
         ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
         ["Меню изображения","Правый клик по изображению открывает команды Сохранить, Копировать и Вставить. Вставка помещает изображение в текущую открытую папку."],
         ["Кэш","Используется постоянный кэш миниатюр и быстрый кэш браузера. Очистка кэша удаляет постоянные миниатюры и меняет версию браузерного кэша; после обновления папки миниатюры создаются заново один раз."],
-        ["СТАРТ","Запускает выбранные изображения в очередь, очищает выделение и оставляет галерею открытой."],
+        ["СТАРТ","Ставит выбранные изображения в очередь. После запуска постановка продолжается независимо от того, открыта галерея или уже закрыта."],
         ["Закрытие","Кнопка ✕ закрывает галерею. Двойной клик по изображению загружает его в ноду и также закрывает галерею. Esc и клик вне окна галерею не закрывают."]
     ]:[
         ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
@@ -163,7 +220,7 @@ function showCigHelp(){
         ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
         ["Image menu","Right-click an image for Save Image, Copy Image, and Paste Image. Paste places the clipboard image into the currently open folder."],
         ["Cache","The gallery uses a persistent thumbnail cache plus a fast browser cache. Clear cache removes persistent thumbnails and changes the browser-cache version; refreshing the folder rebuilds thumbnails once."],
-        ["START","Queues the selected images, clears the selection and keeps the gallery open."],
+        ["START","Queues the selected images. Once started, queueing continues even if the gallery is closed."],
         ["Closing","The ✕ button closes the gallery. Double-clicking an image loads it into the node and also closes the gallery. Escape and clicking outside do not close it."]
     ];
     const ov=document.createElement("div");ov.className="cig-help-overlay";ov.dataset.cigHelpClosePatched="1";ov.style.cssText="position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:20px";
@@ -372,7 +429,10 @@ async function openGallery(node){
     });
     document.body.appendChild(marquee);
 
+    let stopBatchUiSync=()=>{};
     const cleanup = ()=>{
+        stopBatchUiSync();
+        stopBatchUiSync=()=>{};
         __cigSaveScroll();
         document.removeEventListener("keydown", onKey);
         document.removeEventListener("pointerdown",__cigSortOutside,true);
@@ -537,11 +597,29 @@ async function openGallery(node){
     }
 
     function updateRunState(){
+        const job=CIG_BATCH_JOBS.get(node);
+        if(job?.running){
+            runButton.textContent=`▶ ${job.index}/${job.total}`;
+            runButton.disabled=true;
+            runButton.style.opacity="1";
+            return;
+        }
         const n = selected.size;
         runButton.textContent = `▶ ${cigT.start} (${n})`;
         runButton.disabled = n === 0;
         runButton.style.opacity = n ? "1" : ".5";
     }
+
+    function bindBatchUi(job){
+        stopBatchUiSync();
+        stopBatchUiSync=()=>{};
+        if(!job?.running){updateRunState();return;}
+        stopBatchUiSync=watchBatchJob(job,()=>{
+            if(overlay.isConnected)updateRunState();
+        });
+    }
+
+    bindBatchUi(CIG_BATCH_JOBS.get(node));
 
     function updateCount(filteredLength = images.length){
         count.textContent = `${filteredLength} / ${images.length} · ${cigT.selected} ${selected.size}`;
@@ -908,41 +986,27 @@ body.addEventListener("mousedown", e=>{
         e.preventDefault();
     });
 
-    runButton.addEventListener("click", async()=>{
-        const list = [...selected];
-        if(!list.length) return;
+    runButton.addEventListener("click",()=>{
+        const list=[...selected];
+        if(!list.length||CIG_BATCH_JOBS.get(node)?.running)return;
+
+        // Snapshot the selected paths now. From this point the queue task is
+        // independent of the gallery window and survives overlay cleanup/removal.
         selected.clear();
         syncCardSelection();
-        updateRunState();
 
-        runButton.disabled = true;
-        refreshButton.disabled = true;
-        clearButton.disabled = true;
-        folderSelect.disabled = true;
-        search.disabled = true;
+        const job=startDetachedBatchQueue(node,list);
+        if(!job)return;
+        bindBatchUi(job);
 
-        try{
-            for(let i=0;i<list.length;i++){
-                const relative = list[i];
-                setWidgetValue(node, relative);
-                node.__cigFolder = splitPath(relative).folder;
-                runButton.textContent = `▶ ${i+1}/${list.length}`;
-                await new Promise(r=>requestAnimationFrame(r));
-                await app.queuePrompt(0,1);
-            }
-            // CIG_KEEP_OPEN_AFTER_START_V1
-        }catch(error){
-            console.error("[ImageGallery] batch queue:", error);
-            runButton.textContent = "Ошибка";
-        }finally{
-            if(overlay.isConnected){
-                refreshButton.disabled = false;
-                clearButton.disabled = false;
-                folderSelect.disabled = false;
-                search.disabled = false;
-                updateRunState();
-            }
-        }
+        job.promise.finally(()=>{
+            if(!overlay.isConnected)return;
+            refreshButton.disabled=false;
+            clearButton.disabled=false;
+            folderSelect.disabled=false;
+            search.disabled=false;
+            updateRunState();
+        });
     });
 
     try{
