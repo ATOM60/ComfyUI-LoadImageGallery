@@ -416,8 +416,70 @@ async function openGallery(node){
         return __cigSavedSets;
     }
     function askSetName(initial=""){
-        const value=window.prompt(setUi.name,initial);
-        return value===null?null:String(value).trim();
+        return new Promise(resolve=>{
+            const shade=document.createElement("div");
+            shade.style.cssText="position:fixed;inset:0;z-index:100080;background:rgba(0,0,0,.58);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box";
+
+            const box=document.createElement("div");
+            box.style.cssText="width:min(420px,92vw);background:#202020;border:1px solid #555;border-radius:10px;box-shadow:0 18px 60px rgba(0,0,0,.65);padding:16px;font-family:Arial,sans-serif;color:#eee";
+
+            const title=document.createElement("div");
+            title.textContent=setUi.name;
+            title.style.cssText="font-size:15px;font-weight:700;margin-bottom:10px";
+
+            const input=document.createElement("input");
+            input.type="text";
+            input.value=initial;
+            input.maxLength=120;
+            input.autocomplete="off";
+            input.style.cssText="width:100%;height:38px;box-sizing:border-box;background:#292929;color:#eee;border:1px solid #555;border-radius:7px;padding:0 10px;font:14px Arial,sans-serif;outline:none";
+
+            const buttons=document.createElement("div");
+            buttons.style.cssText="display:flex;justify-content:flex-end;gap:8px;margin-top:12px";
+
+            const cancel=document.createElement("button");
+            cancel.type="button";
+            cancel.textContent=CIG_LANG==="ru"?"Отмена":"Cancel";
+            cancel.style.cssText="height:34px;padding:0 14px;border:1px solid #4d4d4d;border-radius:6px;background:#292929;color:#ddd;cursor:pointer";
+
+            const ok=document.createElement("button");
+            ok.type="button";
+            ok.textContent=CIG_LANG==="ru"?"Сохранить":"Save";
+            ok.style.cssText="height:34px;padding:0 14px;border:1px solid #557aa8;border-radius:6px;background:#30445e;color:#fff;cursor:pointer";
+
+            let done=false;
+            const finish=value=>{
+                if(done)return;
+                done=true;
+                shade.remove();
+                resolve(value);
+            };
+            const submit=()=>{
+                const value=String(input.value??"").trim();
+                if(!value){
+                    input.focus();
+                    input.style.borderColor="#b85c5c";
+                    return;
+                }
+                finish(value);
+            };
+
+            cancel.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();finish(null);});
+            ok.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();submit();});
+            input.addEventListener("keydown",e=>{
+                if(e.key==="Enter"){e.preventDefault();submit();}
+                else if(e.key==="Escape"){e.preventDefault();finish(null);}
+            });
+            shade.addEventListener("pointerdown",e=>{
+                if(e.target===shade){e.preventDefault();e.stopPropagation();finish(null);}
+            });
+
+            buttons.append(cancel,ok);
+            box.append(title,input,buttons);
+            shade.appendChild(box);
+            document.body.appendChild(shade);
+            requestAnimationFrame(()=>{input.focus();input.select();});
+        });
     }
     function reportSetError(error){
         console.error("[ImageGallery] image sets:",error);
@@ -457,7 +519,7 @@ async function openGallery(node){
         create.disabled=selected.size===0;
         create.addEventListener("click",async e=>{
             e.preventDefault();e.stopPropagation();
-            const name=askSetName("");
+            const name=await askSetName("");
             if(!name)return;
             try{await saveNamedSet(name,[...selected]);await reopenSetsMenu();}catch(error){reportSetError(error);}
         });
@@ -498,7 +560,7 @@ async function openGallery(node){
                 await saveNamedSet(item.name,next,item.name);await reopenSetsMenu();
             },{needsSelection:true});
             addAction(setUi.rename,async()=>{
-                const name=askSetName(item.name);
+                const name=await askSetName(item.name);
                 if(!name||name===item.name)return;
                 await saveNamedSet(name,item.images,item.name);await reopenSetsMenu();
             });
