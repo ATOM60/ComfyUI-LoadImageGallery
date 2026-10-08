@@ -345,9 +345,9 @@ async function openGallery(node){
             <span class="cig-folder-label">${cigT.folder}</span>
             <select class="cig-folder"></select><button class="cig-up-folder" type="button" title="${cigT.up}">↑</button><button class="cig-pick-folder" type="button">...</button>
             <span class="cig-count"></span>
-            <button class="cig-sets" type="button">${CIG_LANG==="ru"?"Наборы ▾":"Sets ▾"}</button>
             <span class="cig-cache"></span>
             <button class="cig-clear" type="button">${cigT.clearCache}</button>
+            <button class="cig-sets" type="button">${CIG_LANG==="ru"?"Наборы ▾":"Sets ▾"}</button>
             <button class="cig-run cig-clear" type="button">▶ ${cigT.start} (0)</button>
         </div>
     </div>`;
