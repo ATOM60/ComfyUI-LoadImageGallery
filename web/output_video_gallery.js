@@ -275,6 +275,9 @@ app.registerExtension({
                 thumbSize: Number(localStorage.getItem(LS_THUMB) || 180),
                 search: "",
                 thumbObserver: null,
+                thumbQueue: [],
+                thumbActive: 0,
+                thumbBlobs: new Map(),
                 players: new Map(),
                 dragSuppressUntil: 0,
                 scrollRaf: 0,
@@ -563,32 +566,138 @@ app.registerExtension({
                 setTimeout(() => document.addEventListener("pointerdown", closeMenu, {once:true}), 0);
             }
 
+            // CIG_OUTPUT_THUMB_QUEUE_V1
+            // Browsers allow ~6 connections per server. Unbounded <img> requests
+            // for slow ffmpeg thumbnails used to occupy all of them during
+            // inference and stall the rest of ComfyUI. Thumbnails now load at
+            // most OVG_THUMB_PARALLEL at a time, newest-visible first; requests
+            // for cards scrolled out of range are aborted, "busy" answers are
+            // retried, and loaded thumbnails survive grid re-renders.
+            const OVG_THUMB_PARALLEL = 2;
+            const OVG_THUMB_RETRY_MS = [1500, 4000, 9000];
+            const OVG_THUMB_BLOB_LIMIT = 600;
+
+            function thumbHolderBusy(card) {
+                const holder = card.querySelector(".ovg-thumb");
+                return !!holder?.querySelector("video, .ovg-cpu-player");
+            }
+
+            function showThumbFallback(card) {
+                const img = card.querySelector(".ovg-thumb img");
+                if (img) { img.removeAttribute("src"); img.style.display = "none"; }
+                if (!thumbHolderBusy(card)) card.querySelector(".ovg-thumb-fallback")?.style.setProperty("display", "flex");
+            }
+
+            function showThumbBlob(card, blob) {
+                const img = card.querySelector(".ovg-thumb img");
+                if (!img) return;
+                const url = URL.createObjectURL(blob);
+                img.onload = () => URL.revokeObjectURL(url);
+                img.onerror = () => { URL.revokeObjectURL(url); showThumbFallback(card); };
+                img.src = url;
+                if (!thumbHolderBusy(card)) {
+                    img.style.removeProperty("display");
+                    card.querySelector(".ovg-thumb-fallback")?.style.setProperty("display", "none");
+                }
+            }
+
+            function rememberThumbBlob(key, blob) {
+                state.thumbBlobs.delete(key);
+                state.thumbBlobs.set(key, blob);
+                while (state.thumbBlobs.size > OVG_THUMB_BLOB_LIMIT) state.thumbBlobs.delete(state.thumbBlobs.keys().next().value);
+            }
+
+            function enqueueThumb(card, pump = true) {
+                const t = card._ovgThumb;
+                if (!t || t.done || t.queued || t.controller || t.retryTimer) return;
+                t.queued = true;
+                state.thumbQueue.push(card);
+                if (pump) pumpThumbs();
+            }
+
+            function pumpThumbs() {
+                while (state.thumbActive < OVG_THUMB_PARALLEL && state.thumbQueue.length) {
+                    const card = state.thumbQueue.pop();
+                    const t = card._ovgThumb;
+                    if (!t) continue;
+                    t.queued = false;
+                    if (t.done || !t.visible || !card.isConnected) continue;
+                    loadThumb(card, t);
+                }
+            }
+
+            async function loadThumb(card, t) {
+                state.thumbActive++;
+                const controller = new AbortController();
+                t.controller = controller;
+                let retry = false;
+                try {
+                    const response = await fetch(t.url, { signal:controller.signal, cache:"force-cache" });
+                    if (response.status === 204) { t.done = true; showThumbFallback(card); return; }
+                    if (!response.ok) { retry = true; return; }
+                    const blob = await response.blob();
+                    if (!blob.size) { retry = true; return; }
+                    t.done = true;
+                    rememberThumbBlob(t.key, blob);
+                    if (card.isConnected) showThumbBlob(card, blob);
+                } catch (err) {
+                    if (err?.name !== "AbortError") retry = true;
+                } finally {
+                    if (t.controller === controller) t.controller = null;
+                    state.thumbActive = Math.max(0, state.thumbActive - 1);
+                    if (retry && card.isConnected) {
+                        const delay = OVG_THUMB_RETRY_MS[t.attempt++];
+                        if (delay === undefined) { t.done = true; showThumbFallback(card); }
+                        else t.retryTimer = setTimeout(() => { t.retryTimer = 0; if (t.visible) enqueueThumb(card); }, delay);
+                    }
+                    pumpThumbs();
+                }
+            }
+
+            function cancelAllThumbs() {
+                state.thumbObserver?.disconnect(); state.thumbObserver = null;
+                for (const card of state.thumbQueue) if (card._ovgThumb) card._ovgThumb.queued = false;
+                state.thumbQueue = [];
+                state.modal?.querySelectorAll(".ovg-card").forEach(card => {
+                    const t = card._ovgThumb;
+                    if (!t) return;
+                    t.visible = false;
+                    t.controller?.abort();
+                    if (t.retryTimer) { clearTimeout(t.retryTimer); t.retryTimer = 0; }
+                });
+            }
+
             function bindThumbLazyLoad(card, item) {
                 const img = card.querySelector("img");
                 if (!img) return;
-                const load = () => {
-                    if (img.dataset.loaded) return;
-                    img.dataset.loaded = "1";
-                    img.src = thumbUrl(item.path, item.mtime);
-                    img.onerror = () => { img.style.display = "none"; card.querySelector(".ovg-thumb-fallback")?.style.setProperty("display", "flex"); };
-                };
+                const key = `${item.path}\u0000${item.mtime || 0}`;
+                const cached = state.thumbBlobs.get(key);
+                if (cached) { rememberThumbBlob(key, cached); showThumbBlob(card, cached); return; }
+                card._ovgThumb = { key, url:thumbUrl(item.path, item.mtime), attempt:0, visible:false, queued:false, done:false, controller:null, retryTimer:0 };
                 if (!state.thumbObserver) {
                     state.thumbObserver = new IntersectionObserver(entries => {
+                        const appeared = [];
                         for (const entry of entries) {
-                            if (!entry.isIntersecting) continue;
-                            entry.target._ovgLoadThumb?.();
-                            state.thumbObserver.unobserve(entry.target);
+                            const t = entry.target._ovgThumb;
+                            if (!t || t.done) { state.thumbObserver?.unobserve(entry.target); continue; }
+                            t.visible = entry.isIntersecting;
+                            if (t.visible) appeared.push(entry.target);
+                            else t.controller?.abort();
                         }
+                        // The queue is LIFO across batches (latest scroll wins);
+                        // push this batch bottom-up so it still loads top-down.
+                        appeared.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
+                        for (const card of appeared) enqueueThumb(card, false);
+                        pumpThumbs();
                     }, { root:state.modal?.querySelector(".ovg-grid-wrap") || null, rootMargin:"350px" });
                 }
-                card._ovgLoadThumb = load;
                 state.thumbObserver.observe(card);
             }
 
             function renderGrid() {
                 if (!state.modal) return;
                 releaseAllPlayers();
-                state.thumbObserver?.disconnect(); state.thumbObserver = null;
+                cancelAllThumbs();
                 const grid = state.modal.querySelector(".ovg-grid");
                 const rows = sortedFilteredVideos();
                 grid.style.setProperty("--ovg-card-size", `${state.thumbSize}px`);
@@ -755,7 +864,8 @@ app.registerExtension({
 
             function closeModal() {
                 closeMenu(); releaseAllPlayers();
-                state.thumbObserver?.disconnect(); state.thumbObserver = null;
+                cancelAllThumbs();
+                state.thumbBlobs.clear();
                 if (state.scrollRaf) cancelAnimationFrame(state.scrollRaf); state.scrollRaf = 0;
                 if (state.escapeHandler) document.removeEventListener("keydown",state.escapeHandler);
                 state.escapeHandler = null;

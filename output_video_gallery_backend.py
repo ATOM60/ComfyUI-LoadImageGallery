@@ -26,6 +26,11 @@ VIDEO_EXTENSIONS = {
 }
 _IO = ThreadPoolExecutor(max_workers=2)
 _THUMBS = ThreadPoolExecutor(max_workers=2)
+# CIG_OUTPUT_THUMB_SCHEDULER_V1
+_THUMB_WORKERS_IDLE = 2
+_THUMB_WORKERS_BUSY = 1          # while ComfyUI is executing a prompt
+_THUMB_TIMEOUT = 25
+_THUMB_BUSY_RETRY_SECONDS = 2
 _FFMPEG = None
 _FFMPEG_CHECKED = False
 
@@ -93,24 +98,57 @@ def _thumb_path(video: Path) -> Path:
     return _cache() / (hashlib.sha1(stamp.encode("utf-8", "ignore")).hexdigest() + ".jpg")
 
 
-def _make_thumb(video: Path):
+class _ThumbTransientError(Exception):
+    """Thumbnail could not be made right now (timeout under load); retry later."""
+
+
+def _low_priority_command(cmd: list[str]) -> list[str]:
+    if sys.platform != "win32":
+        nice = shutil.which("nice")
+        if nice:
+            return [nice, "-n", "10", *cmd]
+    return cmd
+
+
+def _low_priority_flags() -> int:
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # Thumbnails must never compete with inference for CPU time.
+    flags |= getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+    return flags
+
+
+def _cached_thumb(video: Path):
     thumb = _thumb_path(video)
-    if thumb.exists() and thumb.stat().st_size:
+    try:
+        if thumb.stat().st_size:
+            return thumb
+    except OSError:
+        pass
+    return None
+
+
+def _make_thumb(video: Path):
+    thumb = _cached_thumb(video)
+    if thumb:
         return thumb
+    thumb = _thumb_path(video)
     ffmpeg = _find_ffmpeg()
     if not ffmpeg:
         return None
     tmp = thumb.with_suffix(".tmp.jpg")
     try:
-        subprocess.run([
-            ffmpeg, "-hide_banner", "-loglevel", "error", "-ss", "0.25",
-            "-i", str(video), "-frames:v", "1", "-vf", "scale='min(640,iw)':-2",
-            "-q:v", "3", "-y", str(tmp),
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25,
-           check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.run(_low_priority_command([
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-threads", "1", "-ss", "0.25", "-i", str(video),
+            "-an", "-sn", "-dn", "-frames:v", "1", "-filter_threads", "1",
+            "-vf", "scale='min(640,iw)':-2", "-q:v", "3", "-y", str(tmp),
+        ]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=_THUMB_TIMEOUT,
+           check=False, creationflags=_low_priority_flags())
         if tmp.exists() and tmp.stat().st_size:
             tmp.replace(thumb)
             return thumb
+    except subprocess.TimeoutExpired:
+        raise _ThumbTransientError("thumbnail timed out")
     except Exception:
         pass
     finally:
@@ -118,6 +156,88 @@ def _make_thumb(video: Path):
             try: tmp.unlink()
             except OSError: pass
     return None
+
+
+def _comfy_busy() -> bool:
+    try:
+        return bool(getattr(PromptServer.instance.prompt_queue, "currently_running", None))
+    except Exception:
+        return False
+
+
+def _request_gone(request) -> bool:
+    transport = getattr(request, "transport", None)
+    return transport is None or transport.is_closing()
+
+
+_ABANDONED = object()
+_BUSY = object()
+
+
+class _ThumbScheduler:
+    """Newest-first thumbnail queue.
+
+    The most recent request is usually the card the user is looking at, so it
+    runs first. Identical requests share one ffmpeg run, and jobs whose
+    clients have all disconnected (scrolled away, gallery closed) are dropped
+    before ffmpeg is started. Concurrency drops to one while a prompt runs.
+    """
+
+    def __init__(self):
+        self.active = 0
+        self.stack = []
+        self.jobs = {}
+
+    def limit(self) -> int:
+        return _THUMB_WORKERS_BUSY if _comfy_busy() else _THUMB_WORKERS_IDLE
+
+    async def get(self, video: Path, request):
+        loop = asyncio.get_running_loop()
+        key = str(video)
+        job = self.jobs.get(key)
+        if job is None:
+            job = {"key": key, "video": video, "future": loop.create_future(), "requests": set()}
+            self.jobs[key] = job
+            self.stack.append(job)
+        elif job in self.stack:
+            self.stack.remove(job)
+            self.stack.append(job)
+        job["requests"].add(request)
+        self._pump()
+        try:
+            return await asyncio.shield(job["future"])
+        finally:
+            job["requests"].discard(request)
+
+    def _finish(self, job, result):
+        self.jobs.pop(job["key"], None)
+        if not job["future"].done():
+            job["future"].set_result(result)
+
+    def _pump(self):
+        while self.stack and self.active < self.limit():
+            job = self.stack.pop()
+            if not job["requests"] or all(_request_gone(r) for r in job["requests"]):
+                self._finish(job, _ABANDONED)
+                continue
+            self.active += 1
+            asyncio.ensure_future(self._run(job))
+
+    async def _run(self, job):
+        result = None
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(_THUMBS, _make_thumb, job["video"])
+        except _ThumbTransientError:
+            result = _BUSY
+        except Exception:
+            result = None
+        finally:
+            self.active -= 1
+            self._finish(job, result)
+            self._pump()
+
+
+_THUMB_SCHEDULER = _ThumbScheduler()
 
 
 def _scan():
@@ -207,8 +327,15 @@ async def video_file(request):
 async def video_thumb(request):
     try:
         path = _resolve(request.query.get("path", ""))
-        thumb = await asyncio.get_running_loop().run_in_executor(_THUMBS, _make_thumb, path)
-        return web.Response(status=204) if not thumb else web.FileResponse(thumb, headers={"Cache-Control": "public, max-age=604800"})
+        thumb = await asyncio.to_thread(_cached_thumb, path)
+        if not thumb:
+            thumb = await _THUMB_SCHEDULER.get(path, request)
+        if thumb is _ABANDONED or thumb is _BUSY:
+            # Not an error: the client went away, or the machine is too busy.
+            return web.Response(status=503, headers={"Retry-After": str(_THUMB_BUSY_RETRY_SECONDS), "Cache-Control": "no-store"})
+        if not thumb:
+            return web.Response(status=204)
+        return web.FileResponse(thumb, headers={"Cache-Control": "public, max-age=604800"})
     except Exception:
         return web.Response(status=204)
 
