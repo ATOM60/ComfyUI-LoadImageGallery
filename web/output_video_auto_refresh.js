@@ -2,22 +2,13 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputVideoAutoRefresh";
-const LANG_KEY = "ComfyUI-LoadImageGallery.language";
 const FOLDER_KEY = "ComfyUI-LoadImageGallery.outputVideoFolder";
 const FALLBACK_CHECK_MS = 5000;
 const TICK_MS = 1000;
 const MIN_EVENT_CHECK_GAP_MS = 500;
 const EVENT_RETRY_DELAYS = [350, 1000, 2200, 4500, 8000];
 
-const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
-    .toLowerCase().startsWith("ru");
-
-const TEXT = RU ? {
-    help: "Список видео обновляется автоматически. Текущая папка проверяется напрямую, после завершения генерации выполняется несколько повторных проверок, а пока галерея открыта — дополнительная фоновая проверка примерно раз в 5 секунд.",
-} : {
-    help: "The video list refreshes automatically. The selected folder is checked directly, several retry checks run after generation completes, and an additional background check runs about every 5 seconds while the gallery is open.",
-};
-
+// The help text lives in help_scenarios.js (scenario 9).
 const modalState = new WeakMap();
 const eventTimers = new Set();
 let tickTimer = 0;
@@ -194,21 +185,6 @@ function scheduleEventChecks() {
     }
 }
 
-function installHelp(root=document) {
-    const overlays=[];
-    if (root instanceof HTMLElement && root.classList.contains("ovg-help-overlay")) overlays.push(root);
-    root.querySelectorAll?.(".ovg-help-overlay").forEach(el=>overlays.push(el));
-    for (const overlay of overlays) {
-        if (!(overlay instanceof HTMLElement) || overlay.dataset.ovgAutoRefreshHelp === "1") continue;
-        const body=overlay.querySelector(".ovg-help-body");
-        if (!(body instanceof HTMLElement)) continue;
-        overlay.dataset.ovgAutoRefreshHelp="1";
-        const lists=body.querySelectorAll("ul");
-        const list=lists.length ? lists[lists.length-1] : null;
-        if (list) { const li=document.createElement("li"); li.textContent=TEXT.help; list.appendChild(li); }
-    }
-}
-
 app.registerExtension({
     name:EXT_NAME,
     setup() {
@@ -244,7 +220,6 @@ app.registerExtension({
             for (const record of records) {
                 for (const node of record.addedNodes) {
                     if (!(node instanceof Element)) continue;
-                    installHelp(node);
                     if (node.classList.contains("ovg-modal")) { modalAdded=true; modalChanged=true; }
                 }
                 for (const node of record.removedNodes) {

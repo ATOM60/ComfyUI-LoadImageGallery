@@ -11,14 +11,12 @@ const TEXT = RU ? {
     unsupported: "ComfyUI умеет читать workflow из MP4, MOV, M4V и WebM.",
     failed: "Не удалось открыть workflow из видео",
     noWorkflow: "В видео не найден workflow ComfyUI",
-    help: "В контекстном меню видео есть «Открыть как workflow». Для MP4, MOV, M4V и WebM с сохранёнными метаданными ComfyUI будет загружен встроенный workflow.",
 } : {
     open: "Open as workflow",
     loading: "Loading workflow from video…",
     unsupported: "ComfyUI can read workflows from MP4, MOV, M4V and WebM videos.",
     failed: "Could not open workflow from video",
     noWorkflow: "No ComfyUI workflow was found in this video",
-    help: "The video context menu includes “Open as workflow”. For MP4, MOV, M4V and WebM files with ComfyUI metadata, the embedded workflow is loaded.",
 };
 
 let lastContext = null;
@@ -118,20 +116,7 @@ function installMenu(menu) {
     });
 }
 
-function updateHelp(root) {
-    const overlay = root instanceof HTMLElement && root.classList.contains("ovg-help-overlay")
-        ? root
-        : root.querySelector?.(".ovg-help-overlay");
-    if (!(overlay instanceof HTMLElement) || overlay.dataset.ovgWorkflowHelp === "1") return;
-    const lists = overlay.querySelectorAll(".ovg-help-body ul");
-    const list = lists.length ? lists[lists.length - 1] : null;
-    if (!(list instanceof HTMLElement)) return;
-    overlay.dataset.ovgWorkflowHelp = "1";
-    const li = document.createElement("li");
-    li.textContent = TEXT.help;
-    list.appendChild(li);
-}
-
+// The help text lives in help_scenarios.js (scenario 12).
 app.registerExtension({
     name: EXT_NAME,
     setup() {
@@ -145,7 +130,6 @@ app.registerExtension({
         }, true);
 
         document.querySelectorAll(".ovg-menu").forEach(installMenu);
-        updateHelp(document);
 
         const observer = new MutationObserver(records => {
             for (const record of records) {
@@ -153,7 +137,6 @@ app.registerExtension({
                     if (!(node instanceof Element)) continue;
                     if (node.classList.contains("ovg-menu")) installMenu(node);
                     node.querySelectorAll?.(".ovg-menu").forEach(installMenu);
-                    updateHelp(node);
                 }
             }
         });

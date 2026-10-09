@@ -11,11 +11,9 @@ const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
 const TEXT = RU ? {
     add: "Добавить в избранное",
     remove: "Убрать из избранного",
-    help: "Сердечко под видео добавляет его в избранное. Избранные видео показываются в начале галереи.",
 } : {
     add: "Add to favorites",
     remove: "Remove from favorites",
-    help: "Use the heart under a video to add it to favorites. Favorite videos are shown first in the gallery.",
 };
 
 function normalizePath(value) {
@@ -272,26 +270,12 @@ function uninstallModal(modal) {
     modalStates.delete(modal);
 }
 
-function updateHelp(root) {
-    const overlay = root instanceof HTMLElement && root.classList.contains("ovg-help-overlay")
-        ? root
-        : root.querySelector?.(".ovg-help-overlay");
-    if (!(overlay instanceof HTMLElement) || overlay.dataset.ovgFavoritesHelp === "1") return;
-    const lists = overlay.querySelectorAll(".ovg-help-body ul");
-    const list = lists.length ? lists[lists.length - 1] : null;
-    if (!(list instanceof HTMLElement)) return;
-    overlay.dataset.ovgFavoritesHelp = "1";
-    const item = document.createElement("li");
-    item.textContent = TEXT.help;
-    list.appendChild(item);
-}
-
+// The help text lives in help_scenarios.js (scenario 13).
 app.registerExtension({
     name: EXT_NAME,
     setup() {
         injectStyles();
         document.querySelectorAll(".ovg-modal").forEach(installModal);
-        updateHelp(document);
 
         const observer = new MutationObserver(records => {
             for (const record of records) {
@@ -299,7 +283,6 @@ app.registerExtension({
                     if (!(node instanceof Element)) continue;
                     if (node.classList.contains("ovg-modal")) installModal(node);
                     node.querySelectorAll?.(".ovg-modal").forEach(installModal);
-                    updateHelp(node);
                 }
                 for (const node of record.removedNodes) {
                     if (!(node instanceof Element)) continue;

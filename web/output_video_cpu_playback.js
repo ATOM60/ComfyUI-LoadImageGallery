@@ -20,13 +20,11 @@ const TEXT = RU ? {
     play:"Воспроизвести", pause:"Пауза", prev:"Предыдущее видео", next:"Следующее видео",
     speed:"Скорость воспроизведения", volume:"Громкость", fullscreen:"На весь экран",
     exitFullscreen:"Выйти из полноэкранного режима", error:"Ошибка CPU-проигрывания",
-    help:"Переключатель CPU в верхней строке переносит декодирование видео на процессор. CPU и GPU используют одну и ту же оболочку плеера и отличаются только способом декодирования.",
 } : {
     cpu:"CPU", enable:"CPU playback: decode video on the processor", disable:"Normal video playback",
     play:"Play", pause:"Pause", prev:"Previous video", next:"Next video",
     speed:"Playback speed", volume:"Volume", fullscreen:"Fullscreen",
     exitFullscreen:"Exit fullscreen", error:"CPU playback error",
-    help:"The CPU switch moves decoding to the processor. CPU and GPU use the same player shell and differ only in decoding.",
 };
 
 const states = new Set();
@@ -504,18 +502,7 @@ function scan(root=document) {
     root.querySelectorAll?.(".ovg-modal").forEach(installModal);
 }
 
-function updateHelp(root) {
-    const overlay=root instanceof HTMLElement&&root.classList.contains("ovg-help-overlay")?root:root.querySelector?.(".ovg-help-overlay");
-    if(!(overlay instanceof HTMLElement)||overlay.dataset.ovgCpuHelp==="1")return;
-    const lists=overlay.querySelectorAll(".ovg-help-body ul");
-    const list=lists.length?lists[lists.length-1]:null;
-    if(!(list instanceof HTMLElement))return;
-    overlay.dataset.ovgCpuHelp="1";
-    const li=document.createElement("li");
-    li.textContent=TEXT.help;
-    list.appendChild(li);
-}
-
+// The help text lives in help_scenarios.js (scenario 11).
 function activeCpuState() {
     for(const state of states)if(state.cpuOn&&state.modal?.isConnected)return state;
     return null;
@@ -526,7 +513,6 @@ app.registerExtension({
     setup(){
         injectStyles();
         scan();
-        updateHelp(document);
 
         document.addEventListener("click",event=>{
             const button=event.target.closest?.(".ovg-menu button[data-action='open']");
@@ -546,7 +532,6 @@ app.registerExtension({
                 for(const node of record.addedNodes){
                     if(!(node instanceof Element))continue;
                     scan(node);
-                    updateHelp(node);
                 }
                 for(const node of record.removedNodes){
                     if(!(node instanceof Element))continue;

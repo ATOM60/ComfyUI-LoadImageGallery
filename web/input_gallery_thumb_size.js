@@ -11,14 +11,11 @@ const DEFAULT_SIZE = 150;
 const RU = String(localStorage.getItem(LANG_KEY) || navigator.language || "en")
     .toLowerCase().startsWith("ru");
 
+// The help text lives in help_scenarios.js (scenario 8).
 const TEXT = RU ? {
     title: "Размер превью",
-    helpTitle: "Размер превью",
-    helpText: "Ползунок справа от поиска меняет размер карточек и превью изображений. Выбранный масштаб запоминается.",
 } : {
     title: "Preview size",
-    helpTitle: "Preview size",
-    helpText: "The slider to the right of search changes image card and preview size. The selected size is remembered.",
 };
 
 function clampSize(value) {
@@ -164,30 +161,9 @@ function installOverlay(overlay) {
     });
 }
 
-function installHelp(overlay) {
-    if (!(overlay instanceof HTMLElement) || overlay.dataset.cigThumbSizeHelp === "1") return;
-    const box = overlay.firstElementChild;
-    const content = box?.lastElementChild;
-    if (!(content instanceof HTMLElement)) return;
-
-    overlay.dataset.cigThumbSizeHelp = "1";
-    const row = document.createElement("div");
-    row.style.cssText = "padding:10px 0;border-bottom:1px solid #303030";
-    const title = document.createElement("div");
-    title.style.cssText = "font-weight:700;font-size:14px;margin-bottom:4px";
-    title.textContent = TEXT.helpTitle;
-    const text = document.createElement("div");
-    text.style.cssText = "font-size:13px;line-height:1.45;color:#bbb";
-    text.textContent = TEXT.helpText;
-    row.append(title, text);
-    content.appendChild(row);
-}
-
 function scan(root = document) {
     if (root instanceof HTMLElement && root.classList.contains("cig-overlay")) installOverlay(root);
-    if (root instanceof HTMLElement && root.classList.contains("cig-help-overlay")) installHelp(root);
     root.querySelectorAll?.(".cig-overlay").forEach(installOverlay);
-    root.querySelectorAll?.(".cig-help-overlay").forEach(installHelp);
 }
 
 app.registerExtension({

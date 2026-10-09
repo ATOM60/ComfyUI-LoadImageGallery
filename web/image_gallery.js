@@ -2,6 +2,7 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { installGalleryPreviewNavigation } from "./preview_navigation.js";
 import { holdToZoom } from "./hold_zoom.js";
+import { helpScenarios, renderScenarios } from "./help_scenarios.js";
 
 const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
@@ -252,52 +253,15 @@ function makeFolderPreviewLoader(root, cache) {
 // CIG_HELP_SAFE_V1
 function showCigHelp(){
     document.querySelector(".cig-help-overlay")?.remove();
-    const ru=(typeof CIG_LANG!=="undefined"&&CIG_LANG==="ru");
-    const rows=ru?[
-        ["Открытие галереи","Нажмите на превью изображения в ноде. Стрелки по краям превью переключают изображения текущей папки."],
-        ["Выбор изображений","Один клик выбирает или снимает изображение. Двойной клик загружает изображение в ноду."],
-        ["Увеличение","Удерживайте левую кнопку мыши на превью в галерее или в ноде: изображение откроется на весь экран, увеличенным в 6 раз. Не отпуская кнопку, водите мышью — увеличенный участок следует за курсором. Отпустите кнопку, чтобы закрыть окно; выделение при этом не меняется."],
-        ["Выделение мышью","Проведите рамкой по изображениям. Выделение накапливается и сохраняется при прокрутке."],
-        ["Автопрокрутка","Во время рамочного выделения подведите курсор к верхнему или нижнему краю галереи для автоматической прокрутки."],
-        ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
-        // CIG_HELP_NEW_FEATURES_V1
-        ["Папки","Двойной клик открывает папку. На карточке папки — до четырёх миниатюр и число изображений; если изображений нет, показываются миниатюры из вложенных папок. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
-        ["Подпапки","Кнопка «Подпапки» в верхней строке показывает все изображения папки и всех её подпапок любой глубины одним списком, как будто они лежат прямо в этой папке; карточки подпапок при этом скрываются. Полный путь изображения виден во всплывающей подсказке. Выделение, наборы и СТАРТ работают со всем списком, а стрелки у превью в ноде листают тот же список, из которого выбрано изображение, в том же порядке. Настройка запоминается. Показывается не больше 20 000 изображений — если список обрезан, это видно в счётчике внизу."],
-        ["Последние папки","До 10 последних внешних папок сохраняются в списке."],
-        ["Любимые","Нажмите ♡ в правом верхнем углу превью. Любимые изображения отмечаются ♥ и всегда располагаются выше остальных. Повторное нажатие снимает отметку."],
-        ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
-        ["Меню изображения","Правый клик по изображению открывает команды Сохранить, Копировать и Вставить. Вставка помещает изображение в текущую открытую папку."],
-        ["Кэш","Используется постоянный кэш миниатюр и быстрый кэш браузера. Очистка кэша удаляет постоянные миниатюры и меняет версию браузерного кэша; после обновления папки миниатюры создаются заново один раз."],
-        ["Наборы","Кнопка «Наборы» в нижней панели сохраняет текущее выделение под именем. Сохраняется и порядок выделения. Набор можно загрузить, переименовать, заменить текущим выделением, добавить или убрать выделенные изображения и удалить."],
-        ["Старт набора","Откройте ⋮ у сохранённого набора и нажмите «Старт», чтобы сразу поставить весь набор в очередь в сохранённом порядке, не загружая его предварительно в текущее выделение."],
-        ["СТАРТ","Ставит выбранные изображения в очередь. После запуска постановка продолжается независимо от того, открыта галерея или уже закрыта."],
-        ["Закрытие","Кнопка ✕ закрывает галерею. Двойной клик по изображению загружает его в ноду и также закрывает галерею. Esc и клик вне окна галерею не закрывают."]
-    ]:[
-        ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
-        ["Select images","Single click selects or deselects an image. Double click loads the image into the node."],
-        ["Zoom","Hold the left mouse button on a thumbnail in the gallery or on the node preview: the image opens full screen, magnified 6×. Keep the button down and move the mouse — the magnified spot follows the pointer. Release the button to close it; the selection does not change."],
-        ["Mouse selection","Drag a rectangle across images. Selection accumulates and remains selected while scrolling."],
-        ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
-        ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
-        ["Folders","Double-click a folder to open it. Folder cards show up to four thumbnails and the image count; folders without images of their own show thumbnails from their subfolders. ↑ goes up one level. The … button opens an external folder picker."],
-        ["Subfolders","The Subfolders button in the top bar shows every image of the folder and all of its subfolders, at any depth, as one flat list, as if they all lay directly in this folder; subfolder cards are hidden. An image's full path is shown in its tooltip. Selection, sets and START work across the whole list, and the arrows beside the node preview walk the same list the image was picked from, in the same order. The setting is remembered. At most 20,000 images are listed; the counter at the bottom says when the list was cut off."],
-        ["Recent folders","Up to 10 recently used external folders are kept in the list."],
-        ["Favorites","Tap ♡ in the top-right corner of a thumbnail. Favorites are marked ♥ and always stay above regular images. Tap again to remove the favorite."],
-        ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
-        ["Image menu","Right-click an image for Save Image, Copy Image, and Paste Image. Paste places the clipboard image into the currently open folder."],
-        ["Cache","The gallery uses a persistent thumbnail cache plus a fast browser cache. Clear cache removes persistent thumbnails and changes the browser-cache version; refreshing the folder rebuilds thumbnails once."],
-        ["Sets","The Sets button in the bottom bar saves the current selection by name, including its selection order. A set can be loaded, renamed, replaced by the current selection, extended, trimmed, or deleted."],
-        ["Start a set","Open ⋮ for a saved set and press Start to queue the whole set immediately in its saved order without first loading it into the current selection."],
-        ["START","Queues the selected images. Once started, queueing continues even if the gallery is closed."],
-        ["Closing","The ✕ button closes the gallery. Double-clicking an image loads it into the node and also closes the gallery. Escape and clicking outside do not close it."]
-    ];
+    // CIG_SCENARIO_HELP_V2: scenarios 1–8 from help_scenarios.js (same numbering as the README).
+    const help=helpScenarios(CIG_LANG);
     const ov=document.createElement("div");ov.className="cig-help-overlay";ov.dataset.cigHelpClosePatched="1";ov.style.cssText="position:fixed;inset:0;z-index:100100;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:20px";
     const box=document.createElement("div");box.style.cssText="width:min(620px,94vw);max-height:86vh;overflow:auto;background:#1d1d1d;color:#eee;border:1px solid #555;border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.65);font-family:Arial,sans-serif";
     const head=document.createElement("div");head.style.cssText="position:sticky;top:0;z-index:2;min-height:34px;padding:15px 120px 15px 18px;border-bottom:1px solid #383838;background:#1d1d1d;box-sizing:border-box";
-    const title=document.createElement("div");title.style.cssText="font-size:18px;font-weight:700;line-height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";title.textContent=ru?"Инструкция — Load Image Gallery":"Load Image Gallery Help";
-    const x=document.createElement("button");x.type="button";x.textContent=ru?"Закрыть":"Close";x.title=x.textContent;x.style.cssText="all:unset;box-sizing:border-box;position:absolute;right:18px;top:15px;width:84px;height:34px;display:flex;align-items:center;justify-content:center;background:#2c2c2c;color:#eee;border:1px solid #555;border-radius:7px;cursor:pointer;font:500 13px/1 Arial,sans-serif;white-space:nowrap;text-align:center";
+    const title=document.createElement("div");title.style.cssText="font-size:18px;font-weight:700;line-height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";title.textContent=help.imageTitle;
+    const x=document.createElement("button");x.type="button";x.textContent=CIG_LANG==="ru"?"Закрыть":"Close";x.title=x.textContent;x.style.cssText="all:unset;box-sizing:border-box;position:absolute;right:18px;top:15px;width:84px;height:34px;display:flex;align-items:center;justify-content:center;background:#2c2c2c;color:#eee;border:1px solid #555;border-radius:7px;cursor:pointer;font:500 13px/1 Arial,sans-serif;white-space:nowrap;text-align:center";
     const content=document.createElement("div");content.style.cssText="padding:10px 18px 18px";
-    for(const [a,b] of rows){const r=document.createElement("div");r.style.cssText="padding:10px 0;border-bottom:1px solid #303030";const n=document.createElement("div");n.style.cssText="font-weight:700;font-size:14px;margin-bottom:4px";n.textContent=a;const t=document.createElement("div");t.style.cssText="font-size:13px;line-height:1.45;color:#bbb";t.textContent=b;r.append(n,t);content.appendChild(r);}
+    renderScenarios(content,help.images,help.imageFooter);
     head.append(title,x);box.append(head,content);ov.appendChild(box);document.body.appendChild(ov);
     x.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();ov.remove();});
 }
