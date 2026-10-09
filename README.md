@@ -85,6 +85,7 @@ You can:
 
 - search by filename;
 - sort by name, date or file size;
+- press **Subfolders** to show the folder's images together with all images from its subfolders;
 - change preview size;
 - add images to favorites;
 - copy, paste and save images from the context menu.

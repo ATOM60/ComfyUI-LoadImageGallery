@@ -203,16 +203,54 @@ def _load_external_image(path: str):
         raise ValueError(f"Unable to load image: {path}")
     return (torch.cat(output_images, dim=0).to(device=device, dtype=dtype), torch.cat(output_masks, dim=0).to(device=device, dtype=dtype))
 
-def _image_files_in_dir(full_dir: str):
-    if not os.path.isdir(full_dir):
-        return []
-    names = [name for name in os.listdir(full_dir) if os.path.isfile(os.path.join(full_dir, name))]
+def _filter_image_names(names: list[str]) -> list[str]:
     try:
         names = folder_paths.filter_files_content_types(names, ["image"])
     except Exception:
         exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
         names = [name for name in names if os.path.splitext(name)[1].lower() in exts]
     return sorted(names, key=str.casefold)
+
+
+def _image_files_in_dir(full_dir: str):
+    if not os.path.isdir(full_dir):
+        return []
+    names = [name for name in os.listdir(full_dir) if os.path.isfile(os.path.join(full_dir, name))]
+    return _filter_image_names(names)
+
+
+# CIG_RECURSIVE_LIST_V1
+# "Include subfolders" lists every image below a folder. Names are relative to
+# that folder ("sub/a.png"), so the client keeps addressing images as
+# folder + name. The walk is bounded because an external folder may be a
+# whole drive.
+RECURSIVE_IMAGE_LIMIT = 20000
+RECURSIVE_TIME_LIMIT = 15.0
+_SKIP_DIRS = {"system volume information", "$recycle.bin"}
+
+
+def _image_items_recursive(full_dir: str):
+    images, items = [], []
+    truncated = False
+    deadline = time.monotonic() + RECURSIVE_TIME_LIMIT
+    for current, dirs, files in os.walk(full_dir):
+        dirs[:] = sorted((d for d in dirs if not d.startswith(".") and d.casefold() not in _SKIP_DIRS), key=str.casefold)
+        rel_dir = os.path.relpath(current, full_dir)
+        prefix = "" if rel_dir == "." else Path(rel_dir).as_posix() + "/"
+        for name in _filter_image_names(files):
+            try:
+                st = os.stat(os.path.join(current, name))
+                size, mtime = st.st_size, st.st_mtime
+            except OSError:
+                size = mtime = 0
+            images.append(prefix + name)
+            items.append({"name": prefix + name, "size": size, "mtime": mtime})
+            if len(images) >= RECURSIVE_IMAGE_LIMIT:
+                return images, items, True
+        if time.monotonic() > deadline:
+            truncated = True
+            break
+    return images, items, truncated
 
 
 # CIG_SORT_METADATA_V1
@@ -678,12 +716,20 @@ async def image_gallery_folders(request):
 async def image_gallery_list(request):
     try:
         folder = _normalize_gallery_folder(request.query.get("folder", ""))
+        recursive = request.query.get("recursive", "") in ("1", "true")
         full_dir = _gallery_dir(folder)
-        images = _image_files_in_dir(full_dir)
         folders = _subfolders_in_dir(full_dir)
-        items = await asyncio.to_thread(_image_items_in_dir, full_dir, images)
-        await asyncio.to_thread(_cleanup_orphans_for_folder, folder, images)
-        return web.json_response({"folder": Path(folder).as_posix() if _is_abs_path(folder) else folder, "images": images, "items": items, "folders": folders})
+        truncated = False
+        if recursive:
+            images, items, truncated = await asyncio.to_thread(_image_items_recursive, full_dir)
+            direct = [name for name in images if "/" not in name]
+        else:
+            images = _image_files_in_dir(full_dir)
+            items = await asyncio.to_thread(_image_items_in_dir, full_dir, images)
+            direct = images
+        if not truncated:  # a cut-off list must not evict cached thumbnails
+            await asyncio.to_thread(_cleanup_orphans_for_folder, folder, direct)
+        return web.json_response({"folder": Path(folder).as_posix() if _is_abs_path(folder) else folder, "images": images, "items": items, "folders": folders, "recursive": recursive, "truncated": truncated})
     except FileNotFoundError as exc:
         return web.json_response({"error": f"Folder not found: {exc}"}, status=404)
     except ValueError as exc:

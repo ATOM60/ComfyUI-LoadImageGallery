@@ -6,8 +6,8 @@ const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
 const CIG_LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 const CIG_I18N = {
-    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", loadingList:"Loading list…", up:"Up", clearing:"Clearing…", error:"Error", thumbError:"error" },
-    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", loadingList:"Загрузка списка…", up:"Вверх", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка" }
+    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", loadingList:"Loading list…", up:"Up", clearing:"Clearing…", error:"Error", thumbError:"error", subfolders:"Subfolders", subfoldersTitle:"Also show images from all subfolders of this folder", noImagesDeep:"No images in this folder or its subfolders", truncated:"list cut off" },
+    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", loadingList:"Загрузка списка…", up:"Вверх", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка", subfolders:"Подпапки", subfoldersTitle:"Показывать также изображения из всех подпапок этой папки", noImagesDeep:"В папке и её подпапках нет изображений", truncated:"список обрезан" }
 };
 const cigT = CIG_I18N[CIG_LANG];
 
@@ -30,6 +30,7 @@ function injectStyles() {
 /* CIG_SORT_MENU_V1 */ .cig-sort{flex:0 0 auto;width:40px;height:38px;min-width:40px;padding:0;font-size:21px;line-height:36px}.cig-sort-menu{position:fixed;z-index:100030;min-width:210px;padding:6px;background:#242424;border:1px solid #4b4b4b;border-radius:8px;box-shadow:0 10px 35px rgba(0,0,0,.6)}.cig-sort-menu button{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border:0;border-radius:5px;background:transparent;color:#eee;text-align:left;font-size:14px;cursor:pointer;white-space:nowrap}.cig-sort-menu button:hover{background:#3a3a3a}.cig-sort-menu button.active{color:#9ec8ff;background:#303a46}.cig-sort-check{width:14px;display:inline-block;text-align:center}
 /* CIG_IMAGE_SETS_V1 */ .cig-sets{flex:0 0 auto;height:40px;padding:0 12px;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:13px;cursor:pointer;white-space:nowrap}.cig-sets:hover{background:#3a3a3a}.cig-sets:disabled{opacity:.45;cursor:default}.cig-sets-menu{position:fixed;z-index:100040;width:330px;max-height:min(520px,70vh);overflow:auto;padding:7px;background:#242424;border:1px solid #4b4b4b;border-radius:9px;box-shadow:0 12px 40px rgba(0,0,0,.65)}.cig-sets-menu button{font-family:Arial,sans-serif}.cig-sets-create{width:100%;height:38px;border:0;border-radius:6px;background:#303a46;color:#dcecff;text-align:left;padding:0 11px;cursor:pointer;font-size:13px}.cig-sets-create:hover{background:#38485a}.cig-sets-create:disabled{opacity:.4;cursor:default}.cig-sets-empty{padding:14px 10px;color:#888;font-size:12px;text-align:center}.cig-set-row{margin-top:6px;border:1px solid #3a3a3a;border-radius:7px;overflow:hidden;background:#202020}.cig-set-main{display:flex;align-items:stretch;min-height:38px}.cig-set-load{flex:1;min-width:0;border:0;background:transparent;color:#eee;text-align:left;padding:0 10px;cursor:pointer;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cig-set-load:hover{background:#303030}.cig-set-count{color:#888;margin-left:7px;font-size:11px}.cig-set-more{width:38px;min-width:38px;border:0;border-left:1px solid #383838;background:transparent;color:#bbb;cursor:pointer;font-size:18px}.cig-set-more:hover{background:#333;color:#fff}.cig-set-actions{display:none;padding:6px;border-top:1px solid #383838;background:#1d1d1d}.cig-set-row.editing .cig-set-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}.cig-set-actions button{height:32px;border:1px solid #444;border-radius:5px;background:#2a2a2a;color:#ddd;cursor:pointer;font-size:11px;padding:0 7px}.cig-set-actions button:hover{background:#373737}.cig-set-actions button.danger{color:#ff9b9b}.cig-set-actions button:disabled{opacity:.4;cursor:default}
 /* CIG_FOLDER_PREVIEW_V1 */ .cig-folder-icon{position:relative;overflow:hidden}.cig-folder-icon.has-preview{display:grid;gap:2px;font-size:0;background:#191d22}.cig-folder-icon.has-preview[data-count="1"]{grid-template:1fr/1fr}.cig-folder-icon.has-preview[data-count="2"]{grid-template:1fr/1fr 1fr}.cig-folder-icon.has-preview[data-count="3"],.cig-folder-icon.has-preview[data-count="4"]{grid-template:1fr 1fr/1fr 1fr}.cig-folder-icon.has-preview[data-count="3"] .cig-folder-tile:first-child{grid-row:span 2}.cig-folder-tile{width:100%;height:100%;min-width:0;min-height:0;object-fit:cover;display:block;background:#111;opacity:0;transition:opacity .18s}.cig-folder-tile.loaded{opacity:1}.cig-folder-badge{position:absolute;left:5px;bottom:5px;z-index:2;display:flex;align-items:center;gap:4px;max-width:calc(100% - 10px);padding:2px 7px 2px 5px;border-radius:999px;background:rgba(15,18,22,.82);border:1px solid rgba(120,150,185,.35);color:#dfe8f2;font-size:12px;line-height:18px;pointer-events:none;white-space:nowrap}.cig-folder-badge-icon{font-size:13px}
+/* CIG_RECURSIVE_LIST_V1 */ .cig-header .cig-subfolders{flex:0 0 auto;height:38px;padding:0 12px;margin:0;box-sizing:border-box;border:1px solid rgba(255,255,255,.14);border-radius:6px;background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);font-size:13px;white-space:nowrap;cursor:pointer}.cig-header .cig-subfolders:hover{filter:brightness(1.17)}.cig-header .cig-subfolders.active{background:#303a46;border-color:#6ba7ff;color:#dcecff}.cig-subpath{position:absolute;left:4px;bottom:4px;z-index:2;max-width:calc(100% - 8px);padding:1px 6px;border-radius:999px;background:rgba(15,18,22,.82);border:1px solid rgba(120,150,185,.35);color:#cfe0f2;font-size:10px;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-sizing:border-box}
 @media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
 `;
     document.head.appendChild(style);
@@ -250,6 +251,7 @@ function showCigHelp(){
         ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
         // CIG_HELP_NEW_FEATURES_V1
         ["Папки","Двойной клик открывает папку. На карточке папки — до четырёх миниатюр и число изображений; если изображений нет, показываются миниатюры из вложенных папок. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
+        ["Подпапки","Кнопка «Подпапки» в верхней строке показывает вместе с изображениями папки и все изображения из её подпапок любой глубины. На таких превью внизу слева указана подпапка; поиск ищет и по её имени. Настройка запоминается. Показывается не больше 20 000 изображений — если список обрезан, это видно в счётчике внизу."],
         ["Последние папки","До 10 последних внешних папок сохраняются в списке."],
         ["Любимые","Нажмите ♡ в правом верхнем углу превью. Любимые изображения отмечаются ♥ и всегда располагаются выше остальных. Повторное нажатие снимает отметку."],
         ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
@@ -266,6 +268,7 @@ function showCigHelp(){
         ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
         ["Folders","Double-click a folder to open it. Folder cards show up to four thumbnails and the image count; folders without images of their own show thumbnails from their subfolders. ↑ goes up one level. The … button opens an external folder picker."],
+        ["Subfolders","The Subfolders button in the top bar shows the folder's images together with every image in its subfolders at any depth. Those thumbnails show their subfolder in the bottom-left corner, and search matches subfolder names too. The setting is remembered. At most 20,000 images are listed; the counter at the bottom says when the list was cut off."],
         ["Recent folders","Up to 10 recently used external folders are kept in the list."],
         ["Favorites","Tap ♡ in the top-right corner of a thumbnail. Favorites are marked ♥ and always stay above regular images. Tap again to remove the favorite."],
         ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
@@ -351,6 +354,19 @@ async function openGallery(node){
     ];
     let sortMode=(()=>{try{return localStorage.getItem(CIG_SORT_KEY)||"name-asc";}catch(_){return "name-asc";}})();
     if(!sortChoices.some(x=>x[0]===sortMode))sortMode="name-asc";
+    // CIG_RECURSIVE_LIST_V1
+    // With "Subfolders" on, image names are relative to activeFolder and may
+    // contain "/" ("sub/a.png"); joinPath(activeFolder,name) stays the real path.
+    const CIG_SUBFOLDERS_KEY="ComfyUI-LoadImageGallery.includeSubfolders";
+    let includeSubfolders=(()=>{try{return localStorage.getItem(CIG_SUBFOLDERS_KEY)==="1";}catch(_){return false;}})();
+    let listTruncated=false;
+    function imageLocation(name){
+        const i=name.lastIndexOf("/");
+        if(i<0)return {folder:activeFolder,filename:name,sub:""};
+        const sub=name.slice(0,i);
+        const base=/^[A-Za-z]:\/$/.test(activeFolder)?activeFolder:activeFolder?activeFolder+"/":"";
+        return {folder:base+sub,filename:name.slice(i+1),sub};
+    }
     // CIG_SELECTION_PERSIST_V1
     if(!(node.__cigSelectedPaths instanceof Set)){
         node.__cigSelectedPaths=new Set(Array.isArray(node.__cigSelectedPaths)?node.__cigSelectedPaths:[]);
@@ -385,6 +401,7 @@ async function openGallery(node){
             <div class="cig-title">${cigT.title}</div>
             <input class="cig-search" type="search" placeholder="${cigT.search}">
             <button class="cig-sort" type="button">⇅</button>
+            <button class="cig-subfolders" type="button" title="${cigT.subfoldersTitle}">${cigT.subfolders}</button>
             <button class="cig-refresh" type="button">↻ ${cigT.refresh}</button>
             <button class="cig-close" type="button">✕</button>
         </div>
@@ -414,6 +431,17 @@ async function openGallery(node){
     const setsButton = overlay.querySelector(".cig-sets");
     const cacheInfo = overlay.querySelector(".cig-cache");
     const sortButton = overlay.querySelector(".cig-sort");
+    const subfoldersButton = overlay.querySelector(".cig-subfolders");
+    const syncSubfoldersButton=()=>{subfoldersButton.classList.toggle("active",includeSubfolders);subfoldersButton.setAttribute("aria-pressed",includeSubfolders?"true":"false");};
+    syncSubfoldersButton();
+    subfoldersButton.addEventListener("click",e=>{
+        e.preventDefault();e.stopPropagation();
+        __cigSaveScroll();
+        includeSubfolders=!includeSubfolders;
+        try{localStorage.setItem(CIG_SUBFOLDERS_KEY,includeSubfolders?"1":"0");}catch(_){}
+        syncSubfoldersButton();
+        void loadFolder(activeFolder).catch(error=>{grid.innerHTML="";const e=document.createElement("div");e.className="cig-empty";e.textContent=`${cigT.error}: ${error?.message??error}`;grid.appendChild(e);});
+    });
     const closeButton = overlay.querySelector(".cig-close");
     const helpButton=document.createElement("button");
     helpButton.type="button";
@@ -675,7 +703,7 @@ async function openGallery(node){
     // session only. This intentionally never enters workflow JSON or localStorage.
     if(!(node.__cigScrollByFolder instanceof Map)) node.__cigScrollByFolder = new Map();
     const __cigScrollByFolder = node.__cigScrollByFolder;
-    const __cigScrollKey = (folder, mode=sortMode) => `${normalizeNavPath(folder)}\u0000${mode}`;
+    const __cigScrollKey = (folder, mode=sortMode) => `${normalizeNavPath(folder)}\u0000${mode}${includeSubfolders?"\u0000deep":""}`;
     const __cigSaveScroll = () => {
         if(filterText.trim()) return;
         __cigScrollByFolder.set(__cigScrollKey(activeFolder), Math.max(0, Number(body.scrollTop) || 0));
@@ -740,7 +768,7 @@ async function openGallery(node){
             const relative=active.__cigRelative;
             if(!relative)return;
             setWidgetValue(node,relative);
-            node.__cigFolder=splitPath(relative).folder;
+            node.__cigFolder=activeFolder;
             __cigAllowClose=true;
             close();
             return;
@@ -901,7 +929,7 @@ async function openGallery(node){
     bindBatchUi(CIG_BATCH_JOBS.get(node));
 
     function updateCount(filteredLength = images.length){
-        count.textContent = `${filteredLength} / ${images.length} · ${cigT.selected} ${selected.size}`;
+        count.textContent = `${filteredLength} / ${images.length}${listTruncated?` (${cigT.truncated})`:""} · ${cigT.selected} ${selected.size}`;
         updateRunState();
     }
 
@@ -950,7 +978,7 @@ async function openGallery(node){
         if(!filtered.length){
             const e = document.createElement("div");
             e.className = "cig-empty";
-            e.textContent = images.length ? cigT.noMatches : cigT.noImages;
+            e.textContent = images.length ? cigT.noMatches : includeSubfolders ? cigT.noImagesDeep : cigT.noImages;
             grid.appendChild(e);
             renderFolderCards();
             return;
@@ -962,12 +990,13 @@ async function openGallery(node){
 
         for(const filename of filtered){
             const relative = joinPath(activeFolder, filename);
+            const location = imageLocation(filename);
             const card = document.createElement("div");
             card.className = "cig-card" + (selected.has(relative) ? " selected" : "");
             card.tabIndex = -1;
             card.title = relative;
             card.__cigRelative = relative;
-            card.__cigUrl = thumbnailUrl(activeFolder, filename);
+            card.__cigUrl = thumbnailUrl(location.folder, location.filename);
 
             const wrap = document.createElement("div");
             wrap.className = "cig-thumb-wrap";
@@ -977,12 +1006,18 @@ async function openGallery(node){
             const img = document.createElement("img");
             img.className = "cig-thumb";
             img.decoding = "async";
-            img.alt = filename;
+            img.alt = location.filename;
             wrap.append(ph, img);
+            if(location.sub){
+                const sub = document.createElement("div");
+                sub.className = "cig-subpath";
+                sub.textContent = `📁 ${location.sub}`;
+                wrap.appendChild(sub);
+            }
 
             const name = document.createElement("div");
             name.className = "cig-name";
-            name.textContent = filename;
+            name.textContent = location.filename;
 
             const fav = document.createElement("button");
             fav.type = "button";
@@ -1055,8 +1090,9 @@ async function openGallery(node){
         grid.innerHTML = `<div class="cig-empty">${cigT.loadingList}</div>`;
         count.textContent = "";
 
-        const data = await fetchJson(`/image-gallery/list?folder=${encodeURIComponent(activeFolder)}`);
+        const data = await fetchJson(`/image-gallery/list?folder=${encodeURIComponent(activeFolder)}${includeSubfolders?"&recursive=1":""}`);
         if(token !== loadToken || !overlay.isConnected) return;
+        listTruncated = !!data.truncated;
 
         images = Array.isArray(data.images) ? data.images : [];imageMeta=new Map((Array.isArray(data.items)?data.items:[]).map(x=>[String(x?.name??""),x]));subfolders=Array.isArray(data.folders)?data.folders:[];node.__cigGalleryValues=images.map(name=>joinPath(activeFolder,name));
         node.__cigPreviewNavigation?.setFolderValues(activeFolder, node.__cigGalleryValues);
