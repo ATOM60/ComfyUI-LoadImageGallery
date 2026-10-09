@@ -248,18 +248,19 @@ class _ThumbScheduler:
         key = str(video)
         job = self.jobs.get(key)
         if job is None:
-            job = {"key": key, "video": video, "future": loop.create_future(), "requests": set()}
+            # Keyed by id(): aiohttp requests are mappings and therefore unhashable.
+            job = {"key": key, "video": video, "future": loop.create_future(), "requests": {}}
             self.jobs[key] = job
             self.stack.append(job)
         elif job in self.stack:
             self.stack.remove(job)
             self.stack.append(job)
-        job["requests"].add(request)
+        job["requests"][id(request)] = request
         self._pump()
         try:
             return await asyncio.shield(job["future"])
         finally:
-            job["requests"].discard(request)
+            job["requests"].pop(id(request), None)
 
     def _finish(self, job, result):
         self.jobs.pop(job["key"], None)
@@ -269,7 +270,7 @@ class _ThumbScheduler:
     def _pump(self):
         while self.stack and self.active < self.limit():
             job = self.stack.pop()
-            if not job["requests"] or all(_request_gone(r) for r in job["requests"]):
+            if not job["requests"] or all(_request_gone(r) for r in job["requests"].values()):
                 self._finish(job, _ABANDONED)
                 continue
             self.active += 1
