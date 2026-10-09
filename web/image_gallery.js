@@ -256,7 +256,7 @@ function showCigHelp(){
     const rows=ru?[
         ["Открытие галереи","Нажмите на превью изображения в ноде. Стрелки по краям превью переключают изображения текущей папки."],
         ["Выбор изображений","Один клик выбирает или снимает изображение. Двойной клик загружает изображение в ноду."],
-        ["Увеличение","Удерживайте левую кнопку мыши на превью в галерее или в ноде: откроется окно на всю высоту или ширину экрана с изображением, увеличенным в 6 раз. Не отпуская кнопку, водите мышью — увеличенный участок следует за курсором. Отпустите кнопку, чтобы закрыть окно; выделение при этом не меняется."],
+        ["Увеличение","Удерживайте левую кнопку мыши на превью в галерее или в ноде: изображение откроется на весь экран, увеличенным в 6 раз. Не отпуская кнопку, водите мышью — увеличенный участок следует за курсором. Отпустите кнопку, чтобы закрыть окно; выделение при этом не меняется."],
         ["Выделение мышью","Проведите рамкой по изображениям. Выделение накапливается и сохраняется при прокрутке."],
         ["Автопрокрутка","Во время рамочного выделения подведите курсор к верхнему или нижнему краю галереи для автоматической прокрутки."],
         ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
@@ -275,7 +275,7 @@ function showCigHelp(){
     ]:[
         ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
         ["Select images","Single click selects or deselects an image. Double click loads the image into the node."],
-        ["Zoom","Hold the left mouse button on a thumbnail in the gallery or on the node preview: a window filling the screen height or width shows the image magnified 6×. Keep the button down and move the mouse — the magnified spot follows the pointer. Release the button to close it; the selection does not change."],
+        ["Zoom","Hold the left mouse button on a thumbnail in the gallery or on the node preview: the image opens full screen, magnified 6×. Keep the button down and move the mouse — the magnified spot follows the pointer. Release the button to close it; the selection does not change."],
         ["Mouse selection","Drag a rectangle across images. Selection accumulates and remains selected while scrolling."],
         ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],

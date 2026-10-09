@@ -390,7 +390,7 @@ test('holding the button on the preview zooms the image instead of opening the g
     hold.used = true;
     f.click(f.preview.__cigImageRect);
     assert.equal(f.opens, 0, 'a press that opened the zoom does not open the gallery');
-    assert.deepEqual(seen[0].source, { src: 'view?filename=a.png', width: 1600, height: 900 });
+    assert.deepEqual(seen[0].source, { src: 'view?filename=a.png' });
     assert.equal(seen[0].event.button, 0, 'the zoom watches the original pointer-down event');
     hold.used = false;
     f.click(f.preview.__cigImageRect);

@@ -303,7 +303,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
                 // Holding the button shows the image ×6 instead of opening the gallery.
                 const image = this.__cigImage;
                 if (holdToZoom && image?.src) {
-                    hold = holdToZoom(pointer?.eDown, { src: image.currentSrc || image.src, width: image.naturalWidth, height: image.naturalHeight });
+                    hold = holdToZoom(pointer?.eDown, { src: image.currentSrc || image.src });
                 }
             }
             if (!action) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;

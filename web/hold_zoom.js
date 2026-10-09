@@ -1,10 +1,9 @@
 // CIG_HOLD_ZOOM_V1
-// Hold the left mouse button on an image to see it magnified ×6 in a window
-// that fills the screen height or width (whichever the image's proportions
-// allow). While the button is held the magnified spot follows the pointer:
-// the image point under the pointer is the one it would be under if the image
-// were shown fitted to that window, so every edge can be reached. Releasing
-// the button closes the window.
+// Hold the left mouse button on an image to see it full screen, magnified ×6
+// relative to the image fitted to the screen. While the button is held the
+// magnified spot follows the pointer: the pointer's relative position on the
+// screen is the relative point of the image under it, so the screen edges
+// reach the image edges. Releasing the button closes the window.
 //
 // Shared by the input gallery cards and the node preview. No side effects on
 // import, so ComfyUI may also load this file as an extension module.
@@ -20,7 +19,7 @@ function injectStyles() {
     style.id = STYLE_ID;
     style.textContent = `
 .cig-hold-zoom{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.88);pointer-events:none;user-select:none}
-.cig-hold-zoom-frame{position:absolute;overflow:hidden;background:#000;visibility:hidden}
+.cig-hold-zoom-frame{position:absolute;inset:0;overflow:hidden;background:#000;visibility:hidden}
 .cig-hold-zoom-frame img{position:absolute;left:0;top:0;max-width:none;max-height:none;display:block;will-change:transform}
 .cig-hold-zoom-badge{position:absolute;right:10px;top:8px;padding:2px 8px;border-radius:999px;background:rgba(0,0,0,.62);color:#fff;font:600 12px/18px Arial,sans-serif}
 `;
@@ -31,9 +30,8 @@ const clamp01 = value => Math.min(1, Math.max(0, value));
 
 /**
  * Opens the zoom window at once. `source.src` is the full-resolution image;
- * `source.previewSrc` (optional) is shown while it loads. `width`/`height`
- * are the natural size when already known. Closes on button release, Escape,
- * or window blur. Returns { close }.
+ * `source.previewSrc` (optional) is shown while it loads. Closes on button
+ * release, Escape, or window blur. Returns { close }.
  */
 export function openHoldZoom(source, clientX, clientY) {
     injectStyles();
@@ -42,56 +40,58 @@ export function openHoldZoom(source, clientX, clientY) {
     root.className = "cig-hold-zoom";
     const frame = document.createElement("div");
     frame.className = "cig-hold-zoom-frame";
-    const view = document.createElement("img");
-    view.alt = "";
-    view.draggable = false;
-    view.decoding = "async";
     const badge = document.createElement("div");
     badge.className = "cig-hold-zoom-badge";
     badge.textContent = `×${zoom}`;
-    frame.append(view, badge);
+    frame.append(badge);
     root.appendChild(frame);
     document.body.appendChild(root);
 
-    let naturalW = Number(source.width) || 0, naturalH = Number(source.height) || 0;
-    let x = clientX, y = clientY, W = 0, H = 0, left = 0, top = 0, closed = false;
+    let view = null, shownRank = 0;
+    let naturalW = 0, naturalH = 0;
+    let x = clientX, y = clientY, zoomedW = 0, zoomedH = 0, closed = false;
 
+    // Pointer at fraction u of the screen shows image fraction u under it; a
+    // side narrower than the screen even when zoomed is centred instead.
+    const offset = (pointer, screen, zoomed) => zoomed <= screen
+        ? (screen - zoomed) / 2
+        : -clamp01(pointer / screen) * (zoomed - screen);
     function position() {
-        if (!W || !H) return;
-        // Same relative point under the pointer in the fitted and zoomed image.
-        const u = clamp01((x - left) / W), v = clamp01((y - top) / H);
-        view.style.transform = `translate(${-u * (zoom - 1) * W}px,${-v * (zoom - 1) * H}px)`;
+        if (!view || !zoomedW || !zoomedH) return;
+        view.style.transform = `translate(${offset(x, innerWidth, zoomedW)}px,${offset(y, innerHeight, zoomedH)}px)`;
     }
     function layout() {
-        if (!naturalW || !naturalH) return;
-        const scale = Math.min(innerWidth / naturalW, innerHeight / naturalH);
-        W = naturalW * scale; H = naturalH * scale;
-        left = (innerWidth - W) / 2; top = (innerHeight - H) / 2;
-        Object.assign(frame.style, { left: `${left}px`, top: `${top}px`, width: `${W}px`, height: `${H}px`, visibility: "visible" });
-        view.style.width = `${W * zoom}px`;
-        view.style.height = `${H * zoom}px`;
+        if (!view || !naturalW || !naturalH) return;
+        const fitted = Math.min(innerWidth / naturalW, innerHeight / naturalH);
+        zoomedW = naturalW * fitted * zoom; zoomedH = naturalH * fitted * zoom;
+        view.style.width = `${zoomedW}px`;
+        view.style.height = `${zoomedH}px`;
         position();
     }
-    function show(url, w, h) {
-        if (closed) return;
-        if (w && h) { naturalW = w; naturalH = h; }
-        view.src = url;
-        layout();
+    // Each image is decoded off-screen and swapped in only when ready, so the
+    // window never flashes black and the original replaces the thumbnail
+    // seamlessly. `rank` keeps a late thumbnail from replacing the original.
+    function load(url, rank) {
+        if (!url) return;
+        const img = new Image();
+        img.alt = "";
+        img.draggable = false;
+        img.decoding = "async";
+        img.src = url;
+        img.decode().catch(() => {}).then(() => {
+            if (closed || rank <= shownRank || !img.naturalWidth || !img.naturalHeight) return;
+            shownRank = rank;
+            naturalW = img.naturalWidth; naturalH = img.naturalHeight;
+            view?.remove();
+            view = img;
+            frame.prepend(img);
+            layout();
+            frame.style.visibility = "visible";
+        });
     }
 
-    const full = source.src;
-    if (naturalW && naturalH) show(full, naturalW, naturalH);
-    else {
-        if (source.previewSrc) {
-            const preview = new Image();
-            preview.onload = () => { if (!view.getAttribute("src")) show(source.previewSrc, preview.naturalWidth, preview.naturalHeight); };
-            preview.src = source.previewSrc;
-        }
-        const original = new Image();
-        original.decoding = "async";
-        original.onload = () => show(full, original.naturalWidth, original.naturalHeight);
-        original.src = full;
-    }
+    load(source.src, 2);
+    load(source.previewSrc, 1);
 
     // Browsers already coalesce pointermove to one event per frame, and a
     // requestAnimationFrame here would stall in a hidden or throttled tab.
