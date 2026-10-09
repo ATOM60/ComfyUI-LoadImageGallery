@@ -575,6 +575,10 @@ app.registerExtension({
             // retried, and loaded thumbnails survive grid re-renders.
             const OVG_THUMB_PARALLEL = 2;
             const OVG_THUMB_RETRY_MS = [1500, 4000, 9000];
+            // "Busy" (503) means the server is still making the thumbnail (slow
+            // during inference, or the video is still being written). Keep
+            // polling while the card is visible instead of giving up.
+            const OVG_THUMB_BUSY_RETRY_MS = 6000;
             const OVG_THUMB_BLOB_LIMIT = 600;
 
             function thumbHolderBusy(card) {
@@ -630,10 +634,13 @@ app.registerExtension({
                 state.thumbActive++;
                 const controller = new AbortController();
                 t.controller = controller;
-                let retry = false;
+                let retry = false, busy = false;
                 try {
-                    const response = await fetch(t.url, { signal:controller.signal, cache:"force-cache" });
+                    // "default", not "force-cache": force-cache would reuse a stale
+                    // empty answer stored while the video was still being written.
+                    const response = await fetch(t.url, { signal:controller.signal });
                     if (response.status === 204) { t.done = true; showThumbFallback(card); return; }
+                    if (response.status === 503) { retry = busy = true; return; }
                     if (!response.ok) { retry = true; return; }
                     const blob = await response.blob();
                     if (!blob.size) { retry = true; return; }
@@ -646,7 +653,7 @@ app.registerExtension({
                     if (t.controller === controller) t.controller = null;
                     state.thumbActive = Math.max(0, state.thumbActive - 1);
                     if (retry && card.isConnected) {
-                        const delay = OVG_THUMB_RETRY_MS[t.attempt++];
+                        const delay = OVG_THUMB_RETRY_MS[t.attempt++] ?? (busy ? OVG_THUMB_BUSY_RETRY_MS : undefined);
                         if (delay === undefined) { t.done = true; showThumbFallback(card); }
                         else t.retryTimer = setTimeout(() => { t.retryTimer = 0; if (t.visible) enqueueThumb(card); }, delay);
                     }

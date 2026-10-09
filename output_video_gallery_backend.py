@@ -29,8 +29,16 @@ _THUMBS = ThreadPoolExecutor(max_workers=2)
 # CIG_OUTPUT_THUMB_SCHEDULER_V1
 _THUMB_WORKERS_IDLE = 2
 _THUMB_WORKERS_BUSY = 1          # while ComfyUI is executing a prompt
-_THUMB_TIMEOUT = 25
+# A request waits at most _THUMB_WAIT seconds and then answers "busy"; the
+# ffmpeg run itself keeps going (up to _THUMB_FFMPEG_LIMIT) so a slow
+# thumbnail during inference is finished and cached for the client's retry
+# instead of being killed and started over on every attempt.
+_THUMB_WAIT = 20
+_THUMB_FFMPEG_LIMIT = 180
 _THUMB_BUSY_RETRY_SECONDS = 2
+# A video modified this recently may still be being written by the workflow;
+# a failed thumbnail for it is reported as "busy" (retry) rather than "none".
+_THUMB_FRESH_SECONDS = 120
 _FFMPEG = None
 _FFMPEG_CHECKED = False
 
@@ -142,7 +150,7 @@ def _make_thumb(video: Path):
             "-threads", "1", "-ss", "0.25", "-i", str(video),
             "-an", "-sn", "-dn", "-frames:v", "1", "-filter_threads", "1",
             "-vf", "scale='min(640,iw)':-2", "-q:v", "3", "-y", str(tmp),
-        ]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=_THUMB_TIMEOUT,
+        ]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=_THUMB_FFMPEG_LIMIT,
            check=False, creationflags=_low_priority_flags())
         if tmp.exists() and tmp.stat().st_size:
             tmp.replace(thumb)
@@ -155,7 +163,16 @@ def _make_thumb(video: Path):
         if tmp.exists():
             try: tmp.unlink()
             except OSError: pass
+    if _recently_modified(video):
+        raise _ThumbTransientError("video may still be being written")
     return None
+
+
+def _recently_modified(video: Path) -> bool:
+    try:
+        return time.time() - video.stat().st_mtime < _THUMB_FRESH_SECONDS
+    except OSError:
+        return False
 
 
 def _comfy_busy() -> bool:
@@ -329,15 +346,18 @@ async def video_thumb(request):
         path = _resolve(request.query.get("path", ""))
         thumb = await asyncio.to_thread(_cached_thumb, path)
         if not thumb:
-            thumb = await _THUMB_SCHEDULER.get(path, request)
+            try:
+                thumb = await asyncio.wait_for(_THUMB_SCHEDULER.get(path, request), _THUMB_WAIT)
+            except asyncio.TimeoutError:
+                thumb = _BUSY   # ffmpeg keeps running; the retry picks up the result
         if thumb is _ABANDONED or thumb is _BUSY:
             # Not an error: the client went away, or the machine is too busy.
             return web.Response(status=503, headers={"Retry-After": str(_THUMB_BUSY_RETRY_SECONDS), "Cache-Control": "no-store"})
         if not thumb:
-            return web.Response(status=204)
+            return web.Response(status=204, headers={"Cache-Control": "no-store"})
         return web.FileResponse(thumb, headers={"Cache-Control": "public, max-age=604800"})
     except Exception:
-        return web.Response(status=204)
+        return web.Response(status=204, headers={"Cache-Control": "no-store"})
 
 
 @PromptServer.instance.routes.post("/image-gallery/output/clipboard")
