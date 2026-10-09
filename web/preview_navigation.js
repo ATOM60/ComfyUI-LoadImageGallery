@@ -7,12 +7,17 @@ export function installGalleryPreviewNavigation(node, dependencies) {
     const patched = new Map();
     const SORT_KEY = "ComfyUI-LoadImageGallery.sortMode";
     const FAVORITES_KEY = "ComfyUI-LoadImageGallery.favorites";
+    const SUBFOLDERS_KEY = "ComfyUI-LoadImageGallery.includeSubfolders";
     let disposed = false;
+    // The arrows walk `folder`. With the gallery's Subfolders toggle on (`flat`)
+    // that is every image below the folder the image was picked from, in the
+    // same flat order the gallery shows; otherwise the image's own folder.
     let folder = null;
+    let flat = false;
     let values = empty;
     let cachedWidget, cachedValue, cachedOptions, cachedGallery;
     let optionsLength = -1, galleryLength = -1;
-    let cachedSortMode = "", cachedFavoritesRaw = "";
+    let cachedSortMode = "", cachedFavoritesRaw = "", cachedFlat = false, cachedNavFolder;
     let listedFolder = null;
     let listedValues = empty;
     let listedMetaFolder = null;
@@ -46,8 +51,32 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         }
     }
 
-    function compareNames(a, b) {
+    function flatMode() {
+        try { return localStorage.getItem(SUBFOLDERS_KEY) === "1"; }
+        catch (_) { return false; }
+    }
+
+    function navFolder() {
+        const value = node.properties?.__cigNavFolder;
+        return typeof value === "string" ? normalizePath(value) : null;
+    }
+
+    const isAbsolute = path => /^[A-Za-z]:\//.test(path) || path.startsWith("//");
+    const within = (path, scope) => scope ? path.startsWith(scope + "/") : !!path && !isAbsolute(path);
+    const belongs = path => flat ? within(path, folder) : splitPath(path).folder === folder;
+    // Path relative to `folder`: the key of the listing's metadata.
+    const relName = path => folder ? path.slice(folder.length + 1) : path;
+    const baseName = path => path.slice(path.lastIndexOf("/") + 1);
+    // normalizePath() turns a drive root "E:/" into "E:"; the server needs the slash.
+    const apiFolder = value => /^[A-Za-z]:$/.test(value) ? value + "/" : value;
+
+    function compareText(a, b) {
         return String(a).localeCompare(String(b), undefined, { numeric:true, sensitivity:"base" });
+    }
+
+    // File name first, as in the gallery; the path only breaks ties.
+    function compareNames(a, b) {
+        return compareText(baseName(a), baseName(b)) || compareText(a, b);
     }
 
     function orderValues(source) {
@@ -55,17 +84,15 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         const favorites = favoritesFrom(favoritesRaw());
         const meta = listedMetaFolder === folder ? listedMeta : new Map();
         const sorted = [...source].sort((pathA, pathB) => {
-            const nameA = splitPath(pathA).filename;
-            const nameB = splitPath(pathB).filename;
-            const metaA = meta.get(nameA) || {};
-            const metaB = meta.get(nameB) || {};
+            const metaA = meta.get(relName(pathA)) || {};
+            const metaB = meta.get(relName(pathB)) || {};
             switch (mode) {
-                case "name-desc": return -compareNames(nameA, nameB);
-                case "date-desc": return (Number(metaB.mtime) || 0) - (Number(metaA.mtime) || 0) || compareNames(nameA, nameB);
-                case "date-asc": return (Number(metaA.mtime) || 0) - (Number(metaB.mtime) || 0) || compareNames(nameA, nameB);
-                case "size-desc": return (Number(metaB.size) || 0) - (Number(metaA.size) || 0) || compareNames(nameA, nameB);
-                case "size-asc": return (Number(metaA.size) || 0) - (Number(metaB.size) || 0) || compareNames(nameA, nameB);
-                default: return compareNames(nameA, nameB);
+                case "name-desc": return -compareNames(pathA, pathB);
+                case "date-desc": return (Number(metaB.mtime) || 0) - (Number(metaA.mtime) || 0) || compareNames(pathA, pathB);
+                case "date-asc": return (Number(metaA.mtime) || 0) - (Number(metaB.mtime) || 0) || compareNames(pathA, pathB);
+                case "size-desc": return (Number(metaB.size) || 0) - (Number(metaA.size) || 0) || compareNames(pathA, pathB);
+                case "size-asc": return (Number(metaA.size) || 0) - (Number(metaB.size) || 0) || compareNames(pathA, pathB);
+                default: return compareNames(pathA, pathB);
             }
         });
         return [
@@ -81,7 +108,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         const sources = listedFolder === folder ? [listedValues] : [cachedOptions, cachedGallery];
         for (const source of sources) for (const item of source || empty) {
             const path = normalizePath(String(item ?? ""));
-            if (path && splitPath(path).folder === folder && !seen.has(path)) {
+            if (path && belongs(path) && !seen.has(path)) {
                 seen.add(path);
                 collected.push(path);
             }
@@ -99,14 +126,15 @@ export function installGalleryPreviewNavigation(node, dependencies) {
     async function loadFolder() {
         const complete = listedFolder === folder && listedMetaFolder === folder;
         if (disposed || folder === null || complete || request || retryTimer !== null || attempts >= 3) return;
-        const pending = { folder, controller: new AbortController() };
+        const pending = { folder, flat, controller: new AbortController() };
         request = pending;
         attempts++;
         try {
-            const response = await api.fetchApi(`/image-gallery/list?folder=${encodeURIComponent(pending.folder)}`, { signal: pending.controller.signal });
+            const query = `folder=${encodeURIComponent(apiFolder(pending.folder))}${pending.flat ? "&recursive=1" : ""}`;
+            const response = await api.fetchApi(`/image-gallery/list?${query}`, { signal: pending.controller.signal });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (disposed || request !== pending || folder !== pending.folder) return;
+            if (disposed || request !== pending || folder !== pending.folder || flat !== pending.flat) return;
             // A gallery refresh can supply newer filenames while this metadata
             // request is in flight. Keep that list and only fill in its metadata.
             if (listedFolder !== folder) {
@@ -139,19 +167,28 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         const gallery = Array.isArray(node.__cigGalleryValues) ? node.__cigGalleryValues : empty;
         const mode = sortMode();
         const favoriteState = favoritesRaw();
+        const flatNow = flatMode();
+        const nav = navFolder();
         if (observed && widget === cachedWidget && raw === cachedValue && options === cachedOptions &&
             gallery === cachedGallery && options.length === optionsLength && gallery.length === galleryLength &&
-            mode === cachedSortMode && favoriteState === cachedFavoritesRaw) return;
+            mode === cachedSortMode && favoriteState === cachedFavoritesRaw &&
+            flatNow === cachedFlat && nav === cachedNavFolder) return;
         observed = true;
         cachedWidget = widget; cachedValue = raw;
         cachedOptions = options; cachedGallery = gallery;
         optionsLength = options.length; galleryLength = gallery.length;
         cachedSortMode = mode; cachedFavoritesRaw = favoriteState;
+        cachedFlat = flatNow; cachedNavFolder = nav;
         const current = normalizePath(String(raw));
-        const nextFolder = current ? splitPath(current).folder : null;
-        if (nextFolder !== folder) {
+        // An image picked outside the remembered folder walks its own folder (and,
+        // in the flat view, that folder's subfolders).
+        const nextFolder = !current ? null
+            : flatNow && nav !== null && within(current, nav) ? nav : splitPath(current).folder;
+        const nextFlat = flatNow && nextFolder !== null;
+        if (nextFolder !== folder || nextFlat !== flat) {
             cancelRequest();
             folder = nextFolder;
+            flat = nextFlat;
             listedFolder = null;
             listedValues = empty;
             listedMetaFolder = null;
@@ -174,7 +211,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
         const current = normalizePath(String(getImageWidget(node)?.value ?? ""));
         const index = values.indexOf(current);
         const next = values[index < 0 ? (direction < 0 ? values.length - 1 : 0) : (index + direction + values.length) % values.length];
-        node.__cigFolder = splitPath(next).folder;
+        node.__cigFolder = flat ? apiFolder(folder) : splitPath(next).folder;
         setWidgetValue(node, next);
         syncValues();
     }
@@ -282,8 +319,8 @@ export function installGalleryPreviewNavigation(node, dependencies) {
     function setFolderValues(sourceFolder, sourceValues) {
         if (disposed) return;
         syncValues();
-        if (sourceFolder !== folder) return;
-        listedFolder = sourceFolder;
+        if (normalizePath(String(sourceFolder ?? "")) !== folder) return;
+        listedFolder = folder;
         listedValues = sourceValues;
         attempts = 0;
         rebuild();

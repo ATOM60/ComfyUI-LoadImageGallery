@@ -81,7 +81,19 @@ function canvasContext() {
     return ctx;
 }
 
-function fixture(t, { values = ['photos/a.png', 'photos/b.png'], existingPreview = true } = {}) {
+function storage(t, entries = {}) {
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    const map = new Map(Object.entries(entries));
+    const value = { getItem: (key) => map.has(key) ? map.get(key) : null, setItem: (key, v) => map.set(key, String(v)), removeItem: (key) => map.delete(key) };
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value });
+    t.after(() => {
+        if (saved) Object.defineProperty(globalThis, 'localStorage', saved);
+        else delete globalThis.localStorage;
+    });
+    return map;
+}
+
+function fixture(t, { values = ['photos/a.png', 'photos/b.png'], existingPreview = true, properties } = {}) {
     const clock = scheduler(t);
     const image = { name: 'image', value: values[0] ?? 'photos/a.png', options: { values }, callback() {} };
     const preview = previewWidget();
@@ -91,6 +103,7 @@ function fixture(t, { values = ['photos/a.png', 'photos/b.png'], existingPreview
     let dirty = 0;
     const node = {
         widgets: [image, ...(existingPreview ? [preview] : [])],
+        ...(properties ? { properties } : {}),
         pos: [120, 180],
         size: [420, 340],
         imgs: [{ naturalWidth: 1600, naturalHeight: 900 }],
@@ -365,6 +378,53 @@ test('removal clears a pending retry and prevents background folder requests', a
     f.clock.advance(60000);
     await flush();
     assert.equal(f.requests.length, 2, 'disposed nodes cannot retry later');
+});
+
+const SUBFOLDERS = 'ComfyUI-LoadImageGallery.includeSubfolders';
+const SORT = 'ComfyUI-LoadImageGallery.sortMode';
+const treeListing = {
+    images: ['b.png', 'sub/a.png', 'sub/deep/c.png'],
+    items: [{ name: 'b.png', mtime: 2 }, { name: 'sub/a.png', mtime: 1 }, { name: 'sub/deep/c.png', mtime: 3 }],
+};
+
+test('flat Subfolders view walks the whole remembered folder tree in gallery order', async (t) => {
+    storage(t, { [SUBFOLDERS]: '1', [SORT]: 'name-asc' });
+    const f = fixture(t, { values: ['photos/sub/a.png', 'photos/b.png', 'other/x.png'], properties: { __cigNavFolder: 'photos' } });
+    await flush();
+    assert.equal(f.requests.length, 1);
+    assert.match(f.requests[0].url, /folder=photos&recursive=1$/);
+    f.requests[0].resolve({ ok: true, json: async () => treeListing });
+    await flush();
+    await f.draw();
+    const walk = [];
+    for (let i = 0; i < 3; i++) { f.click(f.preview.__cigNextRect); walk.push(f.image.value); }
+    assert.deepEqual(walk, ['photos/b.png', 'photos/sub/deep/c.png', 'photos/sub/a.png'], 'file names interleave across subfolders and wrap');
+    assert.equal(f.node.__cigFolder, 'photos', 'the gallery keeps opening on the remembered folder');
+});
+
+test('flat view sorts by date with metadata keyed by the path below the folder', async (t) => {
+    storage(t, { [SUBFOLDERS]: '1', [SORT]: 'date-desc' });
+    const f = fixture(t, { values: ['photos/sub/deep/c.png'], properties: { __cigNavFolder: 'photos' } });
+    await flush();
+    f.requests[0].resolve({ ok: true, json: async () => treeListing });
+    await flush();
+    await f.draw();
+    f.click(f.preview.__cigNextRect);
+    assert.equal(f.image.value, 'photos/b.png');
+    f.click(f.preview.__cigNextRect);
+    assert.equal(f.image.value, 'photos/sub/a.png');
+});
+
+test('outside the remembered folder, or with the toggle off, the arrows use the image folder', async (t) => {
+    const store = storage(t, { [SUBFOLDERS]: '1' });
+    const f = fixture(t, { values: ['other/x.png'], properties: { __cigNavFolder: 'photos' } });
+    await flush();
+    assert.match(f.requests[0].url, /folder=other&recursive=1$/, 'an image picked elsewhere walks its own tree');
+    f.image.value = 'photos/sub/a.png';
+    store.set(SUBFOLDERS, '0');
+    f.controller.refresh();
+    await flush();
+    assert.match(f.requests.at(-1).url, /folder=photos%2Fsub$/, 'toggle off restores the per-folder listing');
 });
 
 test('execution refresh discovers replacements, and removal aborts requests and restores hooks', async (t) => {

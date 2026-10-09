@@ -120,6 +120,13 @@ function setWidgetValue(node,relativePath,captureState=true){
         }
     }
 }
+// CIG_RECURSIVE_LIST_V1
+const CIG_SUBFOLDERS_KEY="ComfyUI-LoadImageGallery.includeSubfolders";
+function subfoldersEnabled(){try{return localStorage.getItem(CIG_SUBFOLDERS_KEY)==="1";}catch(_){return false;}}
+function isInsideGalleryFolder(path,folder){
+    const p=normalizePath(String(path??"")),f=normalizePath(String(folder??""));
+    return f?p.startsWith(f+"/"):!!p&&!isAbsoluteGalleryPath(p);
+}
 // CIG_DETACHED_BATCH_QUEUE_V1
 // Batch queueing belongs to the node, not to the gallery modal. Closing the
 // gallery only removes its UI; this task keeps queueing the captured image list.
@@ -154,7 +161,8 @@ function startDetachedBatchQueue(node,sourceList){
                 if(!node?.graph)throw new Error("Load Image Gallery node was removed");
                 const relative=list[i];
                 setWidgetValue(node,relative);
-                node.__cigFolder=splitPath(relative).folder;
+                // In the flat subfolder view the gallery stays on the folder it was started from.
+                if(!(subfoldersEnabled()&&isInsideGalleryFolder(relative,node.__cigFolder)))node.__cigFolder=splitPath(relative).folder;
                 job.index=i+1;
                 notifyBatchJob(job);
 
@@ -251,7 +259,7 @@ function showCigHelp(){
         ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
         // CIG_HELP_NEW_FEATURES_V1
         ["Папки","Двойной клик открывает папку. На карточке папки — до четырёх миниатюр и число изображений; если изображений нет, показываются миниатюры из вложенных папок. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
-        ["Подпапки","Кнопка «Подпапки» в верхней строке показывает все изображения папки и всех её подпапок любой глубины одним списком, как будто они лежат прямо в этой папке; карточки подпапок при этом скрываются. Полный путь изображения виден во всплывающей подсказке. Настройка запоминается. Показывается не больше 20 000 изображений — если список обрезан, это видно в счётчике внизу."],
+        ["Подпапки","Кнопка «Подпапки» в верхней строке показывает все изображения папки и всех её подпапок любой глубины одним списком, как будто они лежат прямо в этой папке; карточки подпапок при этом скрываются. Полный путь изображения виден во всплывающей подсказке. Выделение, наборы и СТАРТ работают со всем списком, а стрелки у превью в ноде листают тот же список, из которого выбрано изображение, в том же порядке. Настройка запоминается. Показывается не больше 20 000 изображений — если список обрезан, это видно в счётчике внизу."],
         ["Последние папки","До 10 последних внешних папок сохраняются в списке."],
         ["Любимые","Нажмите ♡ в правом верхнем углу превью. Любимые изображения отмечаются ♥ и всегда располагаются выше остальных. Повторное нажатие снимает отметку."],
         ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
@@ -268,7 +276,7 @@ function showCigHelp(){
         ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
         ["Folders","Double-click a folder to open it. Folder cards show up to four thumbnails and the image count; folders without images of their own show thumbnails from their subfolders. ↑ goes up one level. The … button opens an external folder picker."],
-        ["Subfolders","The Subfolders button in the top bar shows every image of the folder and all of its subfolders, at any depth, as one flat list, as if they all lay directly in this folder; subfolder cards are hidden. An image's full path is shown in its tooltip. The setting is remembered. At most 20,000 images are listed; the counter at the bottom says when the list was cut off."],
+        ["Subfolders","The Subfolders button in the top bar shows every image of the folder and all of its subfolders, at any depth, as one flat list, as if they all lay directly in this folder; subfolder cards are hidden. An image's full path is shown in its tooltip. Selection, sets and START work across the whole list, and the arrows beside the node preview walk the same list the image was picked from, in the same order. The setting is remembered. At most 20,000 images are listed; the counter at the bottom says when the list was cut off."],
         ["Recent folders","Up to 10 recently used external folders are kept in the list."],
         ["Favorites","Tap ♡ in the top-right corner of a thumbnail. Favorites are marked ♥ and always stay above regular images. Tap again to remove the favorite."],
         ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
@@ -357,9 +365,11 @@ async function openGallery(node){
     // CIG_RECURSIVE_LIST_V1
     // With "Subfolders" on, image names are relative to activeFolder and may
     // contain "/" ("sub/a.png"); joinPath(activeFolder,name) stays the real path.
-    const CIG_SUBFOLDERS_KEY="ComfyUI-LoadImageGallery.includeSubfolders";
-    let includeSubfolders=(()=>{try{return localStorage.getItem(CIG_SUBFOLDERS_KEY)==="1";}catch(_){return false;}})();
+    let includeSubfolders=subfoldersEnabled();
     let listTruncated=false;
+    // The node's ‹ › arrows walk the list an image was picked from; in the
+    // flat subfolder view that is the whole tree below this folder.
+    function rememberNavFolder(){node.properties=node.properties||{};node.properties.__cigNavFolder=activeFolder;}
     function imageLocation(name){
         const i=name.lastIndexOf("/");
         if(i<0)return {folder:activeFolder,filename:name,sub:""};
@@ -653,6 +663,7 @@ async function openGallery(node){
             addAction(setUi.start,async()=>{
                 if(CIG_BATCH_JOBS.get(node)?.running)return;
                 closeSetsMenu();
+                rememberNavFolder();
                 const job=startDetachedBatchQueue(node,item.images);
                 if(job)bindBatchUi(job);
             },{disabled:!!CIG_BATCH_JOBS.get(node)?.running});
@@ -771,6 +782,7 @@ async function openGallery(node){
             e.preventDefault();
             const relative=active.__cigRelative;
             if(!relative)return;
+            rememberNavFolder();
             setWidgetValue(node,relative);
             node.__cigFolder=activeFolder;
             __cigAllowClose=true;
@@ -1063,6 +1075,7 @@ async function openGallery(node){
             card.addEventListener("dblclick", e=>{
                 e.preventDefault();
                 e.stopPropagation();
+                rememberNavFolder();
                 setWidgetValue(node, relative);
                 node.__cigFolder = activeFolder;
                 close();
@@ -1304,6 +1317,7 @@ body.addEventListener("mousedown", e=>{
     runButton.addEventListener("click",()=>{
         const list=[...selected];
         if(!list.length||CIG_BATCH_JOBS.get(node)?.running)return;
+        rememberNavFolder();
 
         // Snapshot the selected paths now. From this point the queue task is
         // independent of the gallery window and survives overlay cleanup/removal.
