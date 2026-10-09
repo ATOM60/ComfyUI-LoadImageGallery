@@ -9,7 +9,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import folder_paths
 from aiohttp import web
@@ -135,6 +135,39 @@ def _cached_thumb(video: Path):
     return None
 
 
+_THUMB_ERRORS = {}          # str(video) -> why the last thumbnail attempt failed
+_THUMB_ERRORS_LIMIT = 500
+
+
+def _thumb_error(video: Path):
+    return _THUMB_ERRORS.get(str(video))
+
+
+def _set_thumb_error(video: Path, reason: str):
+    key = str(video)
+    if key not in _THUMB_ERRORS:
+        print(f"[ImageGallery] Output video thumbnail failed: {video}: {reason}")
+    _THUMB_ERRORS.pop(key, None)
+    _THUMB_ERRORS[key] = reason
+    while len(_THUMB_ERRORS) > _THUMB_ERRORS_LIMIT:
+        _THUMB_ERRORS.pop(next(iter(_THUMB_ERRORS)))
+
+
+def _run_thumb_ffmpeg(ffmpeg: str, video: Path, tmp: Path, seek: list[str]) -> str:
+    """Write one frame of *video* to *tmp*; return ffmpeg's error text ("" on success)."""
+    proc = subprocess.run(_low_priority_command([
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-threads", "1", *seek, "-i", str(video),
+        "-an", "-sn", "-dn", "-frames:v", "1", "-filter_threads", "1",
+        "-vf", "scale='min(640,iw)':-2", "-q:v", "3", "-y", str(tmp),
+    ]), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=_THUMB_FFMPEG_LIMIT,
+       check=False, creationflags=_low_priority_flags())
+    if tmp.exists() and tmp.stat().st_size:
+        return ""
+    text = proc.stderr.decode("utf-8", "replace").strip() if proc.stderr else ""
+    return text or f"ffmpeg exited with code {proc.returncode} and wrote no frame"
+
+
 def _make_thumb(video: Path):
     thumb = _cached_thumb(video)
     if thumb:
@@ -142,29 +175,31 @@ def _make_thumb(video: Path):
     thumb = _thumb_path(video)
     ffmpeg = _find_ffmpeg()
     if not ffmpeg:
+        _set_thumb_error(video, "ffmpeg not found (not in PATH and imageio-ffmpeg is not installed)")
         return None
     tmp = thumb.with_suffix(".tmp.jpg")
+    error = ""
     try:
-        subprocess.run(_low_priority_command([
-            ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-threads", "1", "-ss", "0.25", "-i", str(video),
-            "-an", "-sn", "-dn", "-frames:v", "1", "-filter_threads", "1",
-            "-vf", "scale='min(640,iw)':-2", "-q:v", "3", "-y", str(tmp),
-        ]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=_THUMB_FFMPEG_LIMIT,
-           check=False, creationflags=_low_priority_flags())
-        if tmp.exists() and tmp.stat().st_size:
-            tmp.replace(thumb)
-            return thumb
+        # Frame at 0.25 s skips a black/blank first frame; videos shorter than
+        # that have no frame there, so fall back to the very first frame.
+        for seek in (["-ss", "0.25"], []):
+            error = _run_thumb_ffmpeg(ffmpeg, video, tmp, seek)
+            if not error:
+                tmp.replace(thumb)
+                _THUMB_ERRORS.pop(str(video), None)
+                return thumb
     except subprocess.TimeoutExpired:
         raise _ThumbTransientError("thumbnail timed out")
-    except Exception:
-        pass
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
     finally:
         if tmp.exists():
             try: tmp.unlink()
             except OSError: pass
     if _recently_modified(video):
         raise _ThumbTransientError("video may still be being written")
+    lines = [line.strip() for line in error.splitlines() if line.strip()]
+    _set_thumb_error(video, " | ".join(lines[-3:])[:400] or "unknown error")
     return None
 
 
@@ -354,10 +389,19 @@ async def video_thumb(request):
             # Not an error: the client went away, or the machine is too busy.
             return web.Response(status=503, headers={"Retry-After": str(_THUMB_BUSY_RETRY_SECONDS), "Cache-Control": "no-store"})
         if not thumb:
-            return web.Response(status=204, headers={"Cache-Control": "no-store"})
+            return _no_thumb(_thumb_error(path) or "no thumbnail")
         return web.FileResponse(thumb, headers={"Cache-Control": "public, max-age=604800"})
-    except Exception:
-        return web.Response(status=204, headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        return _no_thumb(f"{type(e).__name__}: {e}")
+
+
+def _no_thumb(reason: str):
+    # The reason is shown as the tooltip of the card's fallback icon.
+    return web.Response(status=204, headers={
+        "Cache-Control": "no-store",
+        "X-CIG-Thumb-Error": quote(str(reason)[:400], safe=" :/()|,.-_"),
+        "Access-Control-Expose-Headers": "X-CIG-Thumb-Error",
+    })
 
 
 @PromptServer.instance.routes.post("/image-gallery/output/clipboard")

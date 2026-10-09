@@ -586,10 +586,17 @@ app.registerExtension({
                 return !!holder?.querySelector("video, .ovg-cpu-player");
             }
 
-            function showThumbFallback(card) {
+            function showThumbFallback(card, reason = "") {
                 const img = card.querySelector(".ovg-thumb img");
                 if (img) { img.removeAttribute("src"); img.style.display = "none"; }
-                if (!thumbHolderBusy(card)) card.querySelector(".ovg-thumb-fallback")?.style.setProperty("display", "flex");
+                const fallback = card.querySelector(".ovg-thumb-fallback");
+                if (fallback && reason) fallback.title = reason;
+                if (!thumbHolderBusy(card)) fallback?.style.setProperty("display", "flex");
+            }
+
+            function thumbErrorReason(response) {
+                const raw = response.headers.get("X-CIG-Thumb-Error") || "";
+                try { return decodeURIComponent(raw); } catch (_) { return raw; }
             }
 
             function showThumbBlob(card, blob) {
@@ -634,27 +641,27 @@ app.registerExtension({
                 state.thumbActive++;
                 const controller = new AbortController();
                 t.controller = controller;
-                let retry = false, busy = false;
+                let retry = false, busy = false, reason = "";
                 try {
                     // "default", not "force-cache": force-cache would reuse a stale
                     // empty answer stored while the video was still being written.
                     const response = await fetch(t.url, { signal:controller.signal });
-                    if (response.status === 204) { t.done = true; showThumbFallback(card); return; }
+                    if (response.status === 204) { t.done = true; showThumbFallback(card, thumbErrorReason(response)); return; }
                     if (response.status === 503) { retry = busy = true; return; }
-                    if (!response.ok) { retry = true; return; }
+                    if (!response.ok) { retry = true; reason = `HTTP ${response.status}`; return; }
                     const blob = await response.blob();
                     if (!blob.size) { retry = true; return; }
                     t.done = true;
                     rememberThumbBlob(t.key, blob);
                     if (card.isConnected) showThumbBlob(card, blob);
                 } catch (err) {
-                    if (err?.name !== "AbortError") retry = true;
+                    if (err?.name !== "AbortError") { retry = true; reason = String(err?.message || err); }
                 } finally {
                     if (t.controller === controller) t.controller = null;
                     state.thumbActive = Math.max(0, state.thumbActive - 1);
                     if (retry && card.isConnected) {
                         const delay = OVG_THUMB_RETRY_MS[t.attempt++] ?? (busy ? OVG_THUMB_BUSY_RETRY_MS : undefined);
-                        if (delay === undefined) { t.done = true; showThumbFallback(card); }
+                        if (delay === undefined) { t.done = true; showThumbFallback(card, reason); }
                         else t.retryTimer = setTimeout(() => { t.retryTimer = 0; if (t.visible) enqueueThumb(card); }, delay);
                     }
                     pumpThumbs();
