@@ -1,6 +1,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { installGalleryPreviewNavigation } from "./preview_navigation.js";
+import { holdToZoom } from "./hold_zoom.js";
 
 const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
@@ -47,6 +48,7 @@ const CIG_THUMB_CACHE_VERSION_KEY="ComfyUI-LoadImageGallery.thumbCacheVersion";
 function getThumbCacheVersion(){try{return localStorage.getItem(CIG_THUMB_CACHE_VERSION_KEY)||"1";}catch(_){return "1";}}
 function bumpThumbCacheVersion(){const v=String(Date.now());try{localStorage.setItem(CIG_THUMB_CACHE_VERSION_KEY,v);}catch(_){}return v;}
 function thumbnailUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); p.set("v",getThumbCacheVersion()); return api.apiURL(`/image-gallery/thumb?${p.toString()}`); }
+function originalUrl(folder, filename) { const p = new URLSearchParams(); p.set("folder", folder || ""); p.set("filename", filename); return api.apiURL(`/image-gallery/original?${p.toString()}`); }
 async function fetchJson(path, options) { const r = await api.fetchApi(path, options); if (!r.ok) { let d=`${r.status}`; try{d=(await r.json()).error||d;}catch(_){} throw new Error(d); } return await r.json(); }
 function getImageWidget(node) { return node.widgets?.find(w => w.name === "image") || null; }
 // CIG_WORKFLOW_PERSIST_V4
@@ -254,6 +256,7 @@ function showCigHelp(){
     const rows=ru?[
         ["Открытие галереи","Нажмите на превью изображения в ноде. Стрелки по краям превью переключают изображения текущей папки."],
         ["Выбор изображений","Один клик выбирает или снимает изображение. Двойной клик загружает изображение в ноду."],
+        ["Увеличение","Удерживайте левую кнопку мыши на превью в галерее или в ноде: откроется окно на всю высоту или ширину экрана с изображением, увеличенным в 6 раз. Не отпуская кнопку, водите мышью — увеличенный участок следует за курсором. Отпустите кнопку, чтобы закрыть окно; выделение при этом не меняется."],
         ["Выделение мышью","Проведите рамкой по изображениям. Выделение накапливается и сохраняется при прокрутке."],
         ["Автопрокрутка","Во время рамочного выделения подведите курсор к верхнему или нижнему краю галереи для автоматической прокрутки."],
         ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
@@ -272,6 +275,7 @@ function showCigHelp(){
     ]:[
         ["Open gallery","Click the image preview in the node. Arrows beside the preview navigate through images in the current folder."],
         ["Select images","Single click selects or deselects an image. Double click loads the image into the node."],
+        ["Zoom","Hold the left mouse button on a thumbnail in the gallery or on the node preview: a window filling the screen height or width shows the image magnified 6×. Keep the button down and move the mouse — the magnified spot follows the pointer. Release the button to close it; the selection does not change."],
         ["Mouse selection","Drag a rectangle across images. Selection accumulates and remains selected while scrolling."],
         ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
@@ -773,6 +777,23 @@ async function openGallery(node){
     });
     overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
     panel.addEventListener("mousedown", e=>e.stopPropagation());
+    // CIG_HOLD_ZOOM_V1
+    // Holding the left mouse button on a card shows the original ×6 (hold_zoom.js).
+    // The click produced by the release must not toggle the card's selection.
+    let __cigHoldZoom=null;
+    body.addEventListener("pointerdown",e=>{
+        __cigHoldZoom=null;
+        if(e.shiftKey||e.ctrlKey||e.metaKey||e.altKey)return;
+        const card=e.target.closest?.(".cig-card");
+        if(!card||e.target.closest?.(".cig-favorite"))return;
+        __cigHoldZoom=holdToZoom(e,()=>card.isConnected&&{src:card.__cigOriginalUrl,previewSrc:card.__cigUrl});
+    });
+    overlay.addEventListener("click",e=>{
+        if(!__cigHoldZoom?.used)return;
+        __cigHoldZoom=null;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    },true);
     const onKey = e=>{
         if(e.key === "Escape"){ close(); return; }
         const active=document.activeElement;
@@ -1015,6 +1036,7 @@ async function openGallery(node){
             card.title = relative;
             card.__cigRelative = relative;
             card.__cigUrl = thumbnailUrl(location.folder, location.filename);
+            card.__cigOriginalUrl = originalUrl(location.folder, location.filename);
 
             const wrap = document.createElement("div");
             wrap.className = "cig-thumb-wrap";
@@ -1025,6 +1047,7 @@ async function openGallery(node){
             img.className = "cig-thumb";
             img.decoding = "async";
             img.alt = location.filename;
+            img.draggable = false; // a native image drag would swallow hold-to-zoom moves
             wrap.append(ph, img);
 
             const name = document.createElement("div");
@@ -1459,7 +1482,7 @@ function installGalleryStartButton(node) {
 function installNodePreview(node) {
     return installGalleryPreviewNavigation(node, {
         app, api, getImageWidget, setWidgetValue, openGallery,
-        normalizePath, splitPath, joinPath,
+        normalizePath, splitPath, joinPath, holdToZoom,
     });
 }
 

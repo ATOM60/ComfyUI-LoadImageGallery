@@ -2,7 +2,7 @@
 export function installGalleryPreviewNavigation(node, dependencies) {
     if (node.__cigPreviewNavigation) return node.__cigPreviewNavigation;
     const { app, api, getImageWidget, setWidgetValue, openGallery,
-        normalizePath, splitPath, joinPath } = dependencies;
+        normalizePath, splitPath, joinPath, holdToZoom } = dependencies;
     const empty = [];
     const patched = new Map();
     const SORT_KEY = "ComfyUI-LoadImageGallery.sortMode";
@@ -243,6 +243,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             const enabled = values.length > 1;
             const showControls = folder !== null;
             this.__cigImageRect = null;
+            this.__cigImage = iw > 0 && ih > 0 ? img : null;
             if (iw > 0 && ih > 0) {
                 const scale = Math.min(imageWidth / iw, imageHeight / ih);
                 const w = iw * scale, h = ih * scale;
@@ -294,14 +295,21 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             if (pointer?.eDown?.button != null && pointer.eDown.button !== 0) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;
             if (node.__cigNodeLayout?.pointerDown(this, pointer, canvas ?? app.canvas)) return true;
             const p = point(pointer?.eDown, canvas);
-            let action;
+            let action, hold = null;
             if (inside(p, this.__cigPrevRect)) action = () => navigate(-1);
             else if (inside(p, this.__cigNextRect)) action = () => navigate(1);
-            else if (inside(p, this.__cigImageRect)) action = () => openGallery(node);
+            else if (inside(p, this.__cigImageRect)) {
+                action = () => openGallery(node);
+                // Holding the button shows the image ×6 instead of opening the gallery.
+                const image = this.__cigImage;
+                if (holdToZoom && image?.src) {
+                    hold = holdToZoom(pointer?.eDown, { src: image.currentSrc || image.src, width: image.naturalWidth, height: image.naturalHeight });
+                }
+            }
             if (!action) return originalPointer?.call(this, pointer, nodeArg, canvas) ?? false;
             pointer.onDragStart = undefined; pointer.onDragEnd = undefined; pointer.finally = undefined;
             // Consume the gesture so the stock preview cannot also open its viewer.
-            pointer.onClick = () => { if (!disposed) action(); };
+            pointer.onClick = () => { if (!disposed && !hold?.used) action(); };
             return true;
         };
         widget.drawWidget = draw;

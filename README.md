@@ -86,6 +86,7 @@ You can:
 - search by filename;
 - sort by name, date or file size;
 - press **Subfolders** to see the images of the folder and all its subfolders as one flat list, as if they all lay in this folder;
+- hold the left mouse button on a thumbnail or the node preview to see the image magnified 6× and move the mouse to look around;
 - change preview size;
 - add images to favorites;
 - copy, paste and save images from the context menu.

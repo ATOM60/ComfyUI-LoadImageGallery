@@ -93,7 +93,7 @@ function storage(t, entries = {}) {
     return map;
 }
 
-function fixture(t, { values = ['photos/a.png', 'photos/b.png'], existingPreview = true, properties } = {}) {
+function fixture(t, { values = ['photos/a.png', 'photos/b.png'], existingPreview = true, properties, holdToZoom } = {}) {
     const clock = scheduler(t);
     const image = { name: 'image', value: values[0] ?? 'photos/a.png', options: { values }, callback() {} };
     const preview = previewWidget();
@@ -140,6 +140,7 @@ function fixture(t, { values = ['photos/a.png', 'photos/b.png'], existingPreview
             widget.callback?.call(widget, value);
         },
         openGallery() { opens++; },
+        ...(holdToZoom ? { holdToZoom } : {}),
     };
     const controller = installGalleryPreviewNavigation(node, dependencies);
     t.after(() => controller.dispose());
@@ -378,6 +379,24 @@ test('removal clears a pending retry and prevents background folder requests', a
     f.clock.advance(60000);
     await flush();
     assert.equal(f.requests.length, 2, 'disposed nodes cannot retry later');
+});
+
+test('holding the button on the preview zooms the image instead of opening the gallery', async (t) => {
+    const hold = { used: false };
+    const seen = [];
+    const f = fixture(t, { holdToZoom: (event, source) => { seen.push({ event, source }); return hold; } });
+    f.node.imgs = [{ naturalWidth: 1600, naturalHeight: 900, src: 'view?filename=a.png' }];
+    await f.draw();
+    hold.used = true;
+    f.click(f.preview.__cigImageRect);
+    assert.equal(f.opens, 0, 'a press that opened the zoom does not open the gallery');
+    assert.deepEqual(seen[0].source, { src: 'view?filename=a.png', width: 1600, height: 900 });
+    assert.equal(seen[0].event.button, 0, 'the zoom watches the original pointer-down event');
+    hold.used = false;
+    f.click(f.preview.__cigImageRect);
+    assert.equal(f.opens, 1, 'a short click still opens the gallery');
+    f.click(f.preview.__cigNextRect);
+    assert.equal(seen.length, 2, 'arrows never start a zoom');
 });
 
 const SUBFOLDERS = 'ComfyUI-LoadImageGallery.includeSubfolders';
