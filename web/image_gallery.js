@@ -29,6 +29,7 @@ function injectStyles() {
 /* CIG_FAVORITES_CORNER_V3 */ .cig-favorite{position:absolute;top:0;right:0;z-index:3;width:38px;height:38px;min-width:38px;padding:0;border:0;border-radius:0;background:transparent;color:rgba(255,255,255,.68);font-size:24px;line-height:38px;text-align:center;cursor:pointer;touch-action:manipulation;user-select:none;opacity:.78;text-shadow:0 1px 3px rgba(0,0,0,.85)}.cig-favorite:hover{background:transparent;color:#fff;opacity:1}.cig-favorite.active{color:#ff6f8f;background:transparent;opacity:1;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 /* CIG_SORT_MENU_V1 */ .cig-sort{flex:0 0 auto;width:40px;height:38px;min-width:40px;padding:0;font-size:21px;line-height:36px}.cig-sort-menu{position:fixed;z-index:100030;min-width:210px;padding:6px;background:#242424;border:1px solid #4b4b4b;border-radius:8px;box-shadow:0 10px 35px rgba(0,0,0,.6)}.cig-sort-menu button{display:flex;align-items:center;gap:9px;width:100%;height:40px;padding:0 12px;border:0;border-radius:5px;background:transparent;color:#eee;text-align:left;font-size:14px;cursor:pointer;white-space:nowrap}.cig-sort-menu button:hover{background:#3a3a3a}.cig-sort-menu button.active{color:#9ec8ff;background:#303a46}.cig-sort-check{width:14px;display:inline-block;text-align:center}
 /* CIG_IMAGE_SETS_V1 */ .cig-sets{flex:0 0 auto;height:40px;padding:0 12px;margin:0;background:#2c2c2c;color:#eee;border:1px solid #505050;border-radius:7px;font-size:13px;cursor:pointer;white-space:nowrap}.cig-sets:hover{background:#3a3a3a}.cig-sets:disabled{opacity:.45;cursor:default}.cig-sets-menu{position:fixed;z-index:100040;width:330px;max-height:min(520px,70vh);overflow:auto;padding:7px;background:#242424;border:1px solid #4b4b4b;border-radius:9px;box-shadow:0 12px 40px rgba(0,0,0,.65)}.cig-sets-menu button{font-family:Arial,sans-serif}.cig-sets-create{width:100%;height:38px;border:0;border-radius:6px;background:#303a46;color:#dcecff;text-align:left;padding:0 11px;cursor:pointer;font-size:13px}.cig-sets-create:hover{background:#38485a}.cig-sets-create:disabled{opacity:.4;cursor:default}.cig-sets-empty{padding:14px 10px;color:#888;font-size:12px;text-align:center}.cig-set-row{margin-top:6px;border:1px solid #3a3a3a;border-radius:7px;overflow:hidden;background:#202020}.cig-set-main{display:flex;align-items:stretch;min-height:38px}.cig-set-load{flex:1;min-width:0;border:0;background:transparent;color:#eee;text-align:left;padding:0 10px;cursor:pointer;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cig-set-load:hover{background:#303030}.cig-set-count{color:#888;margin-left:7px;font-size:11px}.cig-set-more{width:38px;min-width:38px;border:0;border-left:1px solid #383838;background:transparent;color:#bbb;cursor:pointer;font-size:18px}.cig-set-more:hover{background:#333;color:#fff}.cig-set-actions{display:none;padding:6px;border-top:1px solid #383838;background:#1d1d1d}.cig-set-row.editing .cig-set-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}.cig-set-actions button{height:32px;border:1px solid #444;border-radius:5px;background:#2a2a2a;color:#ddd;cursor:pointer;font-size:11px;padding:0 7px}.cig-set-actions button:hover{background:#373737}.cig-set-actions button.danger{color:#ff9b9b}.cig-set-actions button:disabled{opacity:.4;cursor:default}
+/* CIG_FOLDER_PREVIEW_V1 */ .cig-folder-icon{position:relative;overflow:hidden}.cig-folder-icon.has-preview{display:grid;gap:2px;font-size:0;background:#191d22}.cig-folder-icon.has-preview[data-count="1"]{grid-template:1fr/1fr}.cig-folder-icon.has-preview[data-count="2"]{grid-template:1fr/1fr 1fr}.cig-folder-icon.has-preview[data-count="3"],.cig-folder-icon.has-preview[data-count="4"]{grid-template:1fr 1fr/1fr 1fr}.cig-folder-icon.has-preview[data-count="3"] .cig-folder-tile:first-child{grid-row:span 2}.cig-folder-tile{width:100%;height:100%;min-width:0;min-height:0;object-fit:cover;display:block;background:#111;opacity:0;transition:opacity .18s}.cig-folder-tile.loaded{opacity:1}.cig-folder-badge{position:absolute;left:5px;bottom:5px;z-index:2;display:flex;align-items:center;gap:4px;max-width:calc(100% - 10px);padding:2px 7px 2px 5px;border-radius:999px;background:rgba(15,18,22,.82);border:1px solid rgba(120,150,185,.35);color:#dfe8f2;font-size:12px;line-height:18px;pointer-events:none;white-space:nowrap}.cig-folder-badge-icon{font-size:13px}
 @media(max-width:700px){.cig-overlay{padding:8px}.cig-panel{width:100vw;height:96vh}.cig-grid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px}.cig-header{flex-wrap:wrap}.cig-title{width:100%}.cig-footer-top{flex-wrap:wrap}.cig-folder{width:100%;flex-basis:100%}}
 `;
     document.head.appendChild(style);
@@ -190,6 +191,53 @@ function makeThumbLoader(root,onProgress=null) {
     return {observe,reset,dispose};
 }
 
+// CIG_FOLDER_PREVIEW_V1
+// Folder cards show a collage of up to four thumbnails. The image list per
+// folder is requested only when its card is near the viewport, at most two at
+// a time, and memoized for the lifetime of the open gallery.
+const FOLDER_PREVIEW_PARALLEL = 2;
+function makeFolderPreviewLoader(root, cache) {
+    let active=0, queue=[], disposed=false;
+    const observer=new IntersectionObserver(entries=>{ for(const e of entries){ if(e.isIntersecting){ observer.unobserve(e.target); queue.push(e.target); pump(); } } },{root,rootMargin:OBSERVER_MARGIN,threshold:0.01});
+    function pump(){ while(!disposed&&active<FOLDER_PREVIEW_PARALLEL&&queue.length){ const card=queue.shift(); if(card.isConnected) load(card); } }
+    function request(folder){ let p=cache.get(folder); if(!p){ p=fetchJson(`/image-gallery/folder-preview?folder=${encodeURIComponent(folder)}`).catch(err=>{ cache.delete(folder); throw err; }); cache.set(folder,p); } return p; }
+    async function load(card){
+        active++;
+        try{
+            const data=await request(card.__cigFolderPath);
+            if(disposed||!card.isConnected)return;
+            await apply(card,data);
+        }catch(_){ /* keep the plain folder icon */ }
+        finally{ active=Math.max(0,active-1); pump(); }
+    }
+    function apply(card,data){
+        const icon=card.querySelector(".cig-folder-icon");
+        const picks=(Array.isArray(data?.images)?data.images:[]).slice(0,4);
+        const total=Number(data?.count)||0;
+        if(!icon||!picks.length)return;
+        icon.replaceChildren();
+        icon.classList.add("has-preview");
+        icon.dataset.count=String(picks.length);
+        const loads=picks.map(pick=>new Promise(resolve=>{
+            const img=document.createElement("img");
+            img.className="cig-folder-tile"; img.decoding="async"; img.alt=""; img.draggable=false;
+            img.onload=()=>{ img.classList.add("loaded"); resolve(); };
+            img.onerror=()=>resolve();
+            img.src=thumbnailUrl(pick.folder,pick.filename);
+            icon.appendChild(img);
+        }));
+        const badge=document.createElement("div"); badge.className="cig-folder-badge";
+        const glyph=document.createElement("span"); glyph.className="cig-folder-badge-icon"; glyph.textContent="📁";
+        badge.appendChild(glyph);
+        if(total>0){ const n=document.createElement("span"); n.textContent=String(total); badge.appendChild(n); }
+        icon.appendChild(badge);
+        return Promise.all(loads);
+    }
+    function observe(card){ if(!disposed) observer.observe(card); }
+    function dispose(){ disposed=true; queue=[]; observer.disconnect(); }
+    return {observe,dispose};
+}
+
 // CIG_HELP_SAFE_V1
 function showCigHelp(){
     document.querySelector(".cig-help-overlay")?.remove();
@@ -201,7 +249,7 @@ function showCigHelp(){
         ["Автопрокрутка","Во время рамочного выделения подведите курсор к верхнему или нижнему краю галереи для автоматической прокрутки."],
         ["Сенсорный экран","Обычный свайп прокручивает галерею. Удерживайте палец около 0,4 секунды, затем ведите им для рамочного выделения."],
         // CIG_HELP_NEW_FEATURES_V1
-        ["Папки","Двойной клик открывает папку. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
+        ["Папки","Двойной клик открывает папку. На карточке папки — до четырёх миниатюр и число изображений; если изображений нет, показываются миниатюры из вложенных папок. ↑ поднимает на уровень выше. Кнопка … позволяет выбрать внешнюю папку."],
         ["Последние папки","До 10 последних внешних папок сохраняются в списке."],
         ["Любимые","Нажмите ♡ в правом верхнем углу превью. Любимые изображения отмечаются ♥ и всегда располагаются выше остальных. Повторное нажатие снимает отметку."],
         ["Сортировка","Кнопка ⇅ в верхней строке позволяет сортировать изображения по имени, дате изменения или размеру. Любимые при любой сортировке остаются наверху."],
@@ -217,7 +265,7 @@ function showCigHelp(){
         ["Mouse selection","Drag a rectangle across images. Selection accumulates and remains selected while scrolling."],
         ["Auto-scroll","While rectangle-selecting, move the pointer near the top or bottom edge to scroll automatically."],
         ["Touch screen","A normal swipe scrolls the gallery. Hold for about 0.4 seconds, then drag to start rectangle selection."],
-        ["Folders","Double-click a folder to open it. ↑ goes up one level. The … button opens an external folder picker."],
+        ["Folders","Double-click a folder to open it. Folder cards show up to four thumbnails and the image count; folders without images of their own show thumbnails from their subfolders. ↑ goes up one level. The … button opens an external folder picker."],
         ["Recent folders","Up to 10 recently used external folders are kept in the list."],
         ["Favorites","Tap ♡ in the top-right corner of a thumbnail. Favorites are marked ♥ and always stay above regular images. Tap again to remove the favorite."],
         ["Sorting","Use the ⇅ button in the top bar to sort by name, modification date, or file size. Favorites remain on top with every sort mode."],
@@ -619,6 +667,8 @@ async function openGallery(node){
         },1000);
     };
     let thumbLoader = makeThumbLoader(body,scheduleCacheStats);
+    const folderPreviewCache = new Map();
+    let folderPreviewLoader = makeFolderPreviewLoader(body,folderPreviewCache);
 
     // CIG_SESSION_SCROLL_MEMORY_V1
     // Keep gallery position per node/folder/sort mode for the current ComfyUI
@@ -660,6 +710,7 @@ async function openGallery(node){
         closeSetsMenu();
         clearTimeout(__cigCacheStatsTimer);
         thumbLoader?.dispose();
+        folderPreviewLoader?.dispose();
         marquee.remove();
     };
     // CIG_CLOSE_ONLY_X_V2
@@ -799,17 +850,24 @@ async function openGallery(node){
         if(!visible.length)return;
         grid.querySelector(".cig-empty")?.remove();
         const frag=document.createDocumentFragment();
+        folderPreviewLoader.dispose();
+        folderPreviewLoader=makeFolderPreviewLoader(body,folderPreviewCache);
+        const parentPath=normalizeNavPath(activeFolder);
+        const childPrefix=/^[A-Za-z]:\/$/.test(parentPath)?parentPath:parentPath?parentPath+"/":"";
+        const cards=[];
         for(const folderName of visible){
-            const card=document.createElement("div");card.className="cig-folder-card";card.title=folderName;
+            const folderPath=childPrefix+folderName;
+            const card=document.createElement("div");card.className="cig-folder-card";card.title=folderName;card.__cigFolderPath=folderPath;
             const icon=document.createElement("div");icon.className="cig-folder-icon";icon.textContent="📁";
             const name=document.createElement("div");name.className="cig-folder-name";name.textContent=folderName;
             card.append(icon,name);
             card.addEventListener("mousedown",e=>e.stopPropagation());
             card.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();});
-            card.addEventListener("dblclick",e=>{e.preventDefault();e.stopPropagation();navigateGalleryFolder((/^[A-Za-z]:\/$/.test(normalizeNavPath(activeFolder))?normalizeNavPath(activeFolder):normalizeNavPath(activeFolder)?normalizeNavPath(activeFolder)+"/":"")+folderName);});
-            frag.appendChild(card);
+            card.addEventListener("dblclick",e=>{e.preventDefault();e.stopPropagation();navigateGalleryFolder(folderPath);});
+            frag.appendChild(card);cards.push(card);
         }
         grid.insertBefore(frag,grid.firstChild);
+        cards.forEach(card=>folderPreviewLoader.observe(card));
     }
 
     function rebuildThumbLoader(){
@@ -1308,6 +1366,7 @@ body.addEventListener("mousedown", e=>{
 
     refreshButton.addEventListener("click", async()=>{
         refreshButton.disabled = true;
+        folderPreviewCache.clear();
         selected.clear();
         syncCardSelection();
         updateRunState();

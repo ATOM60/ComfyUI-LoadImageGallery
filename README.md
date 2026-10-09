@@ -77,6 +77,8 @@ Sets can contain images from different folders, including external folders. They
 3. Use **...** to choose any available folder in the system folder picker.
 4. Recently used external folders can be reopened quickly.
 
+Folder cards show a preview: up to four thumbnails from the folder and its image count. A folder with no images of its own borrows them from its subfolders. Previews load as you scroll and share the thumbnail cache; **Refresh** reloads them.
+
 ## Scenario 6. Find images faster
 
 You can:

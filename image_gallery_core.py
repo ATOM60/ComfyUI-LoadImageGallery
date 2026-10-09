@@ -236,6 +236,44 @@ def _subfolders_in_dir(full_dir: str):
         return []
     return sorted(names, key=str.casefold)
 
+# CIG_FOLDER_PREVIEW_V1
+FOLDER_PREVIEW_LIMIT = 4
+FOLDER_PREVIEW_MAX_DIRS = 32
+
+
+def _child_gallery_folder(parent: str, name: str) -> str:
+    if _is_abs_path(parent):
+        return os.path.join(parent, name)
+    return f"{parent}/{name}" if parent else name
+
+
+def _client_gallery_folder(folder: str) -> str:
+    return Path(folder).as_posix() if _is_abs_path(folder) else folder
+
+
+def _folder_preview(folder: str, limit: int = FOLDER_PREVIEW_LIMIT):
+    """Pick up to `limit` images for a folder card.
+
+    Images directly inside the folder win. A folder that only contains
+    subfolders borrows images from them (breadth-first, bounded), so container
+    folders still get a meaningful preview without walking a whole tree.
+    """
+    folder = _normalize_gallery_folder(folder)
+    full_dir = _gallery_dir(folder)
+    direct = _image_files_in_dir(full_dir)
+    picks = [{"folder": _client_gallery_folder(folder), "filename": name} for name in direct[:limit]]
+    if not picks:
+        queue = [(_child_gallery_folder(folder, sub), os.path.join(full_dir, sub)) for sub in _subfolders_in_dir(full_dir)]
+        visited = 0
+        while queue and len(picks) < limit and visited < FOLDER_PREVIEW_MAX_DIRS:
+            rel, full = queue.pop(0)
+            visited += 1
+            for name in _image_files_in_dir(full)[: limit - len(picks)]:
+                picks.append({"folder": _client_gallery_folder(rel), "filename": name})
+            queue.extend((_child_gallery_folder(rel, sub), os.path.join(full, sub)) for sub in _subfolders_in_dir(full))
+    return {"images": picks, "count": len(direct), "nested": bool(picks) and not direct}
+
+
 def _all_images_recursive():
     root = _input_root()
     result = []
@@ -646,6 +684,19 @@ async def image_gallery_list(request):
         items = await asyncio.to_thread(_image_items_in_dir, full_dir, images)
         await asyncio.to_thread(_cleanup_orphans_for_folder, folder, images)
         return web.json_response({"folder": Path(folder).as_posix() if _is_abs_path(folder) else folder, "images": images, "items": items, "folders": folders})
+    except FileNotFoundError as exc:
+        return web.json_response({"error": f"Folder not found: {exc}"}, status=404)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.get("/image-gallery/folder-preview")
+async def image_gallery_folder_preview(request):
+    try:
+        data = await asyncio.to_thread(_folder_preview, request.query.get("folder", ""))
+        return web.json_response(data)
     except FileNotFoundError as exc:
         return web.json_response({"error": f"Folder not found: {exc}"}, status=404)
     except ValueError as exc:
