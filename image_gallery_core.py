@@ -778,6 +778,40 @@ async def image_gallery_pick_folder(request):
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
 
+# CIG_EXTERNAL_VIEW_V1
+# The stock frontend previews the image widget's value through /view, splitting
+# an absolute value like "E:/refs/a.png" into subfolder="E:/refs". ComfyUI's
+# /view then fails with "Paths don't have the same drive" (a traceback per
+# request) when that drive differs from ComfyUI's. Serve such absolute input
+# images here instead, exactly like /image-gallery/source does.
+def _external_view_path(filename: str, subfolder: str):
+    filename = str(filename or "").replace("\\", "/")
+    subfolder = str(subfolder or "")
+    if _is_abs_path(subfolder):
+        candidate = os.path.join(os.path.expanduser(subfolder), os.path.basename(filename))
+    elif _is_abs_path(filename):
+        candidate = filename
+    else:
+        return None
+    candidate = os.path.abspath(os.path.expanduser(candidate))
+    return candidate if _is_image_file(candidate) else None
+
+
+@web.middleware
+async def _external_view_middleware(request, handler):
+    if request.method == "GET" and request.path in ("/view", "/api/view") and request.query.get("type") == "input":
+        path = _external_view_path(request.query.get("filename", ""), request.query.get("subfolder", ""))
+        if path:
+            return web.FileResponse(path, headers={"Cache-Control": "private, max-age=60"})
+    return await handler(request)
+
+
+try:
+    PromptServer.instance.app.middlewares.append(_external_view_middleware)
+except Exception as exc:
+    print(f"[ImageGallery] External image previews via /view are unavailable: {exc}")
+
+
 @PromptServer.instance.routes.get("/image-gallery/source")
 async def image_gallery_source(request):
     try:
