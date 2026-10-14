@@ -811,29 +811,41 @@ async function openGallery(node){
     };
     document.addEventListener("keydown", onKey);
 
-    // CIG_FOLDER_NAV_SAFE_V1
-    const CIG_RECENT_FOLDERS_KEY="ComfyUI-LoadImageGallery.recentFolders";
-    const CIG_RECENT_FOLDERS_LIMIT=10;
+    // CIG_RECENT_FOLDERS_V2
+    // One history of external folders, most recently opened first (case-
+    // insensitive, as on Windows). It replaces the old 10-item list and the
+    // separate 20-item module; both stored lists are read once and merged.
+    const CIG_RECENT_FOLDERS_KEY="ComfyUI-LoadImageGallery.recentFolders20";
+    const CIG_LEGACY_RECENT_KEY="ComfyUI-LoadImageGallery.recentFolders";
+    const CIG_RECENT_FOLDERS_LIMIT=20;
+    const folderKey=p=>normalizeNavPath(p).toLowerCase();
+    function readFolderList(key){
+        try{const raw=JSON.parse(localStorage.getItem(key)||"[]");return Array.isArray(raw)?raw:[];}catch(_){return [];}
+    }
     function getRecentExternalFolders(){
-        try{
-            const raw=JSON.parse(localStorage.getItem(CIG_RECENT_FOLDERS_KEY)||"[]");
-            if(!Array.isArray(raw)) return [];
-            const out=[];
-            for(const item of raw){
-                const p=normalizeNavPath(item);
-                if(isAbsoluteGalleryPath(p) && !out.some(v=>normalizeNavPath(v)===p)) out.push(p);
-                if(out.length>=CIG_RECENT_FOLDERS_LIMIT) break;
-            }
-            return out;
-        }catch(_){
-            return [];
+        const out=[],seen=new Set();
+        for(const item of [...readFolderList(CIG_RECENT_FOLDERS_KEY),...readFolderList(CIG_LEGACY_RECENT_KEY)]){
+            const p=normalizeNavPath(item);
+            if(!isAbsoluteGalleryPath(p)||seen.has(folderKey(p)))continue;
+            seen.add(folderKey(p));out.push(p);
+            if(out.length>=CIG_RECENT_FOLDERS_LIMIT)break;
         }
+        return out;
     }
     function rememberExternalFolder(path){
         const p=normalizeNavPath(path);
         if(!isAbsoluteGalleryPath(p)) return;
-        const arr=[p,...getRecentExternalFolders().filter(v=>normalizeNavPath(v)!==p)].slice(0,CIG_RECENT_FOLDERS_LIMIT);
-        try{localStorage.setItem(CIG_RECENT_FOLDERS_KEY,JSON.stringify(arr));}catch(_){}
+        const arr=[p,...getRecentExternalFolders().filter(v=>folderKey(v)!==folderKey(p))].slice(0,CIG_RECENT_FOLDERS_LIMIT);
+        try{localStorage.setItem(CIG_RECENT_FOLDERS_KEY,JSON.stringify(arr));localStorage.removeItem(CIG_LEGACY_RECENT_KEY);}catch(_){}
+    }
+    // "name — …/parent/folders": tells apart folders with the same name.
+    function externalFolderLabel(path){
+        const p=normalizeNavPath(path);
+        if(/^[A-Za-z]:\/$/.test(p))return p;
+        const i=p.lastIndexOf("/"),name=p.slice(i+1);
+        let parent=p.slice(0,i)||p.slice(0,2);
+        if(parent.length>32){const parts=parent.split("/");parent="…/"+parts.slice(-2).join("/");}
+        return `${name} — ${parent}`;
     }
 
     function normalizeNavPath(value){
@@ -850,13 +862,8 @@ async function openGallery(node){
         return i<0?"":p.slice(0,i);
     }
     async function navigateGalleryFolder(value){
-    const chosen=normalizeNavPath(value);
-    if(isAbsoluteGalleryPath(chosen)) rememberExternalFolder(chosen);
-    let option=[...folderSelect.options].find(o=>normalizeNavPath(o.value)===chosen);
-    if(!option){option=document.createElement("option");option.value=chosen;option.textContent=chosen||ROOT_LABEL;folderSelect.appendChild(option);}
-    folderSelect.value=option.value;
     filterText="";search.value="";
-    await loadFolder(chosen);
+    await loadFolder(normalizeNavPath(value));
 }
     function renderBreadcrumbs(){
         breadcrumbs.replaceChildren();
@@ -1086,6 +1093,9 @@ async function openGallery(node){
         const oldScroll = body.scrollTop;
         activeFolder = normalizeNavPath(folder);
         node.__cigFolder = activeFolder;
+        // Every opened external folder moves to the top of the recent list.
+        if(isAbsoluteGalleryPath(activeFolder)) rememberExternalFolder(activeFolder);
+        renderFolderSelect(activeFolder);
         rebuildThumbLoader();
         grid.innerHTML = `<div class="cig-empty">${cigT.loadingList}</div>`;
         count.textContent = "";
@@ -1110,34 +1120,45 @@ async function openGallery(node){
         updateCacheStats();
     }
 
+    // The folder list: the input root, then recent external folders (newest
+    // first), then the input subfolders in tree order.
+    let __cigInputFolders=[""];
+    function renderFolderSelect(selectedFolder){
+        const selected=normalizeNavPath(selectedFolder);
+        const ru=CIG_LANG==="ru";
+        const option=(value,label,title="")=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(title)o.title=title;o.selected=folderKey(value)===folderKey(selected);return o;};
+        const group=label=>{const g=document.createElement("optgroup");g.label=label;return g;};
+        const frag=document.createDocumentFragment();
+        frag.appendChild(option("",ROOT_LABEL));
+        const recent=getRecentExternalFolders();
+        if(isAbsoluteGalleryPath(selected)&&!recent.some(p=>folderKey(p)===folderKey(selected)))recent.unshift(selected);
+        if(recent.length){
+            const g=group(ru?"Недавние папки":"Recent folders");
+            for(const p of recent)g.appendChild(option(p,externalFolderLabel(p),p));
+            frag.appendChild(g);
+        }
+        const subs=__cigInputFolders.filter(f=>normalizeNavPath(f));
+        if(selected&&!isAbsoluteGalleryPath(selected)&&!subs.some(f=>folderKey(f)===folderKey(selected)))subs.push(selected);
+        // Tree order: each folder directly followed by its own subfolders.
+        const byName=(a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"});
+        subs.sort((a,b)=>{const x=normalizeNavPath(a).split("/"),y=normalizeNavPath(b).split("/");for(let i=0;i<Math.min(x.length,y.length);i++){const c=byName(x[i],y[i]);if(c)return c;}return x.length-y.length;});
+        if(subs.length){
+            const g=group(ru?"Папки input":"input folders");
+            for(const f of subs)g.appendChild(option(f,f,f));
+            frag.appendChild(g);
+        }
+        folderSelect.replaceChildren(frag);
+        folderSelect.title=selected||ROOT_LABEL;
+    }
     async function fillFolders(preferred){
-    const data=await fetchJson("/image-gallery/folders");
-    const baseFolders=Array.isArray(data.folders)?data.folders:[""];
-    const preferredNorm=normalizeNavPath(preferred);
-    const recent=getRecentExternalFolders();
-    const merged=[];
-    if(isAbsoluteGalleryPath(preferredNorm)) merged.push(preferredNorm);
-    for(const folder of recent){
-        const norm=normalizeNavPath(folder);
-        if(!merged.some(v=>normalizeNavPath(v)===norm)) merged.push(norm);
+        const data=await fetchJson("/image-gallery/folders");
+        __cigInputFolders=Array.isArray(data.folders)?data.folders:[""];
+        const preferredNorm=normalizeNavPath(preferred);
+        const known=isAbsoluteGalleryPath(preferredNorm)||__cigInputFolders.some(f=>folderKey(f)===folderKey(preferredNorm));
+        const selected=known?preferredNorm:"";
+        renderFolderSelect(selected);
+        return selected;
     }
-    for(const folder of baseFolders){
-        const norm=normalizeNavPath(folder);
-        if(!merged.some(v=>normalizeNavPath(v)===norm)) merged.push(folder);
-    }
-    const selected=merged.some(f=>normalizeNavPath(f)===preferredNorm)?preferredNorm:"";
-    folderSelect.replaceChildren();
-    const frag=document.createDocumentFragment();
-    for(const folder of merged){
-        const o=document.createElement("option");
-        o.value=folder;
-        o.textContent=folder||ROOT_LABEL;
-        o.selected=normalizeNavPath(folder)===selected;
-        frag.appendChild(o);
-    }
-    folderSelect.appendChild(frag);
-    return selected;
-}
 
     let __cigSelectionSyncRAF=0;
     body.addEventListener("scroll",()=>{
@@ -1350,19 +1371,9 @@ body.addEventListener("mousedown", e=>{
     try{
         const data=await fetchJson("/image-gallery/pick-folder",{method:"POST"});
         if(!data?.path)return;
-        const chosen=normalizeNavPath(data.path);
-        rememberExternalFolder(chosen);
-        let option=[...folderSelect.options].find(o=>normalizeNavPath(o.value)===chosen);
-        if(!option){
-            option=document.createElement("option");
-            option.value=chosen;
-            option.textContent=chosen;
-            folderSelect.appendChild(option);
-        }
-        folderSelect.value=option.value;
         filterText="";
         search.value="";
-        await loadFolder(chosen);
+        await loadFolder(normalizeNavPath(data.path));
     }catch(error){
         grid.innerHTML=`<div class="cig-empty">${String(error?.message??error)}</div>`;
     }finally{

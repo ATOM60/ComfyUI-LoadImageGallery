@@ -25,6 +25,7 @@ const TEXT = RU ? {
 
 function normalizeFolder(value) {
     let raw = String(value ?? "").trim().replace(/\\/g, "/");
+    if (/^[a-z]:/.test(raw)) raw = raw[0].toUpperCase() + raw.slice(1);
     if (/^[A-Za-z]:\/?$/.test(raw)) return raw.slice(0, 2) + "/";
     if (raw.length > 1) raw = raw.replace(/\/+$/g, "");
     return raw;
@@ -40,6 +41,9 @@ function saveCurrentFolder(folder) {
     catch (_) {}
 }
 
+// Recent folders: most recently opened first, compared case-insensitively.
+const folderKey = folder => normalizeFolder(folder).toLowerCase();
+
 function loadRecentFolders() {
     try {
         const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
@@ -47,7 +51,7 @@ function loadRecentFolders() {
         const out = [];
         for (const item of raw) {
             const folder = normalizeFolder(item);
-            if (!folder || out.includes(folder)) continue;
+            if (!folder || out.some(v => folderKey(v) === folderKey(folder))) continue;
             out.push(folder);
             if (out.length >= RECENT_LIMIT) break;
         }
@@ -57,20 +61,34 @@ function loadRecentFolders() {
     }
 }
 
-function rememberFolder(folder) {
-    const normalized = normalizeFolder(folder);
-    if (!normalized) return;
-    const recent = [normalized, ...loadRecentFolders().filter(item => item !== normalized)].slice(0, RECENT_LIMIT);
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); }
+function saveRecentFolders(list) {
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_LIMIT))); }
     catch (_) {}
 }
 
-function shortFolderName(folder) {
+function rememberFolder(folder) {
+    const normalized = normalizeFolder(folder);
+    if (!normalized) return;
+    saveRecentFolders([normalized, ...loadRecentFolders().filter(item => folderKey(item) !== folderKey(normalized))]);
+}
+
+// Keeps a folder in the list without moving it to the top.
+function keepInRecent(folder) {
+    const normalized = normalizeFolder(folder);
+    const recent = loadRecentFolders();
+    if (normalized && !recent.some(item => folderKey(item) === folderKey(normalized))) saveRecentFolders([...recent, normalized]);
+}
+
+// "name — …/parent/folders": tells apart folders with the same name.
+function folderLabel(folder) {
     const normalized = normalizeFolder(folder);
     if (!normalized) return TEXT.output;
-    const withoutSlash = normalized.replace(/\/+$/g, "");
-    const parts = withoutSlash.split("/").filter(Boolean);
-    return parts.at(-1) || normalized;
+    if (/^[A-Za-z]:\/$/.test(normalized)) return normalized;
+    const i = normalized.lastIndexOf("/");
+    const name = normalized.slice(i + 1);
+    let parent = normalized.slice(0, i) || normalized.slice(0, 2);
+    if (parent.length > 32) parent = "…/" + parent.split("/").slice(-2).join("/");
+    return `${name} — ${parent}`;
 }
 
 function injectStyles() {
@@ -166,7 +184,7 @@ function staleReason(folder, response, data) {
 
 function resetToOutput(folder, reason) {
     saveCurrentFolder("");
-    rememberFolder(folder);
+    keepInRecent(folder);
     const modal = visibleOutputModal();
     if (modal) {
         modal.dataset.ovgFolder = "";
@@ -212,7 +230,7 @@ function patchOutputListRequest() {
 function rebuildSelect(select, selectedFolder) {
     const current = normalizeFolder(selectedFolder);
     const folders = loadRecentFolders();
-    if (current && !folders.includes(current)) folders.unshift(current);
+    if (current && !folders.some(item => folderKey(item) === folderKey(current))) folders.unshift(current);
 
     select.replaceChildren();
 
@@ -221,15 +239,21 @@ function rebuildSelect(select, selectedFolder) {
     output.textContent = TEXT.output;
     select.appendChild(output);
 
-    for (const folder of folders) {
-        const option = document.createElement("option");
-        option.value = folder;
-        option.textContent = shortFolderName(folder);
-        option.title = folder;
-        select.appendChild(option);
+    if (folders.length) {
+        const group = document.createElement("optgroup");
+        group.label = RU ? "Недавние папки" : "Recent folders";
+        for (const folder of folders) {
+            const option = document.createElement("option");
+            option.value = folder;
+            option.textContent = folderLabel(folder);
+            option.title = folder;
+            option.selected = folderKey(folder) === folderKey(current);
+            group.appendChild(option);
+        }
+        select.appendChild(group);
     }
 
-    select.value = current;
+    if (!current) select.value = "";
     select.title = current || TEXT.output;
 }
 
@@ -238,11 +262,11 @@ function refreshGallery(modal) {
     if (refresh instanceof HTMLElement) refresh.click();
 }
 
-function setFolder(modal, select, folder, { remember = false } = {}) {
+function setFolder(modal, select, folder) {
     const normalized = normalizeFolder(folder);
     modal.dataset.ovgFolder = normalized;
     saveCurrentFolder(normalized);
-    if (remember && normalized) rememberFolder(normalized);
+    if (normalized) rememberFolder(normalized);
     rebuildSelect(select, normalized);
     refreshGallery(modal);
 }
@@ -298,7 +322,7 @@ function installControls(modal) {
             const data = await response.json();
             if (!response.ok) throw new Error(data?.error || TEXT.error);
             if (!data?.path) return;
-            setFolder(modal, select, data.path, { remember: true });
+            setFolder(modal, select, data.path);
         } catch (error) {
             showError(error?.message || String(error));
         } finally {
