@@ -123,19 +123,89 @@ function folderForListRequest() {
     return loadCurrentFolder();
 }
 
+// CIG_OUTPUT_FOLDER_INSTALL_GUARD_V1
+// The chosen folder lives in browser storage, which outlives a ComfyUI
+// reinstall or move (Comfy Desktop keeps it outside the installation). Each
+// listing reports the current installation's output folder; a remembered
+// folder that is gone, or that was chosen under another installation, falls
+// back to this installation's output. It stays in the recent list.
+const OUTPUT_ROOT_KEY = "ComfyUI-LoadImageGallery.outputVideoComfyOutput";
+
+function sameFolder(a, b) {
+    return normalizeFolder(a).toLowerCase() === normalizeFolder(b).toLowerCase();
+}
+
+function loadOutputRoot() {
+    try { return normalizeFolder(localStorage.getItem(OUTPUT_ROOT_KEY) || ""); }
+    catch (_) { return ""; }
+}
+
+function saveOutputRoot(root) {
+    if (!root) return;
+    try { localStorage.setItem(OUTPUT_ROOT_KEY, normalizeFolder(root)); }
+    catch (_) {}
+}
+
+async function jsonOf(response) {
+    try { return await response.clone().json(); }
+    catch (_) { return null; }
+}
+
+function staleReason(folder, response, data) {
+    const comfyOutput = normalizeFolder(data?.comfy_output || "");
+    if (response.status === 404) return RU ? `Папка не найдена: ${folder}` : `Folder not found: ${folder}`;
+    if (!response.ok || !comfyOutput) return "";
+    const known = loadOutputRoot();
+    // Before this guard existed nothing was recorded: a remembered folder named
+    // "output" that is not this installation's output is an old installation's.
+    const changed = known ? !sameFolder(known, comfyOutput)
+        : /\/output$/i.test(normalizeFolder(folder)) && !sameFolder(folder, comfyOutput);
+    if (!changed) return "";
+    return RU ? `Папка выбрана в другой установке ComfyUI: ${folder}` : `Folder was chosen in another ComfyUI installation: ${folder}`;
+}
+
+function resetToOutput(folder, reason) {
+    saveCurrentFolder("");
+    rememberFolder(folder);
+    const modal = visibleOutputModal();
+    if (modal) {
+        modal.dataset.ovgFolder = "";
+        const select = modal.querySelector(".ovg-folder-select");
+        if (select instanceof HTMLSelectElement) rebuildSelect(select, "");
+    }
+    try {
+        app.extensionManager?.toast?.add({
+            severity: "info",
+            summary: RU ? "Открыта папка output" : "Showing output",
+            detail: `${reason}. ${RU ? "Её можно снова выбрать в списке папок." : "You can pick it again from the folder list."}`,
+            life: 6000,
+        });
+    } catch (_) {}
+}
+
 function patchOutputListRequest() {
     if (api.__cigOutputFolderListPatched) return;
     api.__cigOutputFolderListPatched = true;
 
     const originalFetchApi = api.fetchApi;
-    api.fetchApi = function(route, options) {
-        if (typeof route === "string" && route === "/image-gallery/output/list") {
-            const folder = folderForListRequest();
-            if (folder) {
-                route = `/image-gallery/output/list-folder?folder=${encodeURIComponent(folder)}`;
-            }
+    api.fetchApi = async function(route, options) {
+        if (typeof route !== "string" || route !== "/image-gallery/output/list") {
+            return originalFetchApi.call(this, route, options);
         }
-        return originalFetchApi.call(this, route, options);
+        const folder = folderForListRequest();
+        if (folder) {
+            const response = await originalFetchApi.call(this, `/image-gallery/output/list-folder?folder=${encodeURIComponent(folder)}`, options);
+            const data = await jsonOf(response);
+            const reason = staleReason(folder, response, data);
+            if (!reason) {
+                saveOutputRoot(data?.comfy_output);
+                return response;
+            }
+            resetToOutput(folder, reason);
+        }
+        const response = await originalFetchApi.call(this, route, options);
+        if (response.ok) saveOutputRoot((await jsonOf(response))?.output);
+        return response;
     };
 }
 

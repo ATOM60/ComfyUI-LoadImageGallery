@@ -328,8 +328,10 @@ async def list_folder_videos(request):
     try:
         folder = request.query.get("folder", "")
         rows, root = await asyncio.get_running_loop().run_in_executor(base._IO, _scan_folder, folder)
-        return web.json_response({"videos": rows, "output": str(root)})
+        # comfy_output lets the gallery notice a different ComfyUI installation
+        # and fall back from a folder remembered in browser storage.
+        return web.json_response({"videos": rows, "output": str(root), "comfy_output": str(base._root())})
     except FileNotFoundError as exc:
-        return web.json_response({"error": str(exc)}, status=404)
+        return web.json_response({"error": str(exc), "comfy_output": str(base._root())}, status=404)
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
