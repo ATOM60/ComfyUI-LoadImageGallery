@@ -93,7 +93,7 @@ Sets can contain images from different folders, including external folders. They
 
 Folder cards show up to four thumbnails and the image count. A folder with no images of its own borrows them from its subfolders. Previews load as you scroll and share the thumbnail cache; **Refresh** reloads them.
 
-Up to 20 recently used external folders stay in the **Folder:** list.
+The **Folder:** list starts with **Recent folders** — up to 20 recently opened folders, input subfolders and external ones, newest first, labelled "name — parent" — followed by all input subfolders in tree order.
 
 ### Scenario 7. See a folder with all its subfolders as one list
 

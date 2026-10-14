@@ -812,9 +812,10 @@ async function openGallery(node){
     document.addEventListener("keydown", onKey);
 
     // CIG_RECENT_FOLDERS_V2
-    // One history of external folders, most recently opened first (case-
-    // insensitive, as on Windows). It replaces the old 10-item list and the
-    // separate 20-item module; both stored lists are read once and merged.
+    // One history of opened folders - input subfolders and external folders -
+    // most recently opened first (case-insensitive, as on Windows). It replaces
+    // the old 10-item list and the separate 20-item module; both stored lists
+    // are read once and merged.
     const CIG_RECENT_FOLDERS_KEY="ComfyUI-LoadImageGallery.recentFolders20";
     const CIG_LEGACY_RECENT_KEY="ComfyUI-LoadImageGallery.recentFolders";
     const CIG_RECENT_FOLDERS_LIMIT=20;
@@ -826,7 +827,7 @@ async function openGallery(node){
         const out=[],seen=new Set();
         for(const item of [...readFolderList(CIG_RECENT_FOLDERS_KEY),...readFolderList(CIG_LEGACY_RECENT_KEY)]){
             const p=normalizeNavPath(item);
-            if(!isAbsoluteGalleryPath(p)||seen.has(folderKey(p)))continue;
+            if(!p||seen.has(folderKey(p)))continue;
             seen.add(folderKey(p));out.push(p);
             if(out.length>=CIG_RECENT_FOLDERS_LIMIT)break;
         }
@@ -834,7 +835,7 @@ async function openGallery(node){
     }
     function rememberExternalFolder(path){
         const p=normalizeNavPath(path);
-        if(!isAbsoluteGalleryPath(p)) return;
+        if(!p) return;
         const arr=[p,...getRecentExternalFolders().filter(v=>folderKey(v)!==folderKey(p))].slice(0,CIG_RECENT_FOLDERS_LIMIT);
         try{localStorage.setItem(CIG_RECENT_FOLDERS_KEY,JSON.stringify(arr));localStorage.removeItem(CIG_LEGACY_RECENT_KEY);}catch(_){}
     }
@@ -843,6 +844,7 @@ async function openGallery(node){
         const p=normalizeNavPath(path);
         if(/^[A-Za-z]:\/$/.test(p))return p;
         const i=p.lastIndexOf("/"),name=p.slice(i+1);
+        if(!isAbsoluteGalleryPath(p))return `${name} — input${i<0?"":"/"+p.slice(0,i)}`;
         let parent=p.slice(0,i)||p.slice(0,2);
         if(parent.length>32){const parts=parent.split("/");parent="…/"+parts.slice(-2).join("/");}
         return `${name} — ${parent}`;
@@ -1093,8 +1095,8 @@ async function openGallery(node){
         const oldScroll = body.scrollTop;
         activeFolder = normalizeNavPath(folder);
         node.__cigFolder = activeFolder;
-        // Every opened external folder moves to the top of the recent list.
-        if(isAbsoluteGalleryPath(activeFolder)) rememberExternalFolder(activeFolder);
+        // Every opened folder (except the input root) moves to the top of the recent list.
+        rememberExternalFolder(activeFolder);
         renderFolderSelect(activeFolder);
         rebuildThumbLoader();
         grid.innerHTML = `<div class="cig-empty">${cigT.loadingList}</div>`;
@@ -1120,25 +1122,27 @@ async function openGallery(node){
         updateCacheStats();
     }
 
-    // The folder list: the input root, then recent external folders (newest
-    // first), then the input subfolders in tree order.
+    // The folder list: the input root, then recent folders (newest first),
+    // then all input subfolders in tree order.
     let __cigInputFolders=[""];
     function renderFolderSelect(selectedFolder){
         const selected=normalizeNavPath(selectedFolder);
         const ru=CIG_LANG==="ru";
-        const option=(value,label,title="")=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(title)o.title=title;o.selected=folderKey(value)===folderKey(selected);return o;};
+        let marked=false;
+        const option=(value,label,title="")=>{const o=document.createElement("option");o.value=value;o.textContent=label;if(title)o.title=title;if(!marked&&folderKey(value)===folderKey(selected)){o.selected=marked=true;}return o;};
         const group=label=>{const g=document.createElement("optgroup");g.label=label;return g;};
         const frag=document.createDocumentFragment();
         frag.appendChild(option("",ROOT_LABEL));
-        const recent=getRecentExternalFolders();
-        if(isAbsoluteGalleryPath(selected)&&!recent.some(p=>folderKey(p)===folderKey(selected)))recent.unshift(selected);
+        // Input subfolders that no longer exist drop out of the recent list.
+        const inputKeys=new Set(__cigInputFolders.map(folderKey));
+        const recent=getRecentExternalFolders().filter(p=>isAbsoluteGalleryPath(p)||inputKeys.has(folderKey(p))||folderKey(p)===folderKey(selected));
+        if(selected&&!recent.some(p=>folderKey(p)===folderKey(selected)))recent.unshift(selected);
         if(recent.length){
             const g=group(ru?"Недавние папки":"Recent folders");
             for(const p of recent)g.appendChild(option(p,externalFolderLabel(p),p));
             frag.appendChild(g);
         }
         const subs=__cigInputFolders.filter(f=>normalizeNavPath(f));
-        if(selected&&!isAbsoluteGalleryPath(selected)&&!subs.some(f=>folderKey(f)===folderKey(selected)))subs.push(selected);
         // Tree order: each folder directly followed by its own subfolders.
         const byName=(a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"});
         subs.sort((a,b)=>{const x=normalizeNavPath(a).split("/"),y=normalizeNavPath(b).split("/");for(let i=0;i<Math.min(x.length,y.length);i++){const c=byName(x[i],y[i]);if(c)return c;}return x.length-y.length;});

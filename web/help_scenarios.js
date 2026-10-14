@@ -87,7 +87,7 @@ const EN = {
             ],
             notes: [
                 "Folder cards show up to four thumbnails and the image count; a folder without its own images borrows them from its subfolders.",
-                "Up to 20 recently used external folders stay in the list.",
+                "The list starts with up to 20 recently opened folders — input subfolders and external ones — newest first, followed by all input subfolders in tree order.",
             ],
         },
         {
@@ -247,7 +247,7 @@ const RU = {
             ],
             notes: [
                 "Карточка папки показывает до четырёх миниатюр и число изображений; если своих изображений нет, миниатюры берутся из подпапок.",
-                "До 20 последних внешних папок сохраняются в списке.",
+                "В начале списка — до 20 недавно открытых папок, внутренних и внешних, последняя сверху; ниже — все подпапки input деревом.",
             ],
         },
         {
