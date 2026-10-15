@@ -136,6 +136,7 @@ Thumbnails are made in the background; during a generation this takes longer, an
 3. In fullscreen, use the controls on the right: **⏮** previous video, **⏱** playback speed, **⏭** next video.
 
 - Swipe horizontally over the video to seek backward or forward.
+- Hold the left mouse button on the video for about 0.3 s to see the current frame magnified 6× full screen, exactly as in scenario 3: the video keeps playing (a paused one shows its still frame), moving the mouse moves the magnified spot, releasing closes it. Works with GPU and CPU playback, inline and in fullscreen (not on the bottom controls), and does not pause the video. Mouse only — touch keeps swipe-to-seek.
 - The mouse wheel over the video changes the volume; the speaker button mutes and restores it. The volume slider is available even on small previews.
 - Videos loop; playback speed and volume are remembered.
 

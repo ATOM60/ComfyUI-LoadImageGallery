@@ -5,8 +5,9 @@
 // screen is the relative point of the image under it, so the screen edges
 // reach the image edges. Releasing the button closes the window.
 //
-// Shared by the input gallery cards and the node preview. No side effects on
-// import, so ComfyUI may also load this file as an extension module.
+// Shared by the input gallery cards, the node preview and the GPU/CPU video
+// players (a live <video> or <canvas>, redrawn every frame). No side effects
+// on import, so ComfyUI may also load this file as an extension module.
 
 export const HOLD_ZOOM_FACTOR = 6;
 export const HOLD_ZOOM_DELAY_MS = 280;
@@ -21,6 +22,7 @@ function injectStyles() {
 .cig-hold-zoom{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.88);pointer-events:none;user-select:none}
 .cig-hold-zoom-frame{position:absolute;inset:0;overflow:hidden;background:#000;visibility:hidden}
 .cig-hold-zoom-frame img{position:absolute;left:0;top:0;max-width:none;max-height:none;display:block;will-change:transform}
+.cig-hold-zoom-live{position:absolute;left:0;top:0;display:block}
 .cig-hold-zoom-badge{position:absolute;right:10px;top:8px;padding:2px 8px;border-radius:999px;background:rgba(0,0,0,.62);color:#fff;font:600 12px/18px Arial,sans-serif}
 `;
     document.head.appendChild(style);
@@ -28,9 +30,17 @@ function injectStyles() {
 
 const clamp01 = value => Math.min(1, Math.max(0, value));
 
+// In fullscreen only the fullscreen element's subtree is visible, so the zoom
+// window goes inside it (a fullscreen <video>/<canvas> cannot hold children).
+function zoomHost() {
+    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+    return fs instanceof HTMLElement && !(fs instanceof HTMLMediaElement) && !(fs instanceof HTMLCanvasElement) ? fs : document.body;
+}
+
 /**
- * Opens the zoom window at once. `source.src` is the full-resolution image;
- * `source.previewSrc` (optional) is shown while it loads. Closes on button
+ * Opens the zoom window at once. Either `source.src` is the full-resolution
+ * image (`source.previewSrc`, optional, is shown while it loads), or
+ * `source.element` is a <video>/<canvas> shown live. Closes on button
  * release, Escape, or window blur. Returns { close }.
  */
 export function openHoldZoom(source, clientX, clientY) {
@@ -45,7 +55,7 @@ export function openHoldZoom(source, clientX, clientY) {
     badge.textContent = `×${zoom}`;
     frame.append(badge);
     root.appendChild(frame);
-    document.body.appendChild(root);
+    zoomHost().appendChild(root);
 
     let view = null, shownRank = 0;
     let naturalW = 0, naturalH = 0;
@@ -78,7 +88,10 @@ export function openHoldZoom(source, clientX, clientY) {
         img.draggable = false;
         img.decoding = "async";
         img.src = url;
-        img.decode().catch(() => {}).then(() => {
+        // decode() can stay pending while the page is not being rendered; fall
+        // back to the load event after a moment rather than never showing it.
+        const loaded = new Promise(resolve => { img.onload = () => setTimeout(resolve, 1000); img.onerror = resolve; });
+        Promise.race([img.decode().catch(() => {}), loaded]).then(() => {
             if (closed || rank <= shownRank || !img.naturalWidth || !img.naturalHeight) return;
             shownRank = rank;
             naturalW = img.naturalWidth; naturalH = img.naturalHeight;
@@ -90,19 +103,56 @@ export function openHoldZoom(source, clientX, clientY) {
         });
     }
 
-    load(source.src, 2);
-    load(source.previewSrc, 1);
+    // Live source: draw only the visible part of the current frame, every
+    // animation frame, so playing video stays live and a paused one is still.
+    const media = source.element;
+    let live = null, liveRaf = 0;
+    function drawLive() {
+        const nw = media.videoWidth || media.width || 0, nh = media.videoHeight || media.height || 0;
+        if (!nw || !nh) return;
+        const vw = innerWidth, vh = innerHeight, dpr = window.devicePixelRatio || 1;
+        const bw = Math.round(vw * dpr), bh = Math.round(vh * dpr);
+        if (live.width !== bw || live.height !== bh) {
+            live.width = bw; live.height = bh;
+            live.style.width = `${vw}px`; live.style.height = `${vh}px`;
+        }
+        const s = Math.min(vw / nw, vh / nh) * zoom;
+        const ox = offset(x, vw, nw * s), oy = offset(y, vh, nh * s);
+        const sx = Math.max(0, -ox / s), sy = Math.max(0, -oy / s);
+        const sw = Math.min(nw - sx, vw / s), sh = Math.min(nh - sy, vh / s);
+        const ctx = live.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, vw, vh);
+        try { ctx.drawImage(media, sx, sy, sw, sh, ox + sx * s, oy + sy * s, sw * s, sh * s); } catch (_) {}
+        frame.style.visibility = "visible";
+    }
+    const liveLoop = () => {
+        liveRaf = closed ? 0 : requestAnimationFrame(liveLoop);
+        drawLive();
+    };
+    if (media instanceof HTMLVideoElement || media instanceof HTMLCanvasElement) {
+        live = document.createElement("canvas");
+        live.className = "cig-hold-zoom-live";
+        frame.prepend(live);
+        liveLoop();
+    } else {
+        load(source.src, 2);
+        load(source.previewSrc, 1);
+    }
 
     // Browsers already coalesce pointermove to one event per frame, and a
     // requestAnimationFrame here would stall in a hidden or throttled tab.
     const onMove = event => {
         x = event.clientX; y = event.clientY;
-        position();
+        if (live) drawLive();
+        else position();
     };
     const onKey = event => { if (event.key === "Escape") close(); };
     function close() {
         if (closed) return;
         closed = true;
+        if (liveRaf) cancelAnimationFrame(liveRaf);
         document.removeEventListener("pointermove", onMove, true);
         document.removeEventListener("pointerup", close, true);
         document.removeEventListener("pointercancel", close, true);
@@ -141,7 +191,7 @@ export function holdToZoom(downEvent, source) {
     const timer = setTimeout(() => {
         cancel();
         const resolved = typeof source === "function" ? source() : source;
-        if (!resolved?.src) return;
+        if (!resolved?.src && !resolved?.element) return;
         handle.used = true;
         openHoldZoom(resolved, x, y);
     }, HOLD_ZOOM_DELAY_MS);

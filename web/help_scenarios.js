@@ -137,6 +137,7 @@ const EN = {
             ],
             notes: [
                 "Swipe horizontally over the video to seek; the mouse wheel changes the volume, and the speaker button mutes. Videos loop; speed and volume are remembered.",
+                "Hold the left mouse button on the video for about 0.3 s to see the frame magnified 6× full screen, as in scenario 3 — the video keeps playing; release to close. Works with GPU and CPU playback, also in fullscreen (not on the bottom controls); playback is not paused by it.",
                 "After fullscreen, the last viewed video keeps playing in its own card from the same position. Controls hide when idle and return on mouse movement, touch or a key press.",
             ],
         },
@@ -297,6 +298,7 @@ const RU = {
             ],
             notes: [
                 "Горизонтальный жест по видео перематывает, колесо мыши меняет громкость, кнопка динамика выключает звук. Видео повторяется по кругу; скорость и громкость запоминаются.",
+                "Удерживайте левую кнопку мыши на видео около 0,3 секунды — кадр откроется на весь экран, увеличенным в 6 раз, как в сценарии 3, а видео продолжит играть; отпустите кнопку, чтобы закрыть. Работает в GPU- и CPU-режиме, в том числе на весь экран (кроме нижней панели управления); на паузу видео при этом не встаёт.",
                 "После выхода из полноэкранного режима последнее видео продолжает играть в своей карточке с той же позиции. Элементы управления скрываются при бездействии и возвращаются при движении мыши, касании или нажатии клавиши.",
             ],
         },
