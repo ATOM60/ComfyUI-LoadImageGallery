@@ -47,7 +47,7 @@ const EN = {
             n: 3, title: "Look at an image up close",
             steps: [
                 "Hold the left mouse button on a gallery thumbnail or on the node preview for about 0.3 s.",
-                "The image opens full screen, magnified 6×.",
+                "The image opens full screen, magnified 5×.",
                 "Keep holding and move the mouse: the pointer's place on the screen is the place of the image you see — screen corner, image corner.",
                 "Release the button to close.",
             ],
@@ -137,7 +137,7 @@ const EN = {
             ],
             notes: [
                 "Swipe horizontally over the video to seek; the mouse wheel changes the volume, and the speaker button mutes. Videos loop; speed and volume are remembered.",
-                "Hold the left mouse button on the video for about 0.3 s to see the frame magnified 6× full screen, as in scenario 3 — the video keeps playing; release to close. Works with GPU and CPU playback, also in fullscreen (not on the bottom controls); playback is not paused by it.",
+                "Hold the left mouse button on the video for about 0.3 s to see the frame magnified 5× full screen, as in scenario 3 — the video keeps playing; release to close. Works with GPU and CPU playback, also in fullscreen (not on the bottom controls); playback is not paused by it.",
                 "After fullscreen, the last viewed video keeps playing in its own card from the same position. Controls hide when idle and return on mouse movement, touch or a key press.",
             ],
         },
@@ -208,7 +208,7 @@ const RU = {
             n: 3, title: "Рассмотреть изображение вблизи",
             steps: [
                 "Удерживайте левую кнопку мыши на превью в галерее или в ноде около 0,3 секунды.",
-                "Изображение откроется на весь экран, увеличенным в 6 раз.",
+                "Изображение откроется на весь экран, увеличенным в 5 раз.",
                 "Не отпуская кнопку, водите мышью: где курсор на экране, та часть изображения и видна — угол экрана соответствует углу изображения.",
                 "Отпустите кнопку, чтобы закрыть.",
             ],
@@ -298,7 +298,7 @@ const RU = {
             ],
             notes: [
                 "Горизонтальный жест по видео перематывает, колесо мыши меняет громкость, кнопка динамика выключает звук. Видео повторяется по кругу; скорость и громкость запоминаются.",
-                "Удерживайте левую кнопку мыши на видео около 0,3 секунды — кадр откроется на весь экран, увеличенным в 6 раз, как в сценарии 3, а видео продолжит играть; отпустите кнопку, чтобы закрыть. Работает в GPU- и CPU-режиме, в том числе на весь экран (кроме нижней панели управления); на паузу видео при этом не встаёт.",
+                "Удерживайте левую кнопку мыши на видео около 0,3 секунды — кадр откроется на весь экран, увеличенным в 5 раз, как в сценарии 3, а видео продолжит играть; отпустите кнопку, чтобы закрыть. Работает в GPU- и CPU-режиме, в том числе на весь экран (кроме нижней панели управления); на паузу видео при этом не встаёт.",
                 "После выхода из полноэкранного режима последнее видео продолжает играть в своей карточке с той же позиции. Элементы управления скрываются при бездействии и возвращаются при движении мыши, касании или нажатии клавиши.",
             ],
         },

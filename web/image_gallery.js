@@ -742,7 +742,7 @@ async function openGallery(node){
     overlay.addEventListener("mousedown", e=>{ if(e.target === overlay) close(); });
     panel.addEventListener("mousedown", e=>e.stopPropagation());
     // CIG_HOLD_ZOOM_V1
-    // Holding the left mouse button on a card shows the original ×6 (hold_zoom.js).
+    // Holding the left mouse button on a card shows the original ×5 (hold_zoom.js).
     // The click produced by the release must not toggle the card's selection.
     let __cigHoldZoom=null;
     body.addEventListener("pointerdown",e=>{

@@ -3,7 +3,7 @@ import { holdToZoom } from "./hold_zoom.js";
 
 // CIG_PLAYER_HOLD_ZOOM_V1
 // Holding the left mouse button on a playing or paused video in the Output
-// Gallery shows the current frame magnified ×6 full screen, live, the same
+// Gallery shows the current frame magnified ×5 full screen, live, the same
 // way as images (hold_zoom.js). Works for the GPU and CPU players, inline and
 // fullscreen. Mouse only: touch keeps its swipe-to-seek gesture. The click the
 // release produces must not toggle playback.

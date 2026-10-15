@@ -1,5 +1,5 @@
 // CIG_HOLD_ZOOM_V1
-// Hold the left mouse button on an image to see it full screen, magnified ×6
+// Hold the left mouse button on an image to see it full screen, magnified ×5
 // relative to the image fitted to the screen. While the button is held the
 // magnified spot follows the pointer: the pointer's relative position on the
 // screen is the relative point of the image under it, so the screen edges
@@ -9,7 +9,7 @@
 // players (a live <video> or <canvas>, redrawn every frame). No side effects
 // on import, so ComfyUI may also load this file as an extension module.
 
-export const HOLD_ZOOM_FACTOR = 6;
+export const HOLD_ZOOM_FACTOR = 5;
 export const HOLD_ZOOM_DELAY_MS = 280;
 const HOLD_ZOOM_SLOP_PX = 6;
 const STYLE_ID = "cig-hold-zoom-style";

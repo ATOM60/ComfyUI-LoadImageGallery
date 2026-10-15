@@ -300,7 +300,7 @@ export function installGalleryPreviewNavigation(node, dependencies) {
             else if (inside(p, this.__cigNextRect)) action = () => navigate(1);
             else if (inside(p, this.__cigImageRect)) {
                 action = () => openGallery(node);
-                // Holding the button shows the image ×6 instead of opening the gallery.
+                // Holding the button shows the image ×5 instead of opening the gallery.
                 const image = this.__cigImage;
                 if (holdToZoom && image?.src) {
                     hold = holdToZoom(pointer?.eDown, { src: image.currentSrc || image.src });
