@@ -3,6 +3,7 @@ import { api } from "/scripts/api.js";
 import { installGalleryPreviewNavigation } from "./preview_navigation.js";
 import { holdToZoom } from "./hold_zoom.js";
 import { helpScenarios, renderScenarios } from "./help_scenarios.js";
+import { installNodePanel } from "./node_panel.js";
 
 const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
@@ -265,49 +266,6 @@ function showCigHelp(){
     renderScenarios(content,help.images,help.imageFooter);
     head.append(title,x);box.append(head,content);ov.appendChild(box);document.body.appendChild(ov);
     x.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();ov.remove();});
-}
-
-// CIG_HELP_TITLEBAR_V1
-function installCigTitleHelp(node){
-    if(node.__cigTitleHelpInstalled)return;
-    node.__cigTitleHelpInstalled=true;
-    const oldDraw=node.onDrawForeground;
-    node.onDrawForeground=function(ctx){
-        oldDraw?.call(this,ctx);
-        const th=globalThis.LiteGraph?.NODE_TITLE_HEIGHT??30;
-        const sz=18;
-        ctx.save();ctx.font="14px Arial";const titleText=String(this.title||"Load Image Gallery");const titleWidth=ctx.measureText(titleText).width;ctx.restore();const x=26+titleWidth+22;
-        const y=-th+(th-sz)/2;
-        this.__cigTitleHelpRect={x,y,w:sz,h:sz};
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(x+sz/2,y+sz/2,sz/2,0,Math.PI*2);
-        ctx.fillStyle="#353535";
-        ctx.fill();
-        ctx.strokeStyle="#bdbdbd";
-        ctx.lineWidth=1;
-        ctx.stroke();
-        ctx.fillStyle="#ffffff";
-        ctx.font="bold 13px Arial";
-        ctx.textAlign="center";
-        ctx.textBaseline="middle";
-        ctx.fillText("i",x+sz/2,y+sz/2+.5);
-        ctx.restore();
-    };
-    const oldDown=node.onMouseDown;
-    node.onMouseDown=function(e,pos,graphcanvas){
-        const r=this.__cigTitleHelpRect;
-        const x=Array.isArray(pos)?pos[0]:pos?.x;
-        const y=Array.isArray(pos)?pos[1]:pos?.y;
-        if(r&&Number.isFinite(x)&&Number.isFinite(y)&&x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h){
-            e?.preventDefault?.();
-            e?.stopPropagation?.();
-            showCigHelp();
-            return true;
-        }
-        return oldDown?oldDown.call(this,e,pos,graphcanvas):false;
-    };
-    node.setDirtyCanvas?.(true,true);
 }
 
 async function openGallery(node){
@@ -1466,32 +1424,37 @@ function installGalleryStartButton(node) {
 
 function installNodePreview(node) {
     return installGalleryPreviewNavigation(node, {
-        app, api, getImageWidget, setWidgetValue, openGallery,
-        normalizePath, splitPath, joinPath, holdToZoom,
+        api, getImageWidget, setWidgetValue, normalizePath, splitPath, joinPath,
     });
+}
+
+// CIG_NODE_PANEL_V1: the node's UI is one HTML widget (node_panel.js) that
+// renders on the classic canvas and in Nodes 2.0 alike.
+function installGalleryNode(node, isNew) {
+    const navigator = installNodePreview(node);
+    installGalleryStartButton(node);
+    installNodePanel(node, {
+        api, app, getImageWidget, normalizePath, splitPath, openGallery, holdToZoom, navigator,
+        showHelp: showCigHelp, language: CIG_LANG, isNew,
+    });
+    installExternalPreviewRestore(node);
+    return navigator;
 }
 
 app.registerExtension({
     name: EXTENSION_NAME,
     beforeConfigureGraph(graphData) { captureSerializedGalleryImage(graphData); },
     loadedGraphNode(node) {
+        if (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) return;
+        node.__cigFromWorkflow = true;   // keeps its saved size (node_panel.js)
         restoreSerializedGalleryImage(node);
-        if (node.comfyClass === NODE_CLASS || node.type === NODE_CLASS) installNodePreview(node).refresh();
+        installGalleryNode(node, false).refresh();
+        node.__cigNodePanel?.render();
     },
     nodeCreated(node) {
         if (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) return;
         if (node.__cigImageGalleryInitialized) return;
         node.__cigImageGalleryInitialized = true;
-        // The preview opens the gallery directly; no legacy helper widget is needed.
-        installNodePreview(node);
-        installGalleryStartButton(node);
-        installCigTitleHelp(node);
-        installExternalPreviewRestore(node);
-        const computed = node.computeSize?.();
-        if (computed) {
-            const currentW = node.size?.[0] ?? computed[0];
-            const currentH = node.size?.[1] ?? computed[1];
-            if (computed[0] > currentW) node.setSize?.([computed[0], currentH]);
-        }
+        installGalleryNode(node, true);
     },
 });

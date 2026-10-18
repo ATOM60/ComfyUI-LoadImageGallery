@@ -12,12 +12,15 @@ This guide is organised by scenarios — what you want to do, the steps, then th
 
 Add the **Liber Load Image from Gallery and Output Gallery** node to your workflow.
 
-The node provides:
+The node shows:
 
-- the current image preview — click it to open the image gallery, hold it to zoom, use **‹ ›** beside it to browse;
+- a line with the file name, its resolution, its position in the folder and **?** (help);
+- the current image — click it to open the image gallery, hold it to zoom, use **‹ ›** on its sides to browse;
 - **Output Gallery** — work with videos;
 - **START** — queues selected images one by one;
 - **IMAGE** and **MASK** outputs.
+
+The node looks and works the same on the classic canvas and with **Nodes 2.0** (Vue nodes) enabled in ComfyUI. The file selector and the upload button are not drawn on the node; they remain in ComfyUI's properties panel on the right.
 
 ![Liber Load Image from Gallery node](docs/images/node-en.png)
 
@@ -35,9 +38,9 @@ The image is loaded into the node and the gallery closes. The **✕** button clo
 
 ### Scenario 2. Browse images right in the node
 
-1. Click **‹** (previous) or **›** (next) beside the node preview.
+1. Click **‹** (previous) or **›** (next) on the sides of the node preview.
 
-The file list loads automatically when the workflow opens or the image changes — you do not need to open the gallery first. The arrows follow the gallery's sorting and favorites. They are dimmed while the list loads or when there are fewer than two images; their position does not depend on the image aspect ratio.
+The file list loads automatically when the workflow opens or the image changes — you do not need to open the gallery first. The arrows follow the gallery's sorting and favorites. They are dimmed when there are fewer than two images to browse; they sit on the sides of the image area whatever its aspect ratio. The line above the image shows the position, e.g. **3 / 12**.
 
 If the image was chosen with **Subfolders** on (scenario 7), the arrows walk the same list, subfolders included.
 
@@ -172,7 +175,7 @@ Favorites are shown first in their gallery; click again to remove the mark. They
 
 ## Built-in help
 
-The **?** next to the node title and the **?** button in each gallery open the same scenarios in the selected language: scenarios 1–8 in the image gallery, 9–13 in the Output Gallery.
+The **?** in the node and the **?** button in each gallery open the same scenarios in the selected language: scenarios 1–8 in the image gallery, 9–13 in the Output Gallery.
 
 ## Language
 

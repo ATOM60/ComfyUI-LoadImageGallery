@@ -19,7 +19,7 @@ const EN = {
     imageTitle: "Image gallery — scenarios",
     videoTitle: "Output Gallery — scenarios",
     imageFooter: "Video scenarios (9–13) are in the help of the Output Gallery.",
-    videoFooter: "Image scenarios (1–8) are in the help of the image gallery: click the node preview, then **?**.",
+    videoFooter: "Image scenarios (1–8) are in the help of the image gallery: press **?** on the node.",
     images: [
         {
             n: 1, title: "Choose one image",
@@ -36,10 +36,10 @@ const EN = {
         {
             n: 2, title: "Browse images right in the node",
             steps: [
-                "Click **‹** or **›** beside the node preview.",
+                "Click **‹** or **›** on the sides of the node preview.",
             ],
             notes: [
-                "The arrows follow the gallery's sorting and favorites. They are dimmed while the list loads or when there are fewer than two images.",
+                "The arrows follow the gallery's sorting and favorites. They are dimmed when there are fewer than two images to browse. The line above the image shows the position, e.g. **3 / 12**.",
                 "If the image was chosen with **Subfolders** on (scenario 7), the arrows walk the same list, subfolders included.",
             ],
         },
@@ -180,7 +180,7 @@ const RU = {
     imageTitle: "Галерея изображений — сценарии",
     videoTitle: "Галерея output — сценарии",
     imageFooter: "Сценарии для видео (9–13) — в инструкции галереи output.",
-    videoFooter: "Сценарии для изображений (1–8) — в инструкции галереи изображений: нажмите на превью в ноде, затем **?**.",
+    videoFooter: "Сценарии для изображений (1–8) — в инструкции галереи изображений: нажмите **?** на ноде.",
     images: [
         {
             n: 1, title: "Выбрать одно изображение",
@@ -200,7 +200,7 @@ const RU = {
                 "Нажимайте **‹** или **›** по бокам превью в ноде.",
             ],
             notes: [
-                "Стрелки следуют сортировке и избранному галереи. Пока список загружается или изображений меньше двух, стрелки приглушены.",
+                "Стрелки следуют сортировке и избранному галереи. Если изображений меньше двух, стрелки приглушены. Строка над изображением показывает позицию, например **3 / 12**.",
                 "Если изображение выбрано при включённых **Подпапках** (сценарий 7), стрелки листают тот же список вместе с подпапками.",
             ],
         },

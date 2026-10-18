@@ -2,7 +2,6 @@ import { app } from "/scripts/app.js";
 
 const EXT_NAME = "Comfy.ImageGallery.UnifiedUiStyle";
 const STYLE_ID = "cig-unified-ui-style";
-const NODE_CLASS = "LoadImageGallery";
 
 function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -156,40 +155,12 @@ function patchHelpOverlay(root = document) {
     }
 }
 
-function patchNodeInfoButton(node) {
-    if (!node || (node.comfyClass !== NODE_CLASS && node.type !== NODE_CLASS) || node.__cigUnifiedInfoStyle) return;
-    node.__cigUnifiedInfoStyle = true;
-
-    const oldDraw = node.onDrawForeground;
-    node.onDrawForeground = function(ctx) {
-        oldDraw?.call(this, ctx);
-        const r = this.__cigTitleHelpRect;
-        if (!r) return;
-        ctx.save();
-        ctx.fillStyle = "#353535";
-        ctx.strokeStyle = "#bdbdbd";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(r.x, r.y, r.w, r.h, 4);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 13px Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("?", r.x + r.w / 2, r.y + r.h / 2 + .5);
-        ctx.restore();
-    };
-    node.setDirtyCanvas?.(true, true);
-}
-
 app.registerExtension({
     name: EXT_NAME,
     setup() {
         injectStyles();
         patchInputGallery(document);
         patchHelpOverlay(document);
-        app.graph?._nodes?.forEach?.(patchNodeInfoButton);
 
         const observer = new MutationObserver(records => {
             for (const record of records) {
@@ -201,11 +172,5 @@ app.registerExtension({
             }
         });
         observer.observe(document.body, { childList:true, subtree:false });
-    },
-    nodeCreated(node) {
-        patchNodeInfoButton(node);
-    },
-    loadedGraphNode(node) {
-        patchNodeInfoButton(node);
     },
 });
