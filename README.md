@@ -91,14 +91,20 @@ Sets can contain images from different folders, including external folders. They
 ### Scenario 6. Open another folder
 
 1. Double-click a folder card, or use the path line above the images and **↑** to go up.
-2. Or choose a folder in the **Folder:** list at the bottom.
+2. Or press the folder button next to **Folder:** at the bottom and choose a folder in the tree.
 3. Press **...** to pick any folder on the computer in the system folder picker.
 
 On Windows **...** opens Explorer's own folder dialog: it follows the light or dark Windows theme, stays sharp on 4K screens, opens in the folder you are viewing (from the input root — in the folder you chose last time) and remembers its size and position. Each gallery remembers its own. The dialog opens on the computer running ComfyUI, so it is of no use when ComfyUI runs on a remote server.
 
 Folder cards show up to four thumbnails and the image count. A folder with no images of its own borrows them from its subfolders. Previews load as you scroll and share the thumbnail cache; **Refresh** reloads them.
 
-The **Folder:** list starts with **Recent folders** — up to 20 recently opened folders, input subfolders and external ones, newest first, labelled "name — parent" — followed by all input subfolders in tree order.
+The folder button shows the current folder's name and full path. It opens a tree like Explorer's navigation pane:
+
+- **Recent** — up to 20 recently opened folders, input subfolders and external ones, newest first, each with its full path;
+- **input** — ComfyUI's input folder and its subfolders;
+- **This PC** — the drives, and any folder on them.
+
+The tree opens expanded down to the current folder, which is highlighted. Click **›** to open a level and a name to go to that folder. The keyboard works too: arrows move and open levels, **Enter** chooses, **Esc** closes the tree. Hidden and system folders are not shown, as in Explorer.
 
 ### Scenario 7. See a folder with all its subfolders as one list
 
@@ -125,7 +131,7 @@ Thumbnails are cached on disk; the counter at the bottom shows the cache size. *
 ### Scenario 9. Open the video gallery
 
 1. Press **Output Gallery** in the node.
-2. Choose `output` or a recently used external folder in the list next to search, or press **...** to pick another folder.
+2. Choose a folder with the folder button next to search — the same tree as in the image gallery, with **output** instead of input — or press **...** to pick one in Explorer's dialog.
 3. Find the video with search (by name or folder), sorting, favorites and the card size slider.
 
 New videos appear by themselves: while the gallery is open the folder is checked every few seconds and again right after a generation finishes. During a generation, while a video plays or while videos are selected, the update waits and catches up afterwards. **Refresh** reloads the list at once.

@@ -82,7 +82,7 @@ const EN = {
             n: 6, title: "Open another folder",
             steps: [
                 "Double-click a folder card, or use the path line above the images and **↑** to go up.",
-                "Or choose a folder in the **Folder:** list at the bottom.",
+                "Or press the folder button next to **Folder:** at the bottom: a tree like Explorer's — Recent folders with full paths, input with its subfolders, This PC with the drives. It opens at the current folder.",
                 "Press **...** to pick any folder on the computer. On Windows this is Explorer's folder dialog; it opens in the folder you are viewing and remembers its size and position.",
             ],
             notes: [
@@ -120,7 +120,7 @@ const EN = {
             n: 9, title: "Open the video gallery",
             steps: [
                 "Press **Output Gallery** in the node.",
-                "Choose output or a recent external folder in the list next to search, or press **...** to pick another folder.",
+                "Choose a folder with the folder button next to search (a tree like Explorer's: Recent, output, This PC), or press **...** to pick one in Explorer's dialog.",
                 "Find the video with search (by name or folder), sorting, favorites and the card size slider.",
             ],
             notes: [
@@ -243,7 +243,7 @@ const RU = {
             n: 6, title: "Открыть другую папку",
             steps: [
                 "Дважды нажмите на карточку папки или используйте строку пути над изображениями и **↑**, чтобы подняться выше.",
-                "Или выберите папку в списке **Папка:** внизу.",
+                "Или нажмите кнопку папки рядом с **Папка:** внизу: дерево как в Проводнике — недавние папки с полными путями, input с подпапками, «Этот компьютер» с дисками. Оно открывается на текущей папке.",
                 "Кнопка **...** открывает выбор любой папки на компьютере. В Windows это окно Проводника; оно открывается в просматриваемой папке и запоминает свой размер и положение.",
             ],
             notes: [
@@ -281,7 +281,7 @@ const RU = {
             n: 9, title: "Открыть галерею видео",
             steps: [
                 "Нажмите **Галерея output** в ноде.",
-                "Выберите output или недавнюю внешнюю папку в списке рядом с поиском либо нажмите **...**, чтобы выбрать другую папку.",
+                "Выберите папку кнопкой папки рядом с поиском (дерево как в Проводнике: недавние, output, «Этот компьютер») или нажмите **...**, чтобы выбрать её в окне Проводника.",
                 "Найдите видео через поиск (по имени или папке), сортировку, избранное и ползунок размера карточек.",
             ],
             notes: [

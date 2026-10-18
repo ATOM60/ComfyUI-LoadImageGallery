@@ -16,6 +16,14 @@ COMFY_URL=http://127.0.0.1:8188 node tests/node_panel_comfy.cjs
 
 The check runs twice, on the classic canvas and with Nodes 2.0 (`Comfy.VueNodes.Enabled`). Each run creates a node and verifies that only the panel is drawn on it, that the image selector stays in the properties panel, that a new node gets room for the image, and that the image, file name and position load. It then clicks the arrows, the image (gallery), **?** (help), **Output Gallery** and **START** (one queued prompt), holds the image (zoom instead of the gallery), and saves and reloads the workflow. `widgets_values` must stay `[image, "image"]`, and the node size and image must survive the reload. It verified ComfyUI 0.41.0 with frontend 1.55.18.
 
+Folder tree check (same requirements; the input folder needs an image and a subfolder):
+
+```sh
+COMFY_URL=http://127.0.0.1:8188 node tests/folder_tree_comfy.cjs
+```
+
+It opens the folder tree of both galleries (`web/folder_tree.js`, served by `folder_tree_backend.py`), checks the roots, the current folder highlight and reveal, picking an input subfolder and a drive, Recent, and that **Esc** closes only the tree.
+
 ## Node UI ownership
 
 - `node_panel.js` puts one DOM widget on the node: the metadata line with **?**, the image with its ‹ › arrows, and the **Output Gallery** and **START** buttons. ComfyUI mounts the same element on the classic canvas and in Nodes 2.0. The stock image preview, the START and Output Gallery widgets and the file selector are hidden on the node; the buttons forward to the hidden widgets' callbacks, and the file selector and upload stay in the properties panel. The panel is not serialized.

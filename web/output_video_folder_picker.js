@@ -1,5 +1,6 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { attachFolderTree } from "./folder_tree.js";
 
 const EXT_NAME = "Comfy.ImageGallery.OutputVideoFolderPicker";
 const STYLE_ID = "cig-output-video-folder-picker-style";
@@ -110,6 +111,14 @@ function injectStyles() {
     text-overflow:ellipsis!important;
     white-space:nowrap!important;
 }
+.ovg-folder-select[hidden]{display:none!important}
+.ovg-folder-tree{
+    flex:0 1 260px!important;
+    min-width:130px!important;
+    height:34px!important;
+    padding:0 9px!important;
+    font-size:13px!important;
+}
 .ovg-folder-pick{
     box-sizing:border-box!important;
     flex:0 0 36px!important;
@@ -190,6 +199,7 @@ function resetToOutput(folder, reason) {
         modal.dataset.ovgFolder = "";
         const select = modal.querySelector(".ovg-folder-select");
         if (select instanceof HTMLSelectElement) rebuildSelect(select, "");
+        modal.__cigFolderTree?.update();
     }
     try {
         app.extensionManager?.toast?.add({
@@ -268,6 +278,7 @@ function setFolder(modal, select, folder) {
     saveCurrentFolder(normalized);
     if (normalized) rememberFolder(normalized);
     rebuildSelect(select, normalized);
+    modal.__cigFolderTree?.update();
     refreshGallery(modal);
 }
 
@@ -306,8 +317,25 @@ function installControls(modal) {
     pick.title = TEXT.choose;
     pick.setAttribute("aria-label", TEXT.choose);
 
+    // CIG_FOLDER_TREE_V1: the folder list is an Explorer-like tree
+    // (folder_tree.js); the hidden select keeps the list state.
+    select.hidden = true;
+    const treeButton = document.createElement("button");
+    treeButton.className = "ovg-btn ovg-folder-tree";
+    treeButton.setAttribute("aria-label", TEXT.folder);
+
     search.insertAdjacentElement("afterend", select);
-    select.insertAdjacentElement("afterend", pick);
+    select.insertAdjacentElement("afterend", treeButton);
+    treeButton.insertAdjacentElement("afterend", pick);
+    modal.__cigFolderTree = attachFolderTree(treeButton, {
+        api,
+        language: RU ? "ru" : "en",
+        root: "output",
+        rootLabel: TEXT.output,
+        current: () => modal.dataset.ovgFolder || "",
+        recent: () => loadRecentFolders(),
+        onPick: value => setFolder(modal, select, value),
+    });
 
     select.addEventListener("change", () => {
         setFolder(modal, select, select.value || "");
