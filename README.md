@@ -38,9 +38,9 @@ The image is loaded into the node and the gallery closes. The **✕** button clo
 
 ### Scenario 2. Browse images right in the node
 
-1. Click **‹** (previous) or **›** (next) on the sides of the node preview.
+1. Click or tap **‹** (previous) or **›** (next) — the tall buttons on the sides of the node preview.
 
-The file list loads automatically when the workflow opens or the image changes — you do not need to open the gallery first. The arrows follow the gallery's sorting and favorites. They are dimmed when there are fewer than two images to browse; they sit on the sides of the image area whatever its aspect ratio. The line above the image shows the position, e.g. **3 / 12**.
+The file list loads automatically when the workflow opens or the image changes — you do not need to open the gallery first. The arrows follow the gallery's sorting and favorites. The buttons take the full height of the preview and fill the free space beside the image, so they are easy to hit with a mouse or a finger; they are dimmed when there are fewer than two images to browse. The line above the image shows the position, e.g. **3 / 12**.
 
 If the image was chosen with **Subfolders** on (scenario 7), the arrows walk the same list, subfolders included.
 

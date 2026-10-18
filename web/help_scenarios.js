@@ -36,10 +36,10 @@ const EN = {
         {
             n: 2, title: "Browse images right in the node",
             steps: [
-                "Click **‹** or **›** on the sides of the node preview.",
+                "Click or tap **‹** or **›** — the tall buttons on the sides of the node preview.",
             ],
             notes: [
-                "The arrows follow the gallery's sorting and favorites. They are dimmed when there are fewer than two images to browse. The line above the image shows the position, e.g. **3 / 12**.",
+                "The arrows follow the gallery's sorting and favorites. The buttons fill the space beside the image, so they are easy to hit with a finger; they are dimmed when there are fewer than two images to browse. The line above the image shows the position, e.g. **3 / 12**.",
                 "If the image was chosen with **Subfolders** on (scenario 7), the arrows walk the same list, subfolders included.",
             ],
         },
@@ -197,10 +197,10 @@ const RU = {
         {
             n: 2, title: "Листать изображения прямо в ноде",
             steps: [
-                "Нажимайте **‹** или **›** по бокам превью в ноде.",
+                "Нажимайте **‹** или **›** — высокие кнопки по бокам превью в ноде.",
             ],
             notes: [
-                "Стрелки следуют сортировке и избранному галереи. Если изображений меньше двух, стрелки приглушены. Строка над изображением показывает позицию, например **3 / 12**.",
+                "Стрелки следуют сортировке и избранному галереи. Кнопки занимают всё место по бокам изображения, в них легко попасть пальцем; если изображений меньше двух, они приглушены. Строка над изображением показывает позицию, например **3 / 12**.",
                 "Если изображение выбрано при включённых **Подпапках** (сценарий 7), стрелки листают тот же список вместе с подпапками.",
             ],
         },

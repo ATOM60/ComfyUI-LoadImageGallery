@@ -2,7 +2,7 @@
 // The node's whole UI as one HTML (DOM) widget, so it works the same on the
 // classic LiteGraph canvas and in Nodes 2.0 (Vue nodes):
 //   name · resolution · position  [?]
-//   the image (click: gallery, hold: ×5 zoom) with ‹ › arrows
+//   [‹]  the image (click: gallery, hold: ×5 zoom)  [›]
 //   [Output Gallery] [START]
 // The stock widgets stay on the node for serialization and behaviour but are
 // not drawn on it: the image combo and upload button remain in the properties
@@ -15,8 +15,11 @@ const START_WIDGET = "▶ СТАРТ";
 const OUTPUT_WIDGET = "Галерея output";
 const PREVIEW_WIDGET = "$$canvas-image-preview";
 const MIN_PANEL_HEIGHT = 240;
-const DEFAULT_SIZE = [400, 460];
+const DEFAULT_SIZE = [420, 500];
 const CHANGE_CHECK_MS = 400;
+// The ‹ › buttons take the stage's full height and all the width beside the
+// fitted image, but never less than this share of the stage (and 44–110 px).
+const SIDE_SHARE = 0.14, SIDE_MIN_PX = 44, SIDE_MAX_PX = 110, SIDE_GAP = 6;
 
 const TEXT = {
     ru: { output: "Галерея output", start: "СТАРТ", help: "Инструкция", prev: "Предыдущее изображение", next: "Следующее изображение",
@@ -37,17 +40,22 @@ function injectStyles() {
 .cig-np-pos{margin-left:auto}
 .cig-np-help{flex:none;width:22px;height:22px;padding:0;border:1px solid var(--border-color,#5a5a5a);border-radius:6px;background:transparent;color:var(--input-text,#ddd);font:700 12px/20px Arial,sans-serif;cursor:pointer}
 .cig-np-help:hover{border-color:var(--input-text,#ddd)}
-.cig-np-stage{position:relative;flex:1 1 auto;min-height:120px;border-radius:8px;background:rgba(0,0,0,.32);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-touch-callout:none;user-select:none}
-.cig-np-stage img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;-webkit-user-drag:none;pointer-events:none}
+.cig-np-stage{--cig-np-side:44px;position:relative;flex:1 1 auto;min-height:120px;cursor:pointer;-webkit-touch-callout:none;user-select:none}
+.cig-np-view{position:absolute;top:0;bottom:0;left:calc(var(--cig-np-side) + ${SIDE_GAP}px);right:calc(var(--cig-np-side) + ${SIDE_GAP}px);border-radius:6px;background:rgba(0,0,0,.32);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.cig-np-view img{width:100%;height:100%;object-fit:contain;display:block;-webkit-user-drag:none;pointer-events:none}
 .cig-np-empty{padding:12px;color:var(--descrip-text,#a3a3a3);text-align:center}
-.cig-np-arrow{position:absolute;top:50%;width:40px;height:40px;margin-top:-20px;padding:0;border:1px solid rgba(255,255,255,.24);border-radius:50%;background:rgba(10,10,10,.45);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:.6;transition:opacity .12s,background .12s}
-.cig-np-stage:hover .cig-np-arrow{opacity:1}
-.cig-np-arrow:hover{background:rgba(10,10,10,.72);border-color:#5b9bff}
-.cig-np-arrow:disabled{opacity:.18;cursor:default}
-.cig-np-prev{left:8px}.cig-np-next{right:8px}
+.cig-np-arrow{position:absolute;top:0;bottom:0;width:var(--cig-np-side);padding:0;border:1px solid var(--border-color,#4e4e4e);border-radius:8px;background:rgba(0,0,0,.4);color:#eee;display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation;transition:background .12s,border-color .12s}
+.cig-np-arrow:hover{background:rgba(0,0,0,.62);border-color:#5b9bff;color:#fff}
+.cig-np-arrow:active{background:rgba(91,155,255,.24)}
+.cig-np-arrow:disabled{opacity:.35;cursor:default;background:rgba(0,0,0,.25);border-color:var(--border-color,#4e4e4e)}
+.cig-np-arrow svg{width:min(30px,60%);height:auto}
+.cig-np-prev{left:0}.cig-np-next{right:0}
 .cig-np-actions{display:flex;gap:8px;flex:none}
-.cig-np-btn{flex:1 1 0;min-width:0;height:36px;border:1px solid var(--border-color,#4e4e4e);border-radius:8px;background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);font:600 13px Inter,Arial,sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;overflow:hidden}
+.cig-np-btn{flex:1 1 0;min-width:0;height:56px;padding:0 8px;border:1px solid var(--border-color,#4e4e4e);border-radius:10px;background:var(--comfy-input-bg,#222);color:var(--input-text,#ddd);font:600 15px Inter,Arial,sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;overflow:hidden;touch-action:manipulation}
 .cig-np-btn:hover{filter:brightness(1.18)}
+.cig-np-btn:active{filter:brightness(.92)}
+.cig-np-btn svg{flex:none}
+.cig-np-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cig-np-btn.cig-np-start{background:#2f6fd6;border-color:#2f6fd6;color:#fff}
 .cig-np-btn:disabled{opacity:.45;cursor:default;filter:none}
 `;
@@ -122,14 +130,13 @@ export function installNodePanel(node, deps) {
             <button type="button" class="cig-np-help" title="${t.help}" aria-label="${t.help}">?</button>
         </div>
         <div class="cig-np-stage" role="button" tabindex="0" title="${t.open}" aria-label="${t.open}">
-            <img alt="" draggable="false">
-            <div class="cig-np-empty"></div>
-            <button type="button" class="cig-np-arrow cig-np-prev" aria-label="${t.prev}" title="${t.prev}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
-            <button type="button" class="cig-np-arrow cig-np-next" aria-label="${t.next}" title="${t.next}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+            <button type="button" class="cig-np-arrow cig-np-prev" aria-label="${t.prev}" title="${t.prev}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
+            <div class="cig-np-view"><img alt="" draggable="false"><div class="cig-np-empty"></div></div>
+            <button type="button" class="cig-np-arrow cig-np-next" aria-label="${t.next}" title="${t.next}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
         </div>
         <div class="cig-np-actions">
-            <button type="button" class="cig-np-btn cig-np-output"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>${t.output}</button>
-            <button type="button" class="cig-np-btn cig-np-start"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>${t.start}</button>
+            <button type="button" class="cig-np-btn cig-np-output"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg><span class="cig-np-label">${t.output}</span></button>
+            <button type="button" class="cig-np-btn cig-np-start"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><span class="cig-np-label">${t.start}</span></button>
         </div>`;
     const q = s => el.querySelector(s);
     const nameEl = q(".cig-np-name"), dimsEl = q(".cig-np-dims"), posEl = q(".cig-np-pos");
@@ -171,19 +178,44 @@ export function installNodePanel(node, deps) {
                 img.style.display = "none";
                 emptyEl.style.display = "";
                 emptyEl.textContent = t.empty;
+                layoutSides();
             }
         }
         posEl.textContent = s.count > 1 && s.index >= 0 ? `${s.index + 1} / ${s.count}` : "";
         prev.disabled = next.disabled = !s.canNavigate;
     }
+    // Buttons fill the space beside the image, like the old canvas layout, so
+    // they stay large and easy to hit with a finger. Recomputed only on load
+    // and on stage resize.
+    let side = -1;
+    function layoutSides() {
+        const w = stage.clientWidth, h = stage.clientHeight;
+        if (!w || !h) return;
+        const min = Math.round(Math.min(SIDE_MAX_PX, Math.max(SIDE_MIN_PX, w * SIDE_SHARE)));
+        let next = min;
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+        if (nw && nh && img.style.display !== "none") {
+            const fit = Math.min((w - 2 * (min + SIDE_GAP)) / nw, h / nh);
+            next = Math.max(min, Math.floor((w - nw * fit) / 2 - SIDE_GAP));
+        }
+        if (next !== side) {
+            side = next;
+            stage.style.setProperty("--cig-np-side", `${side}px`);
+        }
+    }
+    const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(layoutSides) : null;
+    resizeObserver?.observe(stage);
+
     img.addEventListener("load", () => {
         if (img.naturalWidth) dimsEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+        layoutSides();
     });
     img.addEventListener("error", () => {
         if (!shownValue) return;
         img.style.display = "none";
         emptyEl.style.display = "";
         emptyEl.textContent = t.failed;
+        layoutSides();
     });
 
     // --- interaction
@@ -229,6 +261,7 @@ export function installNodePanel(node, deps) {
     const originalRemoved = node.onRemoved;
     node.onRemoved = function(...args) {
         clearInterval(timer);
+        resizeObserver?.disconnect();
         unsubscribe?.();
         for (const [method, original, wrapper] of wrapped) if (node[method] === wrapper) node[method] = original;
         delete node.__cigNodePanel;
