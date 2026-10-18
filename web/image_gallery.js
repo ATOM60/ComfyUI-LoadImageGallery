@@ -9,8 +9,8 @@ const EXTENSION_NAME = "Comfy.ImageGallery";
 const NODE_CLASS = "LoadImageGallery";
 const CIG_LANG = String(localStorage.getItem("ComfyUI-LoadImageGallery.language") || navigator.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
 const CIG_I18N = {
-    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", loadingList:"Loading list…", up:"Up", clearing:"Clearing…", error:"Error", thumbError:"error", subfolders:"Subfolders", subfoldersTitle:"Also show images from all subfolders of this folder", noImagesDeep:"No images in this folder or its subfolders", truncated:"list cut off" },
-    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", loadingList:"Загрузка списка…", up:"Вверх", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка", subfolders:"Подпапки", subfoldersTitle:"Показывать также изображения из всех подпапок этой папки", noImagesDeep:"В папке и её подпапках нет изображений", truncated:"список обрезан" }
+    en: { root:"📁 input (root)", title:"Image Gallery", search:"Search by filename…", refresh:"Refresh", folder:"Folder:", clearCache:"Clear cache", start:"START", selected:"selected", cache:"Cache", noMatches:"No matching images", noImages:"No images in this folder", loadingList:"Loading list…", up:"Up", clearing:"Clearing…", error:"Error", thumbError:"error", subfolders:"Subfolders", subfoldersTitle:"Also show images from all subfolders of this folder", pickFolder:"Choose image folder", noImagesDeep:"No images in this folder or its subfolders", truncated:"list cut off" },
+    ru: { root:"📁 input (корень)", title:"Превью изображений", search:"Поиск по имени файла…", refresh:"Обновить", folder:"Папка:", clearCache:"Очистить кэш", start:"СТАРТ", selected:"выбрано", cache:"Кэш", noMatches:"По этому поиску ничего не найдено", noImages:"В папке нет изображений", loadingList:"Загрузка списка…", up:"Вверх", clearing:"Очистка…", error:"Ошибка", thumbError:"ошибка", subfolders:"Подпапки", subfoldersTitle:"Показывать также изображения из всех подпапок этой папки", pickFolder:"Выберите папку с изображениями", noImagesDeep:"В папке и её подпапках нет изображений", truncated:"список обрезан" }
 };
 const cigT = CIG_I18N[CIG_LANG];
 
@@ -1337,7 +1337,9 @@ body.addEventListener("mousedown", e=>{
     pickFolderButton.addEventListener("click",async()=>{
     pickFolderButton.disabled=true;
     try{
-        const data=await fetchJson("/image-gallery/pick-folder",{method:"POST"});
+        // The Explorer dialog opens in this folder (a drive root needs its slash).
+        const folder=/^[A-Za-z]:$/.test(activeFolder||"")?activeFolder+"/":(activeFolder||"");
+        const data=await fetchJson("/image-gallery/pick-folder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({folder,title:cigT.pickFolder})});
         if(!data?.path)return;
         filterText="";
         search.value="";

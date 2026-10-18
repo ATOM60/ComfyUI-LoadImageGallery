@@ -146,7 +146,9 @@ class _ImagePathOptions(list):
         except Exception:
             return False
 
-def _pick_folder_native() -> str:
+def _pick_folder_native(*_args, **_kwargs) -> str:
+    # Fallback picker; native_folder_picker_backend replaces it with the
+    # Explorer folder dialog, which uses the keyword arguments.
     if os.name == "nt":
         script = """Add-Type -AssemblyName System.Windows.Forms; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; [System.Windows.Forms.Application]::EnableVisualStyles(); $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Title="Select image folder"; $d.ValidateNames=$false; $d.CheckFileExists=$false; $d.CheckPathExists=$true; $d.FileName="Select this folder"; $d.Filter="Folders|*.folder"; $d.RestoreDirectory=$true; if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write((Split-Path -LiteralPath $d.FileName -Parent))}"""
         result = subprocess.run(["powershell.exe", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", script], capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -765,10 +767,27 @@ async def image_gallery_thumb(request):
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
 
+async def _pick_folder_request(request):
+    """Optional JSON body of the pick-folder routes: {"folder", "title"}."""
+    try:
+        data = await request.json() if request.can_read_body else {}
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return str(data.get("folder") or "").strip(), str(data.get("title") or "")[:200] or None
+
 @PromptServer.instance.routes.post("/image-gallery/pick-folder")
 async def image_gallery_pick_folder(request):
     try:
-        path = await asyncio.to_thread(_pick_folder_native)
+        folder, title = await _pick_folder_request(request)
+        input_dir = folder_paths.get_input_directory()
+        # The dialog opens in the gallery's folder; from the input root it
+        # opens where this gallery's dialog was last used.
+        initial = None
+        if folder:
+            initial = folder if _is_abs_path(folder) else os.path.join(input_dir, folder)
+        path = await asyncio.to_thread(_pick_folder_native, initial=initial, default=input_dir, kind="input", title=title)
         if not path:
             return web.json_response({"path": ""})
         path = os.path.abspath(os.path.expanduser(path))

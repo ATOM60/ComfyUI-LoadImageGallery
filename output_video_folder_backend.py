@@ -15,7 +15,6 @@ from . import output_video_gallery_backend as base
 
 # Capture the original Explorer-style Windows picker before any optional shared
 # picker override can replace it. Output Gallery keeps the familiar Explorer UI.
-_OUTPUT_PICK_FOLDER = gallery_core._pick_folder_native
 _ORIGINAL_RESOLVE = base._resolve
 _ORIGINAL_REL = base._rel
 
@@ -269,7 +268,16 @@ def _ensure_browser_proxy(source: Path) -> Path:
 @PromptServer.instance.routes.post("/image-gallery/output/pick-folder")
 async def pick_output_video_folder(request):
     try:
-        path = await asyncio.to_thread(_OUTPUT_PICK_FOLDER)
+        folder, title = await gallery_core._pick_folder_request(request)
+        # The dialog opens in the gallery's folder; from ComfyUI's output
+        # folder it opens where this gallery's dialog was last used.
+        path = await asyncio.to_thread(
+            gallery_core._pick_folder_native,
+            initial=folder or None,
+            default=gallery_core.folder_paths.get_output_directory(),
+            kind="output",
+            title=title,
+        )
         return web.json_response({"path": path or ""})
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)

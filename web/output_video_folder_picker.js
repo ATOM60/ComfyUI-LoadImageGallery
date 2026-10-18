@@ -318,7 +318,12 @@ function installControls(modal) {
         event.stopPropagation();
         pick.disabled = true;
         try {
-            const response = await api.fetchApi("/image-gallery/output/pick-folder", { method: "POST" });
+            // The Explorer dialog opens in the folder shown now ("" = ComfyUI output).
+            const response = await api.fetchApi("/image-gallery/output/pick-folder", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ folder: select.value || "", title: TEXT.choose }),
+            });
             const data = await response.json();
             if (!response.ok) throw new Error(data?.error || TEXT.error);
             if (!data?.path) return;

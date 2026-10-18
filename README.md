@@ -94,6 +94,8 @@ Sets can contain images from different folders, including external folders. They
 2. Or choose a folder in the **Folder:** list at the bottom.
 3. Press **...** to pick any folder on the computer in the system folder picker.
 
+On Windows **...** opens Explorer's own folder dialog: it follows the light or dark Windows theme, stays sharp on 4K screens, opens in the folder you are viewing (from the input root — in the folder you chose last time) and remembers its size and position. Each gallery remembers its own. The dialog opens on the computer running ComfyUI, so it is of no use when ComfyUI runs on a remote server.
+
 Folder cards show up to four thumbnails and the image count. A folder with no images of its own borrows them from its subfolders. Previews load as you scroll and share the thumbnail cache; **Refresh** reloads them.
 
 The **Folder:** list starts with **Recent folders** — up to 20 recently opened folders, input subfolders and external ones, newest first, labelled "name — parent" — followed by all input subfolders in tree order.

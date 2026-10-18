@@ -83,7 +83,7 @@ const EN = {
             steps: [
                 "Double-click a folder card, or use the path line above the images and **↑** to go up.",
                 "Or choose a folder in the **Folder:** list at the bottom.",
-                "Press **...** to pick any folder on the computer.",
+                "Press **...** to pick any folder on the computer. On Windows this is Explorer's folder dialog; it opens in the folder you are viewing and remembers its size and position.",
             ],
             notes: [
                 "Folder cards show up to four thumbnails and the image count; a folder without its own images borrows them from its subfolders.",
@@ -244,7 +244,7 @@ const RU = {
             steps: [
                 "Дважды нажмите на карточку папки или используйте строку пути над изображениями и **↑**, чтобы подняться выше.",
                 "Или выберите папку в списке **Папка:** внизу.",
-                "Кнопка **...** открывает выбор любой папки на компьютере.",
+                "Кнопка **...** открывает выбор любой папки на компьютере. В Windows это окно Проводника; оно открывается в просматриваемой папке и запоминает свой размер и положение.",
             ],
             notes: [
                 "Карточка папки показывает до четырёх миниатюр и число изображений; если своих изображений нет, миниатюры берутся из подпапок.",
