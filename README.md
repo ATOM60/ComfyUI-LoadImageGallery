@@ -43,12 +43,12 @@ If the image was chosen with **Subfolders** on (scenario 7), the arrows walk the
 
 ### Scenario 3. Look at an image up close
 
-1. Hold the left mouse button on a gallery thumbnail or on the node preview for about 0.3 s.
+1. Hold the left mouse button or a finger on a gallery thumbnail's image or on the node preview for about 0.3 s.
 2. The image opens full screen, magnified 5× relative to the image fitted to the screen.
 3. Keep holding and move the mouse: the pointer's place on the screen is the place of the image you see — the screen's top-left corner shows the image's top-left corner, the centre shows the centre, and so on.
 4. Release the button to close.
 
-The original file is shown; the thumbnail stands in until it loads. A side that is still narrower than the screen when magnified is centred. A short click works as before and the selection does not change. Zoom is for the mouse only; on a touch screen, holding still starts rectangle selection.
+The original file is shown; the thumbnail stands in until it loads. A side that is still narrower than the screen when magnified is centred. A short click or tap works as before and the selection does not change. With a finger, hold the image itself: holding a card's caption or empty space starts rectangle selection instead (scenario 4). The browser's long-press menu does not appear, and the page does not scroll while you pan.
 
 ### Scenario 4. Queue several images
 
@@ -58,7 +58,7 @@ The original file is shown; the thumbnail stands in until it loads. A side that 
    - **Shift**+click selects the range from the previous click;
    - **Space** toggles the focused card;
    - drag a rectangle that starts on empty space between cards; near the top or bottom edge the gallery scrolls by itself;
-   - on a touch screen, hold about 0.4 s, then drag.
+   - on a touch screen, hold a card's caption or empty space about 0.4 s, then drag (holding a card's image zooms it, scenario 3).
 3. Press **START**.
 
 The images are sent to the ComfyUI queue one after another in selection order; the button shows the progress. Queueing continues even if the gallery is closed before every prompt has been added.
@@ -136,7 +136,7 @@ Thumbnails are made in the background; during a generation this takes longer, an
 3. In fullscreen, use the controls on the right: **⏮** previous video, **⏱** playback speed, **⏭** next video.
 
 - Swipe horizontally over the video to seek backward or forward.
-- Hold the left mouse button on the video for about 0.3 s to see the current frame magnified 5× full screen, exactly as in scenario 3: the video keeps playing (a paused one shows its still frame), moving the mouse moves the magnified spot, releasing closes it. Works with GPU and CPU playback, inline and in fullscreen (not on the bottom controls), and does not pause the video. Mouse only — touch keeps swipe-to-seek.
+- Hold the left mouse button or a finger on the video for about 0.3 s to see the current frame magnified 5× full screen, exactly as in scenario 3: the video keeps playing (a paused one shows its still frame), moving the pointer moves the magnified spot, releasing closes it. Works with GPU and CPU playback, inline and in fullscreen (not on the bottom controls), and does not pause the video. A finger that moves straight away still swipes to seek.
 - The mouse wheel over the video changes the volume; the speaker button mutes and restores it. The volume slider is available even on small previews.
 - Videos loop; playback speed and volume are remembered.
 

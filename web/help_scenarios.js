@@ -46,19 +46,19 @@ const EN = {
         {
             n: 3, title: "Look at an image up close",
             steps: [
-                "Hold the left mouse button on a gallery thumbnail or on the node preview for about 0.3 s.",
+                "Hold the left mouse button or a finger on a gallery thumbnail's image or on the node preview for about 0.3 s.",
                 "The image opens full screen, magnified 5×.",
                 "Keep holding and move the mouse: the pointer's place on the screen is the place of the image you see — screen corner, image corner.",
                 "Release the button to close.",
             ],
             notes: [
-                "The original file is shown; the thumbnail stands in until it loads. The selection does not change, and a short click works as before. Mouse only.",
+                "The original file is shown; the thumbnail stands in until it loads. The selection does not change, and a short click or tap works as before. With a finger, hold the image itself: holding a card's caption or empty space starts the selection rectangle.",
             ],
         },
         {
             n: 4, title: "Queue several images",
             steps: [
-                "Select images: click a card; **Shift**+click selects a range; **Space** toggles the focused card; drag a rectangle starting on empty space. On a touch screen, hold about 0.4 s, then drag.",
+                "Select images: click a card; **Shift**+click selects a range; **Space** toggles the focused card; drag a rectangle starting on empty space. On a touch screen, hold a card's caption or empty space about 0.4 s, then drag.",
                 "Press **START** in the gallery.",
             ],
             notes: [
@@ -137,7 +137,7 @@ const EN = {
             ],
             notes: [
                 "Swipe horizontally over the video to seek; the mouse wheel changes the volume, and the speaker button mutes. Videos loop; speed and volume are remembered.",
-                "Hold the left mouse button on the video for about 0.3 s to see the frame magnified 5× full screen, as in scenario 3 — the video keeps playing; release to close. Works with GPU and CPU playback, also in fullscreen (not on the bottom controls); playback is not paused by it.",
+                "Hold the left mouse button or a finger on the video for about 0.3 s to see the frame magnified 5× full screen, as in scenario 3 — the video keeps playing; release to close. A finger that moves straight away still swipes to seek. Works with GPU and CPU playback, also in fullscreen (not on the bottom controls); playback is not paused by it.",
                 "After fullscreen, the last viewed video keeps playing in its own card from the same position. Controls hide when idle and return on mouse movement, touch or a key press.",
             ],
         },
@@ -207,19 +207,19 @@ const RU = {
         {
             n: 3, title: "Рассмотреть изображение вблизи",
             steps: [
-                "Удерживайте левую кнопку мыши на превью в галерее или в ноде около 0,3 секунды.",
+                "Удерживайте левую кнопку мыши или палец на картинке в галерее или на превью в ноде около 0,3 секунды.",
                 "Изображение откроется на весь экран, увеличенным в 5 раз.",
                 "Не отпуская кнопку, водите мышью: где курсор на экране, та часть изображения и видна — угол экрана соответствует углу изображения.",
                 "Отпустите кнопку, чтобы закрыть.",
             ],
             notes: [
-                "Показывается оригинал файла; пока он загружается, видна миниатюра. Выделение не меняется, короткий клик работает как раньше. Только для мыши.",
+                "Показывается оригинал файла; пока он загружается, видна миниатюра. Выделение не меняется, короткий клик или тап работает как раньше. Пальцем держите саму картинку: удержание на подписи карточки или на пустом месте запускает рамку выделения.",
             ],
         },
         {
             n: 4, title: "Запустить несколько изображений по очереди",
             steps: [
-                "Выделите изображения: клик по карточке; **Shift**+клик — диапазон; **пробел** — карточка в фокусе; рамка, начатая на пустом месте. На сенсорном экране удерживайте палец около 0,4 секунды и затем ведите.",
+                "Выделите изображения: клик по карточке; **Shift**+клик — диапазон; **пробел** — карточка в фокусе; рамка, начатая на пустом месте. На сенсорном экране удерживайте палец на подписи карточки или на пустом месте около 0,4 секунды и затем ведите.",
                 "Нажмите **СТАРТ** в галерее.",
             ],
             notes: [
@@ -298,7 +298,7 @@ const RU = {
             ],
             notes: [
                 "Горизонтальный жест по видео перематывает, колесо мыши меняет громкость, кнопка динамика выключает звук. Видео повторяется по кругу; скорость и громкость запоминаются.",
-                "Удерживайте левую кнопку мыши на видео около 0,3 секунды — кадр откроется на весь экран, увеличенным в 5 раз, как в сценарии 3, а видео продолжит играть; отпустите кнопку, чтобы закрыть. Работает в GPU- и CPU-режиме, в том числе на весь экран (кроме нижней панели управления); на паузу видео при этом не встаёт.",
+                "Удерживайте левую кнопку мыши или палец на видео около 0,3 секунды — кадр откроется на весь экран, увеличенным в 5 раз, как в сценарии 3, а видео продолжит играть; отпустите, чтобы закрыть. Если сразу повести пальцем, это по-прежнему перемотка. Работает в GPU- и CPU-режиме, в том числе на весь экран (кроме нижней панели управления); на паузу видео при этом не встаёт.",
                 "После выхода из полноэкранного режима последнее видео продолжает играть в своей карточке с той же позиции. Элементы управления скрываются при бездействии и возвращаются при движении мыши, касании или нажатии клавиши.",
             ],
         },

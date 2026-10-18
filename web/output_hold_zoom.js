@@ -1,13 +1,16 @@
 import { app } from "/scripts/app.js";
-import { holdToZoom } from "./hold_zoom.js";
+import { holdToZoom, installHoldZoomGuards } from "./hold_zoom.js";
 
 // CIG_PLAYER_HOLD_ZOOM_V1
-// Holding the left mouse button on a playing or paused video in the Output
-// Gallery shows the current frame magnified ×5 full screen, live, the same
-// way as images (hold_zoom.js). Works for the GPU and CPU players, inline and
-// fullscreen. Mouse only: touch keeps its swipe-to-seek gesture. The click the
-// release produces must not toggle playback.
+// Holding the left mouse button or a finger on a playing or paused video in
+// the Output Gallery shows the current frame magnified ×5 full screen, live,
+// the same way as images (hold_zoom.js). Works for the GPU and CPU players,
+// inline and fullscreen. A finger that moves before the hold completes still
+// swipes to seek; once the zoom is open the swipe gestures stand down (they
+// check <html data-cig-hold-zoom>). The click the release produces must not
+// toggle playback.
 const EXT_NAME = "Comfy.ImageGallery.OutputPlayerHoldZoom";
+const STYLE_ID = "cig-output-hold-zoom-style";
 // Native fullscreen <video> controls (seek bar, buttons) live inside the
 // video element itself; a press there must not open the zoom.
 const NATIVE_CONTROLS_ZONE_PX = 90;
@@ -37,7 +40,7 @@ function hasFrame(media) {
 
 function onPointerDown(event) {
     pending = null;
-    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    if (event.button !== 0 || event.isPrimary === false) return;
     if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
     let media = mediaFor(event.target);
     if (media && !(media instanceof Element)) {
@@ -63,6 +66,15 @@ function suppressClick(event) {
 app.registerExtension({
     name: EXT_NAME,
     setup() {
+        if (!document.getElementById(STYLE_ID)) {
+            // No "save video" callout or text selection on a long touch.
+            const style = document.createElement("style");
+            style.id = STYLE_ID;
+            style.textContent = "video.ovg-inline-video,.ovg-gpu-hit,.ovg-shared-hit{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}";
+            document.head.appendChild(style);
+        }
+        // Present before any touch starts, so a zoom can stop page scrolling.
+        installHoldZoomGuards();
         // Window capture runs before the players' own click handlers and before
         // a native <video>'s default click-to-pause.
         document.addEventListener("pointerdown", onPointerDown, true);

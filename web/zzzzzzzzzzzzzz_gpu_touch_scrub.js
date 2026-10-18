@@ -33,6 +33,8 @@ function fmtTime(value) {
         : `${m}:${String(s).padStart(2, "0")}`;
 }
 
+const zoomOpen = () => !!document.documentElement.dataset.cigHoldZoom;
+
 function fullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
@@ -214,6 +216,13 @@ function startGesture(event, target, info) {
 
     g.onMove = moveEvent => {
         if (activeGesture !== g || moveEvent.pointerId !== g.id || g.cancelled) return;
+        // A long touch opened the ×5 zoom (hold_zoom.js): the finger pans it.
+        if (zoomOpen()) {
+            g.cancelled = true;
+            lastFullscreenTap = null;
+            stopActiveGesture({ commit:false });
+            return;
+        }
         g.lastX = moveEvent.clientX;
         g.lastY = moveEvent.clientY;
 
@@ -251,6 +260,11 @@ function startGesture(event, target, info) {
 
     g.onUp = upEvent => {
         if (upEvent.pointerId !== g.id) return;
+        if (zoomOpen()) {   // a long touch that zoomed is not a tap
+            lastFullscreenTap = null;
+            stopActiveGesture({ commit:false });
+            return;
+        }
         if (!g.locked && !g.cancelled) handleFullscreenTap(upEvent, g);
         stopActiveGesture({ commit:true, event:upEvent });
     };

@@ -1,5 +1,5 @@
 // CIG_HOLD_ZOOM_V1
-// Hold the left mouse button on an image to see it full screen, magnified ×5
+// Hold the left mouse button (or a finger) on an image to see it full screen, magnified ×5
 // relative to the image fitted to the screen. While the button is held the
 // magnified spot follows the pointer: the pointer's relative position on the
 // screen is the relative point of the image under it, so the screen edges
@@ -11,8 +11,35 @@
 
 export const HOLD_ZOOM_FACTOR = 5;
 export const HOLD_ZOOM_DELAY_MS = 280;
-const HOLD_ZOOM_SLOP_PX = 6;
+// A finger wobbles more than a mouse while held still.
+const HOLD_ZOOM_SLOP_PX = { mouse: 6, pen: 8, touch: 10 };
 const STYLE_ID = "cig-hold-zoom-style";
+
+// CIG_HOLD_ZOOM_TOUCH_V1
+// A long touch also opens the browser's context menu (save image, copy...) and
+// a moving finger scrolls the page. While a hold is pending or a zoom window
+// is open, the context menu is suppressed; while the window is open, touch
+// scrolling is blocked so the finger pans the zoom, and <html> carries
+// data-cig-hold-zoom so other touch gestures (swipe-to-seek) can stand down.
+let pendingHolds = 0;
+let openZooms = 0;
+let guardsInstalled = false;
+
+// Installed once and left in place: Chrome only lets a touchmove listener
+// cancel scrolling if a non-passive one existed when the touch began, so it
+// cannot be added when the window opens. It does nothing while none is open.
+export function installHoldZoomGuards() {
+    if (guardsInstalled) return;
+    guardsInstalled = true;
+    window.addEventListener("contextmenu", event => {
+        if (!pendingHolds && !openZooms) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true);
+    document.addEventListener("touchmove", event => {
+        if (openZooms && event.cancelable) event.preventDefault();
+    }, { capture: true, passive: false });
+}
 
 function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -160,7 +187,14 @@ export function openHoldZoom(source, clientX, clientY) {
         window.removeEventListener("blur", close);
         window.removeEventListener("resize", layout);
         root.remove();
+        if (--openZooms <= 0) {
+            openZooms = 0;
+            delete document.documentElement.dataset.cigHoldZoom;
+        }
     }
+    installHoldZoomGuards();
+    openZooms++;
+    document.documentElement.dataset.cigHoldZoom = "1";
     document.addEventListener("pointermove", onMove, true);
     document.addEventListener("pointerup", close, true);
     document.addEventListener("pointercancel", close, true);
@@ -171,23 +205,29 @@ export function openHoldZoom(source, clientX, clientY) {
 }
 
 /**
- * Call from a left-button mouse pointerdown. If the button is still held
- * after HOLD_ZOOM_DELAY_MS without moving, opens the zoom window. `source` is
- * an object or a function returning one (see openHoldZoom). The handle's
- * `used` turns true once the window opened, so callers can skip the click
- * that the release produces.
+ * Call from a primary pointerdown — left mouse button, a finger or a pen. If
+ * it is still held after HOLD_ZOOM_DELAY_MS without moving, opens the zoom
+ * window. `source` is an object or a function returning one (see
+ * openHoldZoom). The handle's `used` turns true once the window opened, so
+ * callers can skip the click that the release produces.
  */
 export function holdToZoom(downEvent, source) {
     const handle = { used: false, cancel };
-    if (!downEvent || downEvent.button !== 0 || (downEvent.pointerType && downEvent.pointerType !== "mouse")) {
+    const type = downEvent?.pointerType || "mouse";
+    if (!downEvent || downEvent.button !== 0 || downEvent.isPrimary === false || !(type in HOLD_ZOOM_SLOP_PX)) {
         return handle;
     }
+    const slop = HOLD_ZOOM_SLOP_PX[type];
+    const id = downEvent.pointerId;
     const startX = downEvent.clientX, startY = downEvent.clientY;
-    let x = startX, y = startY;
+    let x = startX, y = startY, done = false;
     const onMove = event => {
+        if (id !== undefined && event.pointerId !== id) return;
         x = event.clientX; y = event.clientY;
-        if (Math.abs(x - startX) > HOLD_ZOOM_SLOP_PX || Math.abs(y - startY) > HOLD_ZOOM_SLOP_PX) cancel();
+        if (Math.abs(x - startX) > slop || Math.abs(y - startY) > slop) cancel();
     };
+    // A second finger (pinch) is not a hold.
+    const onOtherDown = event => { if (event.pointerId !== id) cancel(); };
     const timer = setTimeout(() => {
         cancel();
         const resolved = typeof source === "function" ? source() : source;
@@ -196,12 +236,19 @@ export function holdToZoom(downEvent, source) {
         openHoldZoom(resolved, x, y);
     }, HOLD_ZOOM_DELAY_MS);
     function cancel() {
+        if (done) return;
+        done = true;
+        pendingHolds = Math.max(0, pendingHolds - 1);
         clearTimeout(timer);
         document.removeEventListener("pointermove", onMove, true);
+        document.removeEventListener("pointerdown", onOtherDown, true);
         document.removeEventListener("pointerup", cancel, true);
         document.removeEventListener("pointercancel", cancel, true);
     }
+    installHoldZoomGuards();
+    pendingHolds++;
     document.addEventListener("pointermove", onMove, true);
+    document.addEventListener("pointerdown", onOtherDown, true);
     document.addEventListener("pointerup", cancel, true);
     document.addEventListener("pointercancel", cancel, true);
     return handle;

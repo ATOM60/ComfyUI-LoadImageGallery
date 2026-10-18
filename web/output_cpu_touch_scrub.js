@@ -124,6 +124,12 @@ function attach(target) {
     target.addEventListener("pointermove", event => {
         const g = gesture;
         if (!g || event.pointerId !== g.id || g.cancelled) return;
+        // A long touch opened the ×5 zoom (hold_zoom.js): the finger pans it.
+        if (document.documentElement.dataset.cigHoldZoom) {
+            g.cancelled = true;
+            hideHud(target);
+            return;
+        }
 
         const dx = event.clientX - g.startX;
         const dy = event.clientY - g.startY;
