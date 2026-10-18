@@ -203,6 +203,8 @@ git pull
 
 Then refresh the frontend. Restart ComfyUI when the update also changes backend (`.py`) files.
 
+If the folder is not a Git clone (`git pull` reports `not a git repository` or `invalid reference`), do not copy new files over the old ones: ComfyUI loads every `.js` file in `web/`, so files removed in a newer version would keep running. Close ComfyUI, delete or rename the old node folder, and install again with `git clone` as above.
+
 ## Repository
 
 https://github.com/ATOM60/ComfyUI-LoadImageGallery

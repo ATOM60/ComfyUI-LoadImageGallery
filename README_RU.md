@@ -203,6 +203,8 @@ git pull
 
 Затем обновите frontend. Если обновление затрагивает backend-файлы (`.py`), перезапустите ComfyUI.
 
+Если папка — не Git-клон (`git pull` пишет `not a git repository` или `invalid reference`), не копируйте новые файлы поверх старых: ComfyUI загружает каждый `.js` из `web/`, и удалённые в новой версии файлы продолжат работать. Закройте ComfyUI, удалите или переименуйте старую папку ноды и установите заново через `git clone`, как выше.
+
 ## Репозиторий
 
 https://github.com/ATOM60/ComfyUI-LoadImageGallery
