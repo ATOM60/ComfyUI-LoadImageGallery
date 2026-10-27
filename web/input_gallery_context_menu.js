@@ -14,12 +14,16 @@ const TEXT = RU ? {
     paste: "Вставить изображение",
     copyOk: "Изображение скопировано",
     pasteError: "Не удалось вставить изображение",
+    copyPartial: "В галерее изображение скопировано, но как файл в Проводник вставить не получится",
+    copyFail: "В галерее скопировано, но буфер Windows недоступен",
 } : {
     save: "Save Image",
     copy: "Copy Image",
     paste: "Paste Image",
     copyOk: "Image copied",
     pasteError: "Could not paste image",
+    copyPartial: "Copied in gallery and as a picture, but file paste in Explorer is unavailable",
+    copyFail: "Copied in gallery, but Windows clipboard is unavailable",
 };
 
 let menu = null;
@@ -112,10 +116,46 @@ async function copyToSystemClipboard(info) {
     }
 }
 
-async function copyImage(info) {
+function copyNotice(message, isError = false) {
+    const bubble = document.createElement("div");
+    bubble.textContent = message;
+    Object.assign(bubble.style, {
+        position:"fixed", bottom:"24px", left:"50%", transform:"translateX(-50%)",
+        zIndex:"2147483647", background:isError ? "#6a2727" : "#25543a",
+        color:"#fff", padding:"10px 16px", borderRadius:"7px", font:"13px Arial,sans-serif",
+        boxShadow:"0 5px 18px #0008", maxWidth:"min(90vw,600px)", pointerEvents:"none",
+    });
+    document.body.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 3600);
+}
+
+let copyQueue = Promise.resolve();
+function copyImage(info) {
+    // Keep existing cross-folder paste exactly as before, independently from Windows.
     saveCopied({ folder:info.folder, filename:info.filename });
-    // System clipboard is best-effort only. Internal copy always succeeds first.
-    void copyToSystemClipboard(info);
+    // Serialize fast consecutive clicks: the last click must win in Windows too.
+    copyQueue = copyQueue.catch(() => {}).then(async () => {
+        try {
+            const response = await api.fetchApi("/image-gallery/clipboard/copy", {
+                method:"POST",
+                headers:{ "Content-Type":"application/json" },
+                body:JSON.stringify({ folder:info.folder, filename:info.filename }),
+            });
+            if (!response.ok) {
+                let reason = String(response.status);
+                try { reason = (await response.json()).error || reason; } catch (_) {}
+                throw new Error(reason);
+            }
+            copyNotice(TEXT.copyOk);
+        } catch (error) {
+            // Browser-only fallback still permits picture paste on supported clients.
+            // It cannot supply CF_HDROP (Explorer file paste).
+            console.warn("[InputGalleryContextMenu] native clipboard failed:", error);
+            const browserCopied = await copyToSystemClipboard(info);
+            copyNotice(browserCopied ? TEXT.copyPartial : TEXT.copyFail, true);
+        }
+    });
+    return copyQueue;
 }
 
 function saveImage(info) {

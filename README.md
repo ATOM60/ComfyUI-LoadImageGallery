@@ -122,7 +122,7 @@ The setting is remembered. Hidden and system folders are skipped. At most 20,000
 2. Use **⇅** to sort by name, date or file size, and the slider next to search to change the card size (it is remembered).
 3. Click **♡** in the top-right corner of a card to add it to favorites — favorites are marked **♥** and stay on top with any sorting; click again to remove.
 
-Right-click an image for **Save Image**, **Copy Image** and **Paste Image** — paste puts the copied image into the open folder.
+Right-click an image for **Save Image**, **Copy Image** and **Paste Image** — paste puts the copied image into the open folder. **Copy Image** simultaneously stores the internal gallery reference and, on a local Windows ComfyUI session, places both the original file (for Explorer Ctrl+V) and the picture (PNG / DIB / DIBV5 for image editors and messengers) onto the Windows clipboard. The clipboard belongs to the computer running ComfyUI, not a remote browser. Non-Windows clients use a best-effort browser image clipboard fallback (no Explorer file paste).
 
 Thumbnails are cached on disk; the counter at the bottom shows the cache size. **Clear cache** removes them, and they are rebuilt when shown again.
 
