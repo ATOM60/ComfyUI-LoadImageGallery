@@ -140,7 +140,7 @@ export function installNodePanel(node, deps) {
         </div>`;
     const q = s => el.querySelector(s);
     const nameEl = q(".cig-np-name"), dimsEl = q(".cig-np-dims"), posEl = q(".cig-np-pos");
-    const stage = q(".cig-np-stage"), img = q("img"), emptyEl = q(".cig-np-empty");
+    const stage = q(".cig-np-stage"), view = q(".cig-np-view"), img = q("img"), emptyEl = q(".cig-np-empty");
     const prev = q(".cig-np-prev"), next = q(".cig-np-next");
 
     const panel = node.addDOMWidget(PANEL_NAME, "cig-gallery-panel", el, {
@@ -164,6 +164,9 @@ export function installNodePanel(node, deps) {
     function render() {
         const s = navigator?.state?.() ?? { value: normalizePath(String(getImageWidget(node)?.value ?? "")), index: -1, count: 0, canNavigate: false };
         const value = s.value;
+        // Shared context menu reads the image actually displayed by this node.
+        // Keep it updated for arrow navigation, workflow restores and edits.
+        view.__cigRelative = value || "";
         if (value !== shownValue) {
             shownValue = value;
             dimsEl.textContent = "";

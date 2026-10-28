@@ -50,6 +50,39 @@ async function runMode(browser, vue) {
         out.afterNext = image.value;
         panel().querySelector('.cig-np-prev').click(); await sleep(600);
         out.afterPrev = image.value;
+
+        // The node's right-click menu must use the exact same clipboard
+        // command as the Input Gallery, and target the currently shown file.
+        const view = panel().querySelector('.cig-np-view'), viewRect = view.getBoundingClientRect();
+        const contextEvent = (target, rect) => target.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, button: 2,
+            clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+        }));
+        out.contextPrevented = !contextEvent(view, viewRect);
+        out.nodeMenu = [...document.querySelectorAll('.cig-input-restored-menu button')].map(el => el.textContent);
+        const realFetchApi = app.api.fetchApi;
+        let clipboardBody = null;
+        app.api.fetchApi = async function(url, options, ...rest) {
+            if (url === '/image-gallery/clipboard/copy') {
+                clipboardBody = JSON.parse(options.body);
+                return new Response(JSON.stringify({ok:true, formats:['file','DIB','DIBV5','PNG']}), {
+                    status:200, headers:{'Content-Type':'application/json'},
+                });
+            }
+            return realFetchApi.call(this, url, options, ...rest);
+        };
+        try {
+            const copy = [...document.querySelectorAll('.cig-input-restored-menu button')]
+                .find(el => /^(Copy Image|Копировать изображение)$/.test(el.textContent));
+            copy?.click();
+            await sleep(300);
+        } finally {
+            app.api.fetchApi = realFetchApi;
+        }
+        out.contextClipboard = clipboardBody;
+        out.galleryClipboard = JSON.parse(localStorage.getItem('ComfyUI-LoadImageGallery.inputCopiedImage') || 'null');
+        out.menuClosedAfterCopy = !document.querySelector('.cig-input-restored-menu');
+        out.galleryBeforeClick = !!document.querySelector('.cig-overlay');
         panel().querySelector('.cig-np-stage').click(); await sleep(900);
         out.galleryOpened = !!document.querySelector('.cig-overlay');
         document.querySelector('.cig-overlay .cig-close')?.click(); await sleep(300);
@@ -97,6 +130,15 @@ async function runMode(browser, vue) {
                 ['preview image loads', r.loaded],
                 ['metadata shows name and position', r.meta.startsWith(r.first) && (r.count < 2 || /\d+ \/ \d+/.test(r.meta)), r.meta],
                 ['arrows move and come back', r.count < 2 || (r.afterNext !== r.first && r.afterPrev === r.first)],
+                ['right-click on node image opens shared menu and prevents the ComfyUI menu',
+                    r.contextPrevented && r.nodeMenu.length === 3
+                    && /^(Copy Image|Копировать изображение)$/.test(r.nodeMenu[1]), JSON.stringify(r.nodeMenu)],
+                ['node Copy Image copies the current file using the Input Gallery clipboard command',
+                    r.contextClipboard?.filename === r.first && r.contextClipboard?.folder === ''
+                    && r.galleryClipboard?.filename === r.first && r.galleryClipboard?.folder === '',
+                    JSON.stringify({request:r.contextClipboard, internal:r.galleryClipboard})],
+                ['context menu closes after copy without opening gallery',
+                    r.menuClosedAfterCopy && !r.galleryBeforeClick],
                 ['click opens the image gallery', r.galleryOpened],
                 ['? opens the help', r.helpOpened],
                 ['Output Gallery button opens it', r.outputOpened],

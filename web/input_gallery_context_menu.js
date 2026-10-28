@@ -244,11 +244,8 @@ function addButton(label, handler) {
     return button;
 }
 
-function showMenu(event, card) {
-    const info = cardInfo(card);
-    if (!info) return;
-    const overlay = card.closest(".cig-overlay");
-    if (!(overlay instanceof HTMLElement)) return;
+function showMenu(event, info, overlay = null) {
+    if (!info?.filename) return;
 
     closeMenu();
     menu = document.createElement("div");
@@ -266,15 +263,45 @@ function showMenu(event, card) {
     menu.style.top = `${top}px`;
 }
 
+function nodePreviewInfo(event, view) {
+    // The <img> fills the panel but has object-fit:contain. Only take over
+    // right-clicks on the rendered picture, not letterboxing or arrow buttons.
+    const relative = normalizePath(view.__cigRelative || "");
+    const img = view.querySelector("img");
+    if (!relative || !(img instanceof HTMLImageElement)
+        || img.style.display === "none" || !img.complete
+        || !img.naturalWidth || !img.naturalHeight) return null;
+    const r = view.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    const fit = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
+    const width = img.naturalWidth * fit, height = img.naturalHeight * fit;
+    const left = r.left + (r.width - width) / 2, top = r.top + (r.height - height) / 2;
+    if (event.clientX < left || event.clientX > left + width
+        || event.clientY < top || event.clientY > top + height) return null;
+    const { folder, filename } = splitPath(relative);
+    return filename ? { relative, folder, filename } : null;
+}
+
 function onContextMenu(event) {
     if (!(event.target instanceof Element)) return;
     const card = event.target.closest(".cig-overlay .cig-card");
-    if (!(card instanceof HTMLElement)) return;
-    if (event.target.closest(".cig-favorite")) return;
+    if (card instanceof HTMLElement && !event.target.closest(".cig-favorite")) {
+        const info = cardInfo(card);
+        if (!info) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        showMenu(event, info, card.closest(".cig-overlay"));
+        return;
+    }
 
+    const view = event.target.closest(".cig-node-panel .cig-np-view");
+    if (!(view instanceof HTMLElement)) return;
+    const info = nodePreviewInfo(event, view);
+    if (!info) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    showMenu(event, card);
+    // Exactly the same copy/save/paste handlers as Input Gallery cards.
+    showMenu(event, info);
 }
 
 app.registerExtension({
