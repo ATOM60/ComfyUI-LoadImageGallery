@@ -119,6 +119,34 @@ async function runMode(browser, vue) {
         node.__cigNodePanel?.render();
         panel().querySelector('.cig-np-stage').click(); await sleep(900);
         out.galleryOpened = !!document.querySelector('.cig-overlay');
+        // Tablet regression: never split START and its changing counter or
+        // let its text spill past the button. The footer should wrap controls
+        // as whole items when the gallery panel becomes narrow.
+        const responsivePanel = document.querySelector('.cig-overlay .cig-panel');
+        const footerMetrics = width => {
+            responsivePanel.style.width = width + 'px';
+            const button = responsivePanel.querySelector('.cig-run');
+            const footer = responsivePanel.querySelector('.cig-footer');
+            const buttonRect = button.getBoundingClientRect(), footerRect = footer.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(button);
+            const rects = [...range.getClientRects()];
+            const textRect = rects[0];
+            return {
+                width, lines: rects.length, buttonWidth: buttonRect.width,
+                textFits: rects.length === 1 && textRect.left >= buttonRect.left - 1
+                    && textRect.right <= buttonRect.right + 1
+                    && textRect.top >= buttonRect.top - 1
+                    && textRect.bottom <= buttonRect.bottom + 1,
+                insideFooter: buttonRect.left >= footerRect.left - 1
+                    && buttonRect.right <= footerRect.right + 1
+                    && buttonRect.bottom <= footerRect.bottom + 1,
+            };
+        };
+        const responsiveRun = responsivePanel.querySelector('.cig-run');
+        out.tabletStartIdle = [1024, 820, 768, 600, 390].map(footerMetrics);
+        responsiveRun.textContent = '▶ ' + (document.documentElement.lang === 'ru' ? 'СТАРТ' : 'START') + ' (123456)';
+        out.tabletStartLargeCount = [768, 390].map(footerMetrics);
         document.querySelector('.cig-overlay .cig-close')?.click(); await sleep(300);
         panel().querySelector('.cig-np-help').click(); await sleep(300);
         out.helpOpened = !!document.querySelector('.cig-help-overlay');
@@ -181,6 +209,10 @@ async function runMode(browser, vue) {
                     && /^(Paste Image|Вставить изображение)$/.test(r.emptyNodeMenu[0]),
                     JSON.stringify(r.emptyNodeMenu)],
                 ['click opens the image gallery', r.galleryOpened],
+                ['START button and count stay on one line inside gallery on tablet and phone',
+                    [...(r.tabletStartIdle || []), ...(r.tabletStartLargeCount || [])]
+                        .every(x => x.textFits && x.insideFooter),
+                    JSON.stringify({idle:r.tabletStartIdle,largeCount:r.tabletStartLargeCount})],
                 ['? opens the help', r.helpOpened],
                 ['Output Gallery button opens it', r.outputOpened],
                 ['START queues once', r.queued === 1],
