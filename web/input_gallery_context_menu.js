@@ -14,6 +14,8 @@ const TEXT = RU ? {
     paste: "Вставить изображение",
     copyOk: "Изображение скопировано",
     pasteError: "Не удалось вставить изображение",
+    pasteNodeOk: "Изображение загружено в ноду",
+    pasteNodeEmpty: "Буфер обмена не содержит доступного изображения",
     copyPartial: "В галерее изображение скопировано, но как файл в Проводник вставить не получится",
     copyFail: "В галерее скопировано, но буфер Windows недоступен",
 } : {
@@ -22,6 +24,8 @@ const TEXT = RU ? {
     paste: "Paste Image",
     copyOk: "Image copied",
     pasteError: "Could not paste image",
+    pasteNodeOk: "Image loaded into the node",
+    pasteNodeEmpty: "Clipboard contains no available image",
     copyPartial: "Copied in gallery and as a picture, but file paste in Explorer is unavailable",
     copyFail: "Copied in gallery, but Windows clipboard is unavailable",
 };
@@ -187,31 +191,72 @@ async function pasteInternal(targetFolder) {
     return true;
 }
 
+async function uploadClipboardImage(blob, targetFolder = "", filename = "") {
+    const type = blob.type || "image/png";
+    const ext = type === "image/jpeg" ? ".jpg" : type === "image/webp" ? ".webp" : type === "image/gif" ? ".gif" : ".png";
+    const name = filename && /\\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(filename) ? filename : `pasted${ext}`;
+    const form = new FormData();
+    form.append("file", blob, name);
+    const response = await api.fetchApi(`/image-gallery/paste?folder=${encodeURIComponent(targetFolder)}`, {
+        method:"POST", body:form,
+    });
+    if (!response.ok) {
+        let message = String(response.status);
+        try { message = (await response.json())?.error || message; } catch (_) {}
+        throw new Error(message);
+    }
+    const result = await response.json();
+    if (!result?.filename) throw new Error(TEXT.pasteError);
+    return { folder:targetFolder, filename:result.filename };
+}
+
 async function pasteSystemClipboard(targetFolder) {
-    if (!navigator.clipboard?.read) return false;
+    if (!navigator.clipboard?.read) return null;
     let items;
     try { items = await navigator.clipboard.read(); }
-    catch (_) { return false; }
-
+    catch (_) { return null; }
     for (const item of items || []) {
         const type = item.types?.find(t => String(t).startsWith("image/"));
         if (!type) continue;
-        const blob = await item.getType(type);
-        const ext = type === "image/jpeg" ? ".jpg" : type === "image/webp" ? ".webp" : type === "image/gif" ? ".gif" : ".png";
-        const form = new FormData();
-        form.append("file", blob, `pasted${ext}`);
-        const response = await api.fetchApi(`/image-gallery/paste?folder=${encodeURIComponent(targetFolder || "")}`, {
-            method:"POST",
-            body:form,
-        });
-        if (!response.ok) {
-            let message = `${response.status}`;
-            try { message = (await response.json())?.error || message; } catch (_) {}
-            throw new Error(message);
-        }
-        return true;
+        return uploadClipboardImage(await item.getType(type), targetFolder);
     }
-    return false;
+    return null;
+}
+
+async function pasteToNode(view, fromPasteEvent = null) {
+    try {
+        if (typeof view?.__cigSelectImage !== "function") throw new Error("Node image selector unavailable");
+        let source = null;
+        // Ctrl+V brings the actual OS clipboard image (including screenshots)
+        // and must not accidentally use an earlier copied gallery reference.
+        if (fromPasteEvent) {
+            const files = [...(fromPasteEvent.clipboardData?.files || [])];
+            let file = files.find(f => f.type?.startsWith("image/"));
+            if (!file) for (const item of fromPasteEvent.clipboardData?.items || []) {
+                if (item.kind === "file" && item.type?.startsWith("image/")) {
+                    file = item.getAsFile();
+                    if (file) break;
+                }
+            }
+            if (file) source = await uploadClipboardImage(file, "", file.name);
+            else source = await pasteSystemClipboard("");
+        } else if (copied?.filename) {
+            // Internal gallery copy: load original file without duplicating it.
+            source = copied;
+        } else {
+            // External clipboard picture: import to ComfyUI/input and select it.
+            source = await pasteSystemClipboard("");
+        }
+        if (!source?.filename) throw new Error(TEXT.pasteNodeEmpty);
+        const relative = normalizePath(source.folder ? `${source.folder}/${source.filename}` : source.filename);
+        view.__cigSelectImage(relative);
+        copyNotice(TEXT.pasteNodeOk);
+        return true;
+    } catch (error) {
+        console.error("[InputGalleryContextMenu] node paste failed:", error);
+        copyNotice(error?.message || TEXT.pasteError, true);
+        return false;
+    }
 }
 
 async function pasteImage(targetFolder, overlay) {
@@ -244,16 +289,18 @@ function addButton(label, handler) {
     return button;
 }
 
-function showMenu(event, info, overlay = null) {
-    if (!info?.filename) return;
+function showMenu(event, info, overlay = null, nodeView = null) {
+    if (!info?.filename && !nodeView) return;
 
     closeMenu();
     menu = document.createElement("div");
     menu.className = "cig-input-restored-menu";
 
-    addButton(TEXT.save, () => saveImage(info));
-    addButton(TEXT.copy, () => copyImage(info));
-    addButton(TEXT.paste, () => pasteImage(info.folder, overlay));
+    if (info?.filename) {
+        addButton(TEXT.save, () => saveImage(info));
+        addButton(TEXT.copy, () => copyImage(info));
+    }
+    addButton(TEXT.paste, () => nodeView ? pasteToNode(nodeView) : pasteImage(info.folder, overlay));
 
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
@@ -297,11 +344,12 @@ function onContextMenu(event) {
     const view = event.target.closest(".cig-node-panel .cig-np-view");
     if (!(view instanceof HTMLElement)) return;
     const info = nodePreviewInfo(event, view);
-    if (!info) return;
+    // Allow paste even into an empty node, but do not intercept blank margins
+    // around an existing picture or while it is still loading.
+    if (!info && view.__cigRelative) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    // Exactly the same copy/save/paste handlers as Input Gallery cards.
-    showMenu(event, info);
+    showMenu(event, info, null, view);
 }
 
 app.registerExtension({
@@ -309,6 +357,16 @@ app.registerExtension({
     setup() {
         ensureStyles();
         document.addEventListener("contextmenu", onContextMenu, true);
+        document.addEventListener("paste", event => {
+            // Ctrl+V works only when a node preview has keyboard focus.
+            if (!(event.target instanceof Element)) return;
+            const stage = event.target.closest(".cig-node-panel .cig-np-stage");
+            const view = stage?.querySelector(".cig-np-view");
+            if (!(view instanceof HTMLElement)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            void pasteToNode(view, event);
+        }, true);
         document.addEventListener("pointerdown", event => {
             if (menu && event.target instanceof Node && !menu.contains(event.target)) closeMenu();
         }, true);

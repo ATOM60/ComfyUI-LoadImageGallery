@@ -110,7 +110,7 @@ const EN = {
                 "Click **♡** on a card to add it to favorites — favorites stay on top with any sorting.",
             ],
             notes: [
-                "Right-click an image in the gallery or the node preview: **Save Image**, **Copy Image** or **Paste Image**. Copy stores the gallery reference and, on local Windows, both the source file (Explorer Ctrl+V) and picture (editors/messengers) in the same clipboard. Paste copies into the gallery folder.",
+                "Right-click an image in the gallery or the node preview: **Save Image**, **Copy Image** or **Paste Image**. Copy stores the gallery reference and, on local Windows, both the source file (Explorer Ctrl+V) and picture (editors/messengers) in the same clipboard. Paste copies into the gallery folder, but on a node preview it selects the copied image in that node. Ctrl+V on the focused node preview can import a screenshot.",
                 "Thumbnails are cached on disk (the counter is at the bottom); **Clear cache** removes them and they are rebuilt when shown again.",
             ],
         },
@@ -271,7 +271,7 @@ const RU = {
                 "**♡** на карточке добавляет изображение в избранное — избранные всегда выше остальных.",
             ],
             notes: [
-                "Правый клик по изображению в галерее или на превью в ноде: **Сохранить изображение**, **Копировать изображение** или **Вставить изображение**. Копирование сохраняет ссылку внутри галереи, а в локальной Windows — одновременно файл для Проводника и картинку для редакторов. Вставка внутри галереи копирует файл в открытую папку.",
+                "Правый клик по изображению в галерее или на превью в ноде: **Сохранить изображение**, **Копировать изображение** или **Вставить изображение**. Копирование сохраняет ссылку внутри галереи, а в локальной Windows — одновременно файл для Проводника и картинку для редакторов. Вставка в галерее копирует файл в папку, а на превью ноды загружает скопированное изображение в эту ноду. Ctrl+V при фокусе на ноде может загрузить скриншот.",
                 "Миниатюры кэшируются на диске (счётчик внизу); **Очистить кэш** удаляет их, и они создаются заново при показе.",
             ],
         },

@@ -142,6 +142,9 @@ export function installNodePanel(node, deps) {
     const nameEl = q(".cig-np-name"), dimsEl = q(".cig-np-dims"), posEl = q(".cig-np-pos");
     const stage = q(".cig-np-stage"), view = q(".cig-np-view"), img = q("img"), emptyEl = q(".cig-np-empty");
     const prev = q(".cig-np-prev"), next = q(".cig-np-next");
+    // The Input Gallery context-menu module uses this bridge to load an image
+    // into the actual node (not into the filesystem folder).
+    view.__cigSelectImage = value => deps.selectImage?.(value);
 
     const panel = node.addDOMWidget(PANEL_NAME, "cig-gallery-panel", el, {
         serialize: false,

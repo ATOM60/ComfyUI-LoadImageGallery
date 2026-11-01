@@ -83,6 +83,40 @@ async function runMode(browser, vue) {
         out.galleryClipboard = JSON.parse(localStorage.getItem('ComfyUI-LoadImageGallery.inputCopiedImage') || 'null');
         out.menuClosedAfterCopy = !document.querySelector('.cig-input-restored-menu');
         out.galleryBeforeClick = !!document.querySelector('.cig-overlay');
+
+        // Paste in the node must SELECT the copied file, not duplicate it in
+        // its source folder (the gallery Paste action keeps that behavior).
+        panel().querySelector('.cig-np-next').click();
+        await sleep(600);
+        out.beforeNodePaste = image.value;
+        contextEvent(view, view.getBoundingClientRect());
+        const nodePaste = [...document.querySelectorAll('.cig-input-restored-menu button')]
+            .find(el => /^(Paste Image|Вставить изображение)$/.test(el.textContent));
+        let unexpectedPasteRequest = false;
+        app.api.fetchApi = async function(url, options, ...rest) {
+            if (url.startsWith('/image-gallery/paste')) unexpectedPasteRequest = true;
+            return realFetchApi.call(this, url, options, ...rest);
+        };
+        try {
+            nodePaste?.click();
+            await sleep(500);
+        } finally {
+            app.api.fetchApi = realFetchApi;
+        }
+        out.afterNodePaste = image.value;
+        out.nodePasteDidNotDuplicate = !unexpectedPasteRequest;
+        out.nodeImageVisibleAfterPaste = panel().querySelector('.cig-np-view').__cigRelative === out.afterNodePaste;
+
+        // Paste must also be available on a completely empty node.
+        image.value = '';
+        node.__cigNodePanel?.render();
+        await sleep(300);
+        contextEvent(view, view.getBoundingClientRect());
+        out.emptyNodeMenu = [...document.querySelectorAll('.cig-input-restored-menu button')].map(el => el.textContent);
+        document.querySelector('.cig-input-restored-menu')?.remove();
+        // Restore image before checking normal click-to-gallery behavior.
+        image.value = out.afterNodePaste;
+        node.__cigNodePanel?.render();
         panel().querySelector('.cig-np-stage').click(); await sleep(900);
         out.galleryOpened = !!document.querySelector('.cig-overlay');
         document.querySelector('.cig-overlay .cig-close')?.click(); await sleep(300);
@@ -139,6 +173,13 @@ async function runMode(browser, vue) {
                     JSON.stringify({request:r.contextClipboard, internal:r.galleryClipboard})],
                 ['context menu closes after copy without opening gallery',
                     r.menuClosedAfterCopy && !r.galleryBeforeClick],
+                ['node Paste selects the copied image without a filesystem copy',
+                    r.beforeNodePaste !== r.first && r.afterNodePaste === r.first
+                    && r.nodePasteDidNotDuplicate && r.nodeImageVisibleAfterPaste,
+                    JSON.stringify({before:r.beforeNodePaste,after:r.afterNodePaste,duplicate:!r.nodePasteDidNotDuplicate})],
+                ['empty node still exposes Paste Image', r.emptyNodeMenu?.length === 1
+                    && /^(Paste Image|Вставить изображение)$/.test(r.emptyNodeMenu[0]),
+                    JSON.stringify(r.emptyNodeMenu)],
                 ['click opens the image gallery', r.galleryOpened],
                 ['? opens the help', r.helpOpened],
                 ['Output Gallery button opens it', r.outputOpened],

@@ -1449,6 +1449,14 @@ function installGalleryNode(node, isNew) {
     installNodePanel(node, {
         api, app, getImageWidget, normalizePath, splitPath, openGallery, holdToZoom, navigator,
         showHelp: showCigHelp, language: CIG_LANG, isNew,
+        selectImage: path => {
+            const value = normalizePath(path);
+            if (!value) return;
+            node.__cigFolder = splitPath(value).folder;
+            setWidgetValue(node, value); // Same path as a double-click selection.
+            navigator.refresh();
+            node.__cigNodePanel?.render();
+        },
     });
     installExternalPreviewRestore(node);
     return navigator;
